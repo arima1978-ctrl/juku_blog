@@ -153,6 +153,9 @@
   }
   .article-preview h2 { font-size: 1.1rem; }
   .article-preview h3 { font-size: 1rem; }
+  .article-preview table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 0.9rem; }
+  .article-preview th, .article-preview td { border: 1px solid var(--border); padding: 8px 12px; text-align: left; }
+  .article-preview th { background: var(--bg); }
 
   .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
   button {
@@ -283,7 +286,7 @@ function escapeHtml(s) {
 
 // --- 一覧 ---
 async function loadSummary() {
-  const s = await fetchJson('/api/summary');
+  const s = await fetchJson('api/summary');
   document.getElementById('summaryRow').innerHTML = `
     <div class="summary-card"><div class="label">${s.month} 生成本数</div><div class="value">${s.total}</div></div>
     <div class="summary-card"><div class="label">承認率</div><div class="value">${s.approvalRate}%</div></div>
@@ -308,7 +311,7 @@ async function loadPosts() {
   const params = new URLSearchParams();
   if (status) params.set('status', status);
   if (category) params.set('category', category);
-  const posts = await fetchJson('/api/posts?' + params.toString());
+  const posts = await fetchJson('api/posts?' + params.toString());
 
   const list = document.getElementById('cardList');
   if (posts.length === 0) {
@@ -333,7 +336,7 @@ document.getElementById('categoryFilter').addEventListener('change', loadPosts);
 
 // --- 詳細 ---
 async function openDetail(id) {
-  const p = await fetchJson(`/api/posts/${id}`);
+  const p = await fetchJson(`api/posts/${id}`);
   document.getElementById('listView').style.display = 'none';
   document.getElementById('detailView').style.display = 'block';
 
@@ -386,14 +389,14 @@ function toggleRejectNote() {
 }
 
 async function approvePost(id) {
-  await fetchJson(`/api/posts/${id}/approve`, { method: 'POST' });
+  await fetchJson(`api/posts/${id}/approve`, { method: 'POST' });
   closeDetail();
   refreshAll();
 }
 
 async function rejectPost(id) {
   const note = document.getElementById('rejectNote').value;
-  await fetchJson(`/api/posts/${id}/reject`, {
+  await fetchJson(`api/posts/${id}/reject`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ reviewer_note: note }),
@@ -418,7 +421,7 @@ function closeDetail() {
 
 // --- エピソード素材 ---
 async function loadEpisodes() {
-  const episodes = await fetchJson('/api/episodes');
+  const episodes = await fetchJson('api/episodes');
   document.getElementById('episodeList').innerHTML = episodes.map(e => `
     <li class="${e.used ? 'used' : ''}">${escapeHtml(e.text)}${e.used ? ` (使用済み: ${e.usedAt || ''})` : ''}</li>
   `).join('') || '<li>まだ登録がありません</li>';
@@ -428,7 +431,7 @@ document.getElementById('episodeSubmit').addEventListener('click', async () => {
   const textEl = document.getElementById('episodeText');
   const text = textEl.value.trim();
   if (!text) return;
-  await fetchJson('/api/episodes', {
+  await fetchJson('api/episodes', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ text }),

@@ -51,6 +51,7 @@ scripts/sync_draft_to_db.js  : verified→review_pending / escalated→rejected 
 
 - `config/juku.yaml`: 塾名・地域・対象学年・塾長ペルソナ(`author`)・生成パラメータ。**塾ごとにこのファイルだけ差し替えれば他塾にも展開できる設計**(ハードコード禁止)
 - `config/calendar.yaml`: 曜日別テーマ・季節文脈(定期テスト前/夏休み前/入試直前/新学年準備)
+- `docs/an-shingaku-jim.md`: 提供コース「アン進学ジム」(個別指導)の実データ(指導方針・授業形式・料金体系・成果例等)。檜山がコース内容に具体的に触れる記事を書く際に参照する
 
 ## 文体・コンプライアンスの要点(詳細は各エージェント定義を参照)
 
@@ -58,6 +59,7 @@ scripts/sync_draft_to_db.js  : verified→review_pending / escalated→rejected 
 - 実在の生徒エピソードは `data/episodes.md` にある素材のみ使用可。創作は禁止(石橋が検出)
 - 誇大表現(景品表示法)・個人情報・他塾への言及は禁止
 - 実績数値を使う場合は年次を併記する
+- **高校名は `config/juku.yaml` の `area.target_high_schools` にある学校のみ使用する**(偏差値55以上・minkou.jp基準で厳選済み)。偏差値の低い高校名を出さないこと(2026-07-06 ユーザー指示: 「この塾は馬鹿が行く塾」という印象を保護者に持たれるため)
 
 ## ダッシュボード
 

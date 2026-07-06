@@ -22,7 +22,11 @@ const ERRORS_PATH = path.join(ROOT, 'logs', 'errors.json');
 
 const app = express();
 app.use(express.json());
-app.use(express.static(ROOT, { index: 'dashboard.html' }));
+// プロジェクトルート全体を静的配信するとconfig/scriptsのソースまで公開されてしまうため、
+// dashboard.html 単体のみを配信する(外部公開を想定したセキュリティ対応)。
+app.get('/', (req, res) => {
+  res.sendFile(path.join(ROOT, 'dashboard.html'));
+});
 
 app.get('/api/posts', (req, res) => {
   const { status, category } = req.query;
