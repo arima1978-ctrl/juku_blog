@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ブログ記事ダッシュボード</title>
+<style>
+  :root {
+    --bg: #f5f6f8;
+    --card-bg: #ffffff;
+    --border: #e2e5ea;
+    --text: #22262b;
+    --text-muted: #6b7280;
+    --accent: #2563eb;
+    --yellow: #f5a623;
+    --yellow-bg: #fef6e6;
+    --green: #16a34a;
+    --green-bg: #e9f9ee;
+    --red: #dc2626;
+    --red-bg: #fdecec;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+  }
+  header {
+    background: var(--card-bg);
+    border-bottom: 1px solid var(--border);
+    padding: 16px 20px;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  header h1 { margin: 0; font-size: 1.25rem; }
+  main { max-width: 960px; margin: 0 auto; padding: 16px; }
+
+  .error-banner {
+    background: var(--red-bg);
+    border: 1px solid var(--red);
+    color: var(--red);
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+    font-size: 0.9rem;
+  }
+  .error-banner ul { margin: 6px 0 0; padding-left: 20px; }
+
+  .summary-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  .summary-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+  }
+  .summary-card .label { font-size: 0.78rem; color: var(--text-muted); }
+  .summary-card .value { font-size: 1.4rem; font-weight: 700; margin-top: 2px; }
+
+  .filters {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 14px;
+  }
+  select {
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--card-bg);
+    font-size: 0.9rem;
+  }
+
+  .card-list { display: flex; flex-direction: column; gap: 10px; }
+  .post-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+    cursor: pointer;
+    transition: box-shadow .15s ease;
+  }
+  .post-card:hover { box-shadow: 0 2px 10px rgba(0,0,0,0.06); }
+  .post-card .row1 { display: flex; justify-content: space-between; gap: 10px; align-items: start; }
+  .post-card .title { font-weight: 600; font-size: 1rem; }
+  .post-card .meta { color: var(--text-muted); font-size: 0.82rem; margin-top: 4px; }
+
+  .badge {
+    display: inline-block;
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 999px;
+    white-space: nowrap;
+  }
+  .badge-review_pending { background: var(--yellow-bg); color: var(--yellow); }
+  .badge-approved { background: var(--green-bg); color: var(--green); }
+  .badge-published { background: var(--green-bg); color: var(--green); }
+  .badge-rejected { background: var(--red-bg); color: var(--red); }
+
+  .empty { color: var(--text-muted); text-align: center; padding: 40px 0; }
+
+  /* 詳細ビュー */
+  #detailView { display: none; }
+  .back-link {
+    display: inline-block;
+    margin-bottom: 12px;
+    color: var(--accent);
+    cursor: pointer;
+    font-size: 0.9rem;
+  }
+  .detail-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+  }
+  .detail-title { font-size: 1.3rem; font-weight: 700; margin: 0 0 8px; }
+  .detail-meta-grid {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 4px 12px;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    margin-bottom: 16px;
+  }
+  .fact-check-box {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin: 16px 0;
+    font-size: 0.85rem;
+  }
+  .fact-check-box.has-issue { border-color: var(--red); background: var(--red-bg); }
+  .fact-check-item { display: flex; gap: 8px; padding: 3px 0; }
+  .fact-check-item .fc-result { font-weight: 700; min-width: 3.2em; }
+  .fc-ng { color: var(--red); }
+  .fc-ok { color: var(--green); }
+
+  .article-preview {
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+    padding: 20px;
+    margin: 16px 0;
+    background: #fffdf8;
+  }
+  .article-preview h2 { font-size: 1.1rem; }
+  .article-preview h3 { font-size: 1rem; }
+
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
+  button {
+    padding: 9px 16px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--card-bg);
+    font-size: 0.88rem;
+    cursor: pointer;
+  }
+  button.primary { background: var(--green); color: #fff; border-color: var(--green); }
+  button.danger { background: #fff; color: var(--red); border-color: var(--red); }
+  button:active { transform: scale(0.98); }
+
+  .reject-note-area { display: none; margin-top: 10px; }
+  .reject-note-area textarea {
+    width: 100%;
+    min-height: 70px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    padding: 8px;
+    font-family: inherit;
+  }
+
+  /* エピソード素材 */
+  .episode-section {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    margin-top: 24px;
+  }
+  .episode-section h2 { font-size: 1rem; margin-top: 0; }
+  .episode-input { display: flex; gap: 8px; flex-wrap: wrap; }
+  .episode-input textarea {
+    flex: 1;
+    min-width: 200px;
+    min-height: 50px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    padding: 8px;
+    font-family: inherit;
+  }
+  .episode-list { margin-top: 12px; font-size: 0.85rem; }
+  .episode-list li { margin-bottom: 4px; }
+  .episode-list li.used { color: var(--text-muted); text-decoration: line-through; }
+
+  .tabbar { display: flex; gap: 6px; margin-bottom: 14px; }
+  .tabbar button { border-radius: 999px; }
+  .tabbar button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+  @media (max-width: 600px) {
+    .detail-meta-grid { grid-template-columns: 1fr; }
+    .actions { flex-direction: column; }
+    .actions button { width: 100%; }
+  }
+</style>
+</head>
+<body>
+
+<header><h1>📝 ブログ記事ダッシュボード</h1></header>
+
+<main>
+  <div id="errorBanner"></div>
+
+  <div id="listView">
+    <div class="summary-row" id="summaryRow"></div>
+
+    <div class="tabbar">
+      <button data-tab="posts" class="active">記事一覧</button>
+      <button data-tab="episodes">エピソード素材</button>
+    </div>
+
+    <div id="postsTab">
+      <div class="filters">
+        <select id="statusFilter">
+          <option value="">ステータス: すべて</option>
+          <option value="review_pending">確認待ち</option>
+          <option value="approved">承認</option>
+          <option value="rejected">差し戻し</option>
+          <option value="published">公開済み</option>
+        </select>
+        <select id="categoryFilter">
+          <option value="">カテゴリ: すべて</option>
+          <option value="地域情報">地域情報</option>
+          <option value="勉強のコツ">勉強のコツ</option>
+          <option value="入試情報">入試情報</option>
+          <option value="保護者コラム">保護者コラム</option>
+        </select>
+      </div>
+      <div class="card-list" id="cardList"></div>
+    </div>
+
+    <div id="episodesTab" style="display:none;">
+      <div class="episode-section">
+        <h2>エピソード素材を追加</h2>
+        <div class="episode-input">
+          <textarea id="episodeText" placeholder="例: 中2の生徒が計算ミスの原因を自分で見つけた話(個人が特定されない粒度で)"></textarea>
+          <button class="primary" id="episodeSubmit">追加</button>
+        </div>
+        <ul class="episode-list" id="episodeList"></ul>
+      </div>
+    </div>
+  </div>
+
+  <div id="detailView">
+    <span class="back-link" id="backLink">&larr; 一覧に戻る</span>
+    <div class="detail-card" id="detailCard"></div>
+  </div>
+</main>
+
+<script>
+const API = '';
+
+async function fetchJson(url, opts) {
+  const res = await fetch(url, opts);
+  if (!res.ok) throw new Error(`${url} -> ${res.status}`);
+  return res.json();
+}
+
+function statusLabel(status) {
+  return { review_pending: '確認待ち', approved: '承認', rejected: '差し戻し', published: '公開済み' }[status] || status;
+}
+
+function escapeHtml(s) {
+  return (s || '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// --- 一覧 ---
+async function loadSummary() {
+  const s = await fetchJson('/api/summary');
+  document.getElementById('summaryRow').innerHTML = `
+    <div class="summary-card"><div class="label">${s.month} 生成本数</div><div class="value">${s.total}</div></div>
+    <div class="summary-card"><div class="label">承認率</div><div class="value">${s.approvalRate}%</div></div>
+    <div class="summary-card"><div class="label">カテゴリ内訳</div><div class="value" style="font-size:0.8rem;font-weight:400;">${
+      s.byCategory.map(c => `${c.category}:${c.c}`).join(' / ') || 'なし'
+    }</div></div>
+  `;
+
+  const banner = document.getElementById('errorBanner');
+  if (s.errors && s.errors.length > 0) {
+    banner.innerHTML = `<div class="error-banner"><strong>⚠ 生成パイプラインでエラーが発生しています</strong>
+      <ul>${s.errors.map(e => `<li>[${e.at}] ${escapeHtml(e.step)}: ${escapeHtml(e.detail)}</li>`).join('')}</ul>
+    </div>`;
+  } else {
+    banner.innerHTML = '';
+  }
+}
+
+async function loadPosts() {
+  const status = document.getElementById('statusFilter').value;
+  const category = document.getElementById('categoryFilter').value;
+  const params = new URLSearchParams();
+  if (status) params.set('status', status);
+  if (category) params.set('category', category);
+  const posts = await fetchJson('/api/posts?' + params.toString());
+
+  const list = document.getElementById('cardList');
+  if (posts.length === 0) {
+    list.innerHTML = '<div class="empty">該当する記事がありません</div>';
+    return;
+  }
+  list.innerHTML = posts.map(p => `
+    <div class="post-card" onclick="openDetail(${p.id})">
+      <div class="row1">
+        <div>
+          <div class="title">${escapeHtml(p.title)}</div>
+          <div class="meta">${escapeHtml(p.category)} ・ ${p.created_at.slice(0,10)}</div>
+        </div>
+        <span class="badge badge-${p.status}">${statusLabel(p.status)}</span>
+      </div>
+    </div>
+  `).join('');
+}
+
+document.getElementById('statusFilter').addEventListener('change', loadPosts);
+document.getElementById('categoryFilter').addEventListener('change', loadPosts);
+
+// --- 詳細 ---
+async function openDetail(id) {
+  const p = await fetchJson(`/api/posts/${id}`);
+  document.getElementById('listView').style.display = 'none';
+  document.getElementById('detailView').style.display = 'block';
+
+  const fc = p.fact_check_report_parsed;
+  let fcHtml = '';
+  if (fc && fc.items) {
+    const hasIssue = fc.items.some(i => (i.result || '').includes('NG'));
+    fcHtml = `<div class="fact-check-box ${hasIssue ? 'has-issue' : ''}">
+      <strong>石橋のファクトチェックレポート</strong> (${fc.checked_at || ''})
+      ${fc.items.map(i => `
+        <div class="fact-check-item">
+          <span class="fc-result ${(i.result||'').includes('NG') ? 'fc-ng' : 'fc-ok'}">${escapeHtml(i.result||'')}</span>
+          <span>${escapeHtml(i.check)}${i.note ? ' - ' + escapeHtml(i.note) : ''}</span>
+        </div>
+      `).join('')}
+    </div>`;
+  }
+
+  document.getElementById('detailCard').innerHTML = `
+    <span class="badge badge-${p.status}">${statusLabel(p.status)}</span>
+    <h2 class="detail-title">${escapeHtml(p.title)}</h2>
+    <div class="detail-meta-grid">
+      <div>カテゴリ</div><div>${escapeHtml(p.category)}</div>
+      <div>想定読者</div><div>${escapeHtml(p.target_audience || '-')}</div>
+      <div>検索キーワード</div><div>${escapeHtml(p.keywords || '-')}</div>
+      <div>メタディスクリプション</div><div>${escapeHtml(p.meta_description || '-')}</div>
+      <div>生成日</div><div>${p.created_at}</div>
+      ${p.reviewer_note ? `<div>差し戻しメモ</div><div>${escapeHtml(p.reviewer_note)}</div>` : ''}
+    </div>
+    ${fcHtml}
+    <div class="article-preview">${p.body_html}</div>
+    <div class="actions">
+      <button class="primary" onclick="approvePost(${p.id})">承認</button>
+      <button class="danger" onclick="toggleRejectNote()">差し戻し</button>
+      <button onclick="copyBody('html', ${p.id})">本文コピー(HTML)</button>
+      <button onclick="copyBody('text', ${p.id})">本文コピー(テキスト)</button>
+    </div>
+    <div class="reject-note-area" id="rejectNoteArea">
+      <textarea id="rejectNote" placeholder="差し戻し理由を入力(翌日の企画で同じ失敗を避けるために使われます)"></textarea>
+      <button class="danger" style="margin-top:8px;" onclick="rejectPost(${p.id})">差し戻しを確定</button>
+    </div>
+  `;
+
+  window.currentPost = p;
+}
+
+function toggleRejectNote() {
+  const el = document.getElementById('rejectNoteArea');
+  el.style.display = el.style.display === 'block' ? 'none' : 'block';
+}
+
+async function approvePost(id) {
+  await fetchJson(`/api/posts/${id}/approve`, { method: 'POST' });
+  closeDetail();
+  refreshAll();
+}
+
+async function rejectPost(id) {
+  const note = document.getElementById('rejectNote').value;
+  await fetchJson(`/api/posts/${id}/reject`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ reviewer_note: note }),
+  });
+  closeDetail();
+  refreshAll();
+}
+
+function copyBody(format, id) {
+  const p = window.currentPost;
+  const text = format === 'html' ? p.body_html : p.body_md;
+  navigator.clipboard.writeText(text).then(() => {
+    alert(format === 'html' ? 'HTML形式でコピーしました' : 'テキスト形式でコピーしました');
+  });
+}
+
+document.getElementById('backLink').addEventListener('click', closeDetail);
+function closeDetail() {
+  document.getElementById('detailView').style.display = 'none';
+  document.getElementById('listView').style.display = 'block';
+}
+
+// --- エピソード素材 ---
+async function loadEpisodes() {
+  const episodes = await fetchJson('/api/episodes');
+  document.getElementById('episodeList').innerHTML = episodes.map(e => `
+    <li class="${e.used ? 'used' : ''}">${escapeHtml(e.text)}${e.used ? ` (使用済み: ${e.usedAt || ''})` : ''}</li>
+  `).join('') || '<li>まだ登録がありません</li>';
+}
+
+document.getElementById('episodeSubmit').addEventListener('click', async () => {
+  const textEl = document.getElementById('episodeText');
+  const text = textEl.value.trim();
+  if (!text) return;
+  await fetchJson('/api/episodes', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  });
+  textEl.value = '';
+  loadEpisodes();
+});
+
+// --- タブ切り替え ---
+document.querySelectorAll('.tabbar button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tabbar button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const tab = btn.dataset.tab;
+    document.getElementById('postsTab').style.display = tab === 'posts' ? 'block' : 'none';
+    document.getElementById('episodesTab').style.display = tab === 'episodes' ? 'block' : 'none';
+    if (tab === 'episodes') loadEpisodes();
+  });
+});
+
+function refreshAll() {
+  loadSummary();
+  loadPosts();
+}
+refreshAll();
+</script>
+</body>
+</html>

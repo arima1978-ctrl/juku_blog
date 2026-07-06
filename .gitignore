@@ -1,0 +1,11 @@
+node_modules/
+data/posts.sqlite
+data/posts.sqlite-*
+data/topics/*.json
+data/plans/*.json
+data/drafts/*.md
+data/recent_titles.json
+data/rejected_notes.json
+logs/*.log
+logs/errors.json
+.env

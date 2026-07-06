@@ -1,0 +1,26 @@
+{
+  "name": "juku-blog",
+  "version": "1.0.0",
+  "description": "学習塾向け 地域密着ブログ自動生成システム(フェーズ1: 生成〜ダッシュボード承認)",
+  "main": "scripts/api-server.js",
+  "scripts": {
+    "init-db": "node scripts/init_db.js",
+    "sync": "node scripts/sync_draft_to_db.js",
+    "dashboard": "node scripts/api-server.js",
+    "test-article": "node scripts/generate_test_article.js"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/arima1978-ctrl/juku_blog.git"
+  },
+  "license": "UNLICENSED",
+  "dependencies": {
+    "express": "^4.19.2",
+    "gray-matter": "^4.0.3",
+    "js-yaml": "^4.1.0",
+    "marked": "^12.0.2"
+  }
+}

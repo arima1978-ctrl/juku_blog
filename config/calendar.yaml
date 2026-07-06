@@ -1,0 +1,78 @@
+# 曜日別ローテーション設定(智谷 = planner-blog-btoc が参照する)
+#
+# 季節文脈(season)は scripts/lib/season.js が当日の日付から自動判定し、
+# 該当する季節がある曜日ではそちらのテーマを優先する。
+# 季節指定がない曜日、または該当季節が無い日は通常テーマ(themes)を使う。
+
+weekdays:
+  monday:
+    label: "週間地域情報"
+    themes:
+      - "今週の地域イベント"
+      - "学校行事"
+      - "テスト日程リマインド"
+    category: "地域情報"
+  tuesday:
+    label: "中学生の勉強の悩み解決"
+    themes:
+      - "定期テスト対策"
+      - "内申点の上げ方"
+      - "部活との両立"
+    category: "勉強のコツ"
+  wednesday:
+    label: "小学生の学習習慣・保護者の悩み"
+    themes:
+      - "家庭学習の習慣づけ"
+      - "ゲームとの付き合い方"
+      - "学年別のつまずきポイント"
+    category: "勉強のコツ"
+  thursday:
+    label: "地域の受験情報"
+    themes:
+      - "{target_high_schools}の入試情報"
+      - "倍率動向"
+      - "地域の進路事情"
+    category: "入試情報"
+  friday:
+    label: "教科別ワンポイント解説"
+    themes:
+      - "{junior_high_schools}の進度に合わせた単元解説"
+    category: "勉強のコツ"
+  saturday:
+    label: "保護者向けコラム"
+    themes:
+      - "子どもへの声かけ"
+      - "思春期の関わり方"
+      - "教育ニュース解説"
+    category: "保護者コラム"
+  sunday:
+    label: "塾の日常・地域密着ストーリー"
+    themes:
+      - "教室での出来事(episodes.md起点)"
+      - "塾長の近況"
+    category: "地域情報"
+    fallback_note: "素材(episodes.md)が無い週は他カテゴリで代替してよい"
+
+# 季節文脈: 今日の日付がどの season に該当するか is scripts/lib/season.js が判定。
+# ここでは各 season で優先すべきテーマ・対象月を定義するのみ。
+seasons:
+  - id: "teiki_test"
+    months: [5, 6, 9, 11, 2]
+    label: "定期テスト前"
+    priority_themes: ["定期テスト対策", "テスト2週間前の過ごし方", "テスト範囲の勉強法"]
+    category: "勉強のコツ"
+  - id: "natsuyasumi_mae"
+    months: [6, 7]
+    label: "夏休み前"
+    priority_themes: ["夏期講習の活用法", "自由研究のテーマ選び", "夏休みの生活リズム"]
+    category: "地域情報"
+  - id: "nyushi_chokuzen"
+    months: [12, 1, 2]
+    label: "入試直前"
+    priority_themes: ["入試直前対策", "体調管理", "当日の心構え"]
+    category: "入試情報"
+  - id: "shingakunen_junbi"
+    months: [3]
+    label: "新学年準備"
+    priority_themes: ["新学年に向けた準備", "新中1・新高1の心構え", "春休みの過ごし方"]
+    category: "地域情報"
