@@ -71,7 +71,10 @@ async function findTermId(config, taxonomy, name) {
   return exact ? exact.id : null;
 }
 
-async function publishPost(post) {
+// date: WordPressサイトのローカル時刻(このサイトはJST確認済み)のwall-clock文字列
+// (例: "2026-07-12T05:00:00")。指定するとstatus:'future'の予約投稿になる。
+// 省略時は従来通り即時公開(status:'publish')。
+async function publishPost(post, { date } = {}) {
   const config = getWpConfig();
   const jukuConfig = loadJukuConfig();
   const categoryId = jukuConfig.wordpress && jukuConfig.wordpress.category_id;
@@ -88,13 +91,14 @@ async function publishPost(post) {
     slug: post.slug,
     content: post.body_html,
     excerpt: post.meta_description || '',
-    status: 'publish',
+    status: date ? 'future' : 'publish',
   };
+  if (date) body.date = date;
   if (categoryId) body.categories = [categoryId];
   if (tagIds.length) body.tags = tagIds;
 
   const created = await wpRequest(config, 'POST', 'posts', body);
-  return { wpPostId: created.id, link: created.link };
+  return { wpPostId: created.id, link: created.link, date: created.date };
 }
 
 module.exports = { publishPost };

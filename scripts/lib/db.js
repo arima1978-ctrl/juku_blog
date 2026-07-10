@@ -111,13 +111,23 @@ function setStatus(id, status, reviewerNote) {
   return Number(result.changes);
 }
 
-function setPublished(id, { wpPostId, wpLink, publishedAt }) {
+function setScheduled(id, { wpPostId, wpLink, scheduledAt }) {
   const conn = getDb();
   const stmt = conn.prepare(
-    "UPDATE posts SET status = 'published', wp_post_id = :wp_post_id, wp_link = :wp_link, published_at = :published_at WHERE id = :id"
+    "UPDATE posts SET status = 'scheduled', wp_post_id = :wp_post_id, wp_link = :wp_link, published_at = :published_at WHERE id = :id"
   );
-  const result = stmt.run({ wp_post_id: String(wpPostId), wp_link: wpLink, published_at: publishedAt, id });
+  const result = stmt.run({ wp_post_id: String(wpPostId), wp_link: wpLink, published_at: scheduledAt, id });
   return Number(result.changes);
+}
+
+// 1日1本ペースを保つため、直近の予約済み/公開済み日時のうち最も新しいものを返す
+// (これに1日足した日を次の承認記事の予約先にする)
+function getLatestScheduleDate() {
+  const conn = getDb();
+  const row = conn
+    .prepare("SELECT MAX(published_at) AS latest FROM posts WHERE status IN ('scheduled', 'published')")
+    .get();
+  return row && row.latest ? row.latest : null;
 }
 
 function listRejectedWithNotes(limit = 20) {
@@ -134,7 +144,7 @@ function monthlySummary(yearMonthPrefix) {
     .prepare("SELECT COUNT(*) AS c FROM posts WHERE created_at LIKE ?")
     .get(`${yearMonthPrefix}%`).c;
   const approved = conn
-    .prepare("SELECT COUNT(*) AS c FROM posts WHERE created_at LIKE ? AND status IN ('approved','published')")
+    .prepare("SELECT COUNT(*) AS c FROM posts WHERE created_at LIKE ? AND status IN ('approved','scheduled','published')")
     .get(`${yearMonthPrefix}%`).c;
   const byCategory = conn
     .prepare("SELECT category, COUNT(*) AS c FROM posts WHERE created_at LIKE ? GROUP BY category")
@@ -156,7 +166,8 @@ module.exports = {
   listPosts,
   listTitlesSince,
   setStatus,
-  setPublished,
+  setScheduled,
+  getLatestScheduleDate,
   listRejectedWithNotes,
   monthlySummary,
   DB_PATH,

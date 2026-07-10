@@ -11,9 +11,9 @@ CREATE TABLE IF NOT EXISTS posts (
   body_md            TEXT NOT NULL,                 -- 本文(Markdown)
   body_html          TEXT NOT NULL,                 -- 本文(HTML変換済み、WordPress投稿用)
   fact_check_report  TEXT,                          -- 石橋のチェック結果(JSON文字列)
-  status             TEXT NOT NULL DEFAULT 'review_pending', -- review_pending/approved/rejected/published
+  status             TEXT NOT NULL DEFAULT 'review_pending', -- review_pending/approved/rejected/scheduled/published
   reviewer_note      TEXT,                          -- 差し戻し時のメモ
-  published_at       TEXT,                          -- 公開日時(フェーズ2用)
+  published_at       TEXT,                          -- 公開(予定)日時。scheduledの間は未来の予約日時、実際に公開されても値は更新しない
   wp_post_id         TEXT                           -- WordPress投稿ID(フェーズ2用)
 );
 

@@ -103,6 +103,7 @@
   .badge-review_pending { background: var(--yellow-bg); color: var(--yellow); }
   .badge-approved { background: var(--green-bg); color: var(--green); }
   .badge-published { background: var(--green-bg); color: var(--green); }
+  .badge-scheduled { background: var(--yellow-bg); color: var(--yellow); }
   .badge-rejected { background: var(--red-bg); color: var(--red); }
 
   .empty { color: var(--text-muted); text-align: center; padding: 40px 0; }
@@ -236,6 +237,7 @@
           <option value="review_pending">確認待ち</option>
           <option value="approved">承認</option>
           <option value="rejected">差し戻し</option>
+          <option value="scheduled">予約済み</option>
           <option value="published">公開済み</option>
         </select>
         <select id="categoryFilter">
@@ -277,7 +279,7 @@ async function fetchJson(url, opts) {
 }
 
 function statusLabel(status) {
-  return { review_pending: '確認待ち', approved: '承認', rejected: '差し戻し', published: '公開済み' }[status] || status;
+  return { review_pending: '確認待ち', approved: '承認', rejected: '差し戻し', scheduled: '予約済み', published: '公開済み' }[status] || status;
 }
 
 function escapeHtml(s) {
@@ -365,7 +367,8 @@ async function openDetail(id) {
       <div>メタディスクリプション</div><div>${escapeHtml(p.meta_description || '-')}</div>
       <div>生成日</div><div>${p.created_at}</div>
       ${p.reviewer_note ? `<div>差し戻しメモ</div><div>${escapeHtml(p.reviewer_note)}</div>` : ''}
-      ${p.wp_link ? `<div>公開URL</div><div><a href="${escapeHtml(p.wp_link)}" target="_blank" rel="noopener">${escapeHtml(p.wp_link)}</a></div>` : ''}
+      ${p.status === 'scheduled' && p.published_at ? `<div>公開予定日</div><div>${escapeHtml(p.published_at.slice(0, 10))}</div>` : ''}
+      ${p.wp_link ? `<div>${p.status === 'scheduled' ? '公開予定URL' : '公開URL'}</div><div><a href="${escapeHtml(p.wp_link)}" target="_blank" rel="noopener">${escapeHtml(p.wp_link)}</a></div>` : ''}
     </div>
     ${fcHtml}
     <div class="article-preview">${p.body_html}</div>
