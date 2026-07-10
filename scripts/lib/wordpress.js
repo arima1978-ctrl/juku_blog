@@ -2,11 +2,19 @@
 
 // フェーズ2: 承認済み記事をWordPress REST API(/wp-json/wp/v2/posts)へ自動投稿する。
 // 投稿専用ユーザー(投稿者権限)のアプリケーションパスワードでBasic認証する想定。
-// 投稿者権限にはカテゴリー/タグの新規作成権限がないため、既存タームの検索のみ行い、
-// 見つからない場合はそのカテゴリー/タグを付けずに投稿する。
+//
+// カテゴリーについて: このWordPressサイトは教室ごとに同名の子カテゴリー
+// (例:「コラム」「学校情報」「教室の様子」)が並ぶ構造になっており、名前だけで
+// 検索すると他教室の同名カテゴリーに誤投稿する恐れがある。そのため名前検索はせず、
+// config/juku.yaml の `wordpress.category_id` に設定した固定IDのみを使う。
+//
+// タグについて: タグは教室横断で共有される想定のため、キーワードから名前で検索し、
+// 見つかったものだけを付与する(投稿者権限には新規タグ作成権限がないため、
+// 見つからないタグは付けずに投稿する)。
 
 const https = require('node:https');
 const { URL } = require('node:url');
+const { loadJukuConfig } = require('./config');
 
 function getWpConfig() {
   const baseUrl = process.env.WP_URL;
@@ -65,8 +73,9 @@ async function findTermId(config, taxonomy, name) {
 
 async function publishPost(post) {
   const config = getWpConfig();
+  const jukuConfig = loadJukuConfig();
+  const categoryId = jukuConfig.wordpress && jukuConfig.wordpress.category_id;
 
-  const categoryId = await findTermId(config, 'categories', post.category);
   const tagNames = (post.keywords || '').split(',').map((k) => k.trim()).filter(Boolean);
   const tagIds = [];
   for (const name of tagNames) {
