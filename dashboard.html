@@ -375,6 +375,21 @@ async function openDetail(id) {
     </div>`;
   }
 
+  const pr = p.plan_rationale_parsed;
+  let prHtml = '';
+  if (pr && pr.selection_reasons) {
+    const breakdown = pr.selection_score_breakdown || {};
+    prHtml = `<div class="fact-check-box">
+      <strong>企画採用理由(智谷)</strong>
+      <div class="fact-check-item"><span class="fc-result ${(pr.selection_score || 0) >= 70 ? 'fc-ok' : 'fc-ng'}">${pr.selection_score ?? '-'}点</span><span>${escapeHtml(pr.selection_reasons || '')}</span></div>
+      <div class="fact-check-item"><span></span><span>検索意図:${breakdown.search_intent_match ?? '-'} / 地域性:${breakdown.local_relevance ?? '-'} / 季節性:${breakdown.seasonality ?? '-'} / 悩みの強さ:${breakdown.reader_concern_strength ?? '-'} / 差別化:${breakdown.differentiation ?? '-'} / 素材:${breakdown.material_availability ?? '-'}</span></div>
+      ${pr.search_intent ? `<div class="fact-check-item"><span></span><span>検索意図: ${escapeHtml(pr.search_intent)}</span></div>` : ''}
+      ${pr.reader_problem ? `<div class="fact-check-item"><span></span><span>読者の悩み: ${escapeHtml(pr.reader_problem)}</span></div>` : ''}
+      ${pr.difference_from_past_posts ? `<div class="fact-check-item"><span></span><span>過去記事との違い: ${escapeHtml(pr.difference_from_past_posts)}</span></div>` : ''}
+      ${pr.cta_reason ? `<div class="fact-check-item"><span></span><span>CTAの理由: ${escapeHtml(pr.cta_reason)}</span></div>` : ''}
+    </div>`;
+  }
+
   document.getElementById('detailCard').innerHTML = `
     <span class="badge badge-${p.status}">${statusLabel(p.status)}</span>
     <h2 class="detail-title">${escapeHtml(p.title)}</h2>
@@ -389,6 +404,7 @@ async function openDetail(id) {
       ${p.status === 'scheduled' && p.published_at ? `<div>公開予定日</div><div>${escapeHtml(p.published_at.slice(0, 10))}</div>` : ''}
       ${p.wp_link ? `<div>${p.status === 'scheduled' ? '公開予定URL' : '公開URL'}</div><div><a href="${escapeHtml(p.wp_link)}" target="_blank" rel="noopener">${escapeHtml(p.wp_link)}</a></div>` : ''}
     </div>
+    ${prHtml}
     ${fcHtml}
     ${simHtml}
     <div class="article-preview">${p.body_html}</div>

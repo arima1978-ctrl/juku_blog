@@ -20,6 +20,12 @@ const STATUS_MAP = {
   escalated: 'rejected',      // 差し戻し上限(2回)に達し人間判断が必要 → 要対応として表示
 };
 
+// frontmatterのオブジェクト値をDB保存用のJSON文字列に変換する(既に文字列ならそのまま)
+function toJsonTextOrNull(value) {
+  if (!value) return null;
+  return typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+}
+
 function main() {
   const relOrAbs = process.argv[2];
   if (!relOrAbs) {
@@ -49,9 +55,6 @@ function main() {
 
   const bodyMd = content.trim();
   const bodyHtml = marked.parse(bodyMd);
-  const factCheckReport = fm.fact_check_report
-    ? (typeof fm.fact_check_report === 'string' ? fm.fact_check_report : JSON.stringify(fm.fact_check_report, null, 2))
-    : null;
 
   const existing = getPostBySlug(fm.slug);
   const fields = {
@@ -62,7 +65,7 @@ function main() {
     meta_description: fm.meta_description || null,
     body_md: bodyMd,
     body_html: bodyHtml,
-    fact_check_report: factCheckReport,
+    fact_check_report: toJsonTextOrNull(fm.fact_check_report),
     status: dbStatus,
     reviewer_note: fm.reviewer_note || (dbStatus === 'rejected' ? '自動エスカレーション: 石橋のチェックで2回差し戻し。要人間確認' : null),
     // 季節テーマ(config/seasonal_topics.yaml)を採用した記事の場合のみ智谷が企画時に設定する。
@@ -70,9 +73,9 @@ function main() {
     seasonal_topic_id: fm.seasonal_topic_id || null,
     publish_window_end: fm.publish_window_end || null,
     // scripts/check_similarity.js が設定する過去記事との類似度チェック結果
-    similarity_check: fm.similarity_check
-      ? (typeof fm.similarity_check === 'string' ? fm.similarity_check : JSON.stringify(fm.similarity_check, null, 2))
-      : null,
+    similarity_check: toJsonTextOrNull(fm.similarity_check),
+    // 智谷が設定する企画採用理由・採点結果
+    plan_rationale: toJsonTextOrNull(fm.plan_rationale),
   };
 
   if (existing) {

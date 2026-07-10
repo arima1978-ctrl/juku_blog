@@ -28,10 +28,19 @@ model: sonnet
 2. 今日の日付の曜日から `config/calendar.yaml` の `weekdays` エントリを引く(手順1で採用しなかった場合の基本テーマ)。
 3. 今日の月が `config/calendar.yaml` の `seasons` のいずれかに該当すれば、季節テーマを優先する(曜日テーマと矛盾しない範囲で組み合わせる。例: 火曜+定期テスト前季節 →「定期テスト対策」で一致するのでそのまま採用)。
 4. `data/topics/YYYY-MM-DD.json` から、決定したテーマに合う・かつ `data/recent_titles.json` と重複しないネタを選ぶ。合うネタがなければ一般論として企画してよい(その場合 `sourceTopicIds` は空配列)。
+   `data/recent_titles.json`に似たテーマが既にある場合は、単に諦めるのではなく次のいずれかで差別化する: (a)対象学年を変える (b)教科を変える (c)保護者相談型にする(`parent_qa_used`を軸にする) (d)チェックリスト型にする (e)地域情報型にする (f)塾長の気づき型にする(`episode_used`を軸にする) (g)別テーマに差し替える。採用した差別化方法は`difference_from_past_posts`(手順8)に明記する。
 5. 日曜担当、または手順1で`episode_preferred: true`のテーマを採用した場合: `data/episodes.md` に使える未使用エピソードがあれば、それを軸にした企画にする。なければ他カテゴリで代替する(`config/calendar.yaml` の `fallback_note` 通り)。
    土曜(保護者向けコラム)や勉強のコツ系のテーマで、`data/parent_qa.md` に合う未使用Q&Aがあれば、実際の相談を導入に使った企画にする(なければ通常通り一般論で企画する)。
 6. 小学生保護者向けか中学生保護者向けかで対象読者を1つに絞る(欲張って両方にしない。手順1採用時は`target`の範囲内で選ぶ)。
-7. `data/plans/YYYY-MM-DD.json` に以下の形式で保存する:
+7. **採用案の採点**: 決定した企画を以下の6軸で自己採点する(満点100点)。
+   - 検索意図との一致(0-25点): 保護者が実際に検索しそうなキーワード・悩みに合っているか
+   - 小幡校との地域関連性(0-20点): 守山区・小幡・瓢箪山等の地域性、または近隣校との関連が自然に組み込めるか
+   - 季節性(0-15点): 今の時期に読む価値があるか(手順1で季節テーマ採用時は高得点になりやすい)
+   - 保護者の悩みの強さ(0-15点): 保護者が切実に困っている・気にしているテーマか
+   - 過去記事との差別化(0-15点): `data/recent_titles.json`と比べて切り口が十分に異なるか
+   - 校舎素材の有無(0-10点): `data/episodes.md`/`data/parent_qa.md`の実話素材が使えるか
+   合計が**70点未満の場合は原則として企画をやり直す**(手順1に戻って次点の季節テーマを検討する、または曜日テーマ内で切り口を変える)。どうしても70点に届く案が無い場合のみ、その旨を`selection_reasons`に明記した上で70点未満のまま採用してよい。
+8. `data/plans/YYYY-MM-DD.json` に以下の形式で保存する:
 
 ```json
 {
@@ -53,11 +62,29 @@ model: sonnet
   "source_topic_ids": ["早瀬のtopics.jsonのid、あれば"],
   "episode_used": "使用するdata/episodes.mdのエピソード文面、なければnull",
   "parent_qa_used": "使用するdata/parent_qa.mdのQ&A(質問の要旨+回答の要点)、なければnull",
-  "avoid_notes": "recent_titles.json/rejected_notes.jsonを踏まえて避けたこと(檜山への申し送り)"
+  "avoid_notes": "recent_titles.json/rejected_notes.jsonを踏まえて避けたこと(檜山への申し送り)",
+  "search_intent": "想定する検索意図・検索クエリ(例: 「守山区 中学生 塾」で探している保護者の悩みに応える)",
+  "reader_problem": "読者(保護者)が抱えている具体的な悩み・不安",
+  "local_connection": "地域性をどう組み込んだか(学校名・地名・季節行事等)",
+  "unique_material": "使用する校舎独自の素材(episode_used/parent_qa_usedの要約、無ければ「なし(一般論)」)",
+  "facts_allowed": "この記事で使ってよい確認済み事実(source_topic_ids/docs/等の裏付けがあるもの)",
+  "facts_prohibited": "この記事で使ってはいけない事項(未確認の実績数値・偏差値55未満の高校名等、檜山への注意喚起)",
+  "cta_reason": "選んだCTA(体験授業/学習相談等)がこの記事内容に合っている理由",
+  "difference_from_past_posts": "data/recent_titles.jsonの類似記事と比べて何が違うか",
+  "selection_score": "手順7で採点した合計点(0-100の数値)",
+  "selection_score_breakdown": {
+    "search_intent_match": "0-25の数値",
+    "local_relevance": "0-20の数値",
+    "seasonality": "0-15の数値",
+    "reader_concern_strength": "0-15の数値",
+    "differentiation": "0-15の数値",
+    "material_availability": "0-10の数値"
+  },
+  "selection_reasons": "この企画を採用した理由の要約(70点未満で採用した場合はその理由も明記)"
 }
 ```
 
-8. 実行サマリーを報告する: 採用した季節テーマ(あれば)または曜日テーマ/季節、タイトル案、避けた重複・過去の指摘があればその内容。
+9. 実行サマリーを報告する: 採用した季節テーマ(あれば)または曜日テーマ/季節、タイトル案、採点結果(合計点)、避けた重複・過去の指摘があればその内容。
 
 # 禁止事項
 

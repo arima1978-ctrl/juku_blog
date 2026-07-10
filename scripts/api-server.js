@@ -28,6 +28,7 @@ const { publishPost } = require('./lib/wordpress');
 const { sendTelegram } = require('./lib/telegram');
 const { logError } = require('./log_error');
 const { computeNextScheduleSlot, isWithinPublishWindow } = require('./lib/schedule');
+const { safeJsonParse } = require('./lib/json_field');
 
 const PORT = process.env.PORT || 3013;
 const DASHBOARD_URL = process.env.DASHBOARD_URL || `http://localhost:${PORT}`;
@@ -60,23 +61,12 @@ app.get('/api/posts', (req, res) => {
 app.get('/api/posts/:id', (req, res) => {
   const post = getPostById(Number(req.params.id));
   if (!post) return res.status(404).json({ error: 'not_found' });
-  let factCheckReport = null;
-  if (post.fact_check_report) {
-    try {
-      factCheckReport = JSON.parse(post.fact_check_report);
-    } catch {
-      factCheckReport = { raw: post.fact_check_report };
-    }
-  }
-  let similarityCheck = null;
-  if (post.similarity_check) {
-    try {
-      similarityCheck = JSON.parse(post.similarity_check);
-    } catch {
-      similarityCheck = { raw: post.similarity_check };
-    }
-  }
-  res.json({ ...post, fact_check_report_parsed: factCheckReport, similarity_check_parsed: similarityCheck });
+  res.json({
+    ...post,
+    fact_check_report_parsed: safeJsonParse(post.fact_check_report),
+    similarity_check_parsed: safeJsonParse(post.similarity_check),
+    plan_rationale_parsed: safeJsonParse(post.plan_rationale),
+  });
 });
 
 app.post('/api/posts/:id/approve', async (req, res) => {

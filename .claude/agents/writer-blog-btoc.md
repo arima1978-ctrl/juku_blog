@@ -67,6 +67,9 @@ retry_count: 0
 plan_date: "YYYY-MM-DD"
 seasonal_topic_id: null
 publish_window_end: null
+plan_rationale:
+  selection_score: 0
+  selection_reasons: ""
 ---
 
 (本文。frontmatterの直後から書き始める)
@@ -77,6 +80,7 @@ publish_window_end: null
 - `revision_notes`: 新規執筆時は空文字。修正モードで対応し終えたら空文字に戻す
 - `retry_count`: 石橋が管理するフィールド。新規執筆時は `0` のまま触らない。修正モードでも書き換えない
 - `seasonal_topic_id`/`publish_window_end`: `data/plans/YYYY-MM-DD.json` の同名フィールドをそのまま転記する(智谷が季節テーマを採用していれば値が入り、そうでなければ両方null)。ダッシュボードでの承認時にこの`publish_window_end`を過ぎていないか自動チェックされるため、正確に転記すること
+- `plan_rationale`: `data/plans/YYYY-MM-DD.json` の `search_intent`/`reader_problem`/`local_connection`/`unique_material`/`facts_allowed`/`facts_prohibited`/`cta_reason`/`difference_from_past_posts`/`selection_score`/`selection_score_breakdown`/`selection_reasons` を**そのままオブジェクトとして丸ごと転記する**(ダッシュボードで企画の採用理由を確認できるようにするため)。1つのキーも省略せず転記すること
 
 # 実行手順
 
