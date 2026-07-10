@@ -13,12 +13,21 @@ const SCHEMA_PATH = path.join(ROOT, 'db', 'schema.sql');
 
 let db = null;
 
+function ensureColumn(conn, table, column, type) {
+  const cols = conn.prepare(`PRAGMA table_info(${table})`).all();
+  if (!cols.some((c) => c.name === column)) {
+    conn.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+  }
+}
+
 function getDb() {
   if (db) return db;
   fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
   db = new DatabaseSync(DB_PATH);
   const schema = fs.readFileSync(SCHEMA_PATH, 'utf8');
   db.exec(schema);
+  // フェーズ2(WordPress自動投稿)で追加: 実際に投稿されたWordPress側のURL
+  ensureColumn(db, 'posts', 'wp_link', 'TEXT');
   return db;
 }
 
@@ -102,6 +111,15 @@ function setStatus(id, status, reviewerNote) {
   return Number(result.changes);
 }
 
+function setPublished(id, { wpPostId, wpLink, publishedAt }) {
+  const conn = getDb();
+  const stmt = conn.prepare(
+    "UPDATE posts SET status = 'published', wp_post_id = :wp_post_id, wp_link = :wp_link, published_at = :published_at WHERE id = :id"
+  );
+  const result = stmt.run({ wp_post_id: String(wpPostId), wp_link: wpLink, published_at: publishedAt, id });
+  return Number(result.changes);
+}
+
 function listRejectedWithNotes(limit = 20) {
   const conn = getDb();
   const stmt = conn.prepare(
@@ -138,6 +156,7 @@ module.exports = {
   listPosts,
   listTitlesSince,
   setStatus,
+  setPublished,
   listRejectedWithNotes,
   monthlySummary,
   DB_PATH,

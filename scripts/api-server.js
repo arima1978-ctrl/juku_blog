@@ -4,18 +4,28 @@
 // dashboard.html を静的配信しつつ、承認/差し戻し/エピソード追加を受け付ける。
 // 起動: node scripts/api-server.js (既定ポート3013。PORT環境変数で変更可)
 
+const path = require('node:path');
+try {
+  process.loadEnvFile(path.join(__dirname, '..', '.env'));
+} catch {
+  // .env が無い場合はスキップ(WordPress自動投稿・Telegram通知は未設定として動作)
+}
+
 const express = require('express');
 const fs = require('node:fs');
-const path = require('node:path');
 const {
   listPosts,
   getPostById,
   setStatus,
+  setPublished,
   listRejectedWithNotes,
   monthlySummary,
 } = require('./lib/db');
 const { listEpisodes, appendEpisode } = require('./lib/episodes');
 const { ROOT } = require('./lib/config');
+const { publishPost } = require('./lib/wordpress');
+const { sendTelegram } = require('./lib/telegram');
+const { logError } = require('./log_error');
 
 const PORT = process.env.PORT || 3013;
 const ERRORS_PATH = path.join(ROOT, 'logs', 'errors.json');
@@ -48,10 +58,26 @@ app.get('/api/posts/:id', (req, res) => {
   res.json({ ...post, fact_check_report_parsed: factCheckReport });
 });
 
-app.post('/api/posts/:id/approve', (req, res) => {
-  const changes = setStatus(Number(req.params.id), 'approved', null);
+app.post('/api/posts/:id/approve', async (req, res) => {
+  const id = Number(req.params.id);
+  const changes = setStatus(id, 'approved', null);
   if (changes === 0) return res.status(404).json({ error: 'not_found' });
-  res.json({ ok: true });
+
+  // 承認と同時にWordPressへ自動投稿する(フェーズ2)。失敗しても承認自体は成立させ、
+  // ステータスはapprovedのまま残す(再度「承認」を押すと投稿をリトライできる)。
+  const post = getPostById(id);
+  let published = false;
+  try {
+    const result = await publishPost(post);
+    setPublished(id, { wpPostId: result.wpPostId, wpLink: result.link, publishedAt: new Date().toISOString() });
+    published = true;
+    await sendTelegram(`✅ ブログ記事を公開しました\n${post.title}\n${result.link}`);
+  } catch (err) {
+    logError('wordpress_publish', `${post.title}: ${err.message}`);
+    await sendTelegram(`⚠️ WordPress投稿に失敗しました(承認自体は完了。ダッシュボードで再度「承認」を押すとリトライできます)\n${post.title}\n${err.message}`);
+  }
+
+  res.json({ ok: true, published });
 });
 
 app.post('/api/posts/:id/reject', (req, res) => {

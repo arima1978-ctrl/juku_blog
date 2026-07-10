@@ -86,14 +86,23 @@ juku_blog/
     └── posts.sqlite             ← 記事DB(gitignore対象。init-dbで生成)
 ```
 
-## フェーズ2(未実装・参考)
+## フェーズ2(実装済み・認証情報投入待ち)
 
-承認済み記事の自社HP(WordPress)への自動投稿。`posts.sqlite` の `status=approved` の記事を
-WordPress REST API(`/wp-json/wp/v2/posts`)へ投稿し、`wp_post_id`・`published_at` を記録するだけで
-接続できるようスキーマを設計済み。準備事項:
+ダッシュボードで「承認」を押すと、`scripts/lib/wordpress.js` が即座にWordPress REST API
+(`/wp-json/wp/v2/posts`)へ記事を投稿(公開)し、`wp_post_id`・`wp_link`・`published_at` を記録する。
+結果は`scripts/lib/telegram.js`経由でTelegramにも通知される(`.env`未設定ならスキップ)。
 
-- WordPress管理画面でアプリケーションパスワードを発行(ユーザー → プロフィール → アプリケーションパスワード)
-- 投稿専用ユーザーを「投稿者」権限で作成(管理者アカウントを自動化に使わない)
-- `https://自社HPのURL/wp-json/wp/v2/posts` にアクセスしJSONが返ればREST API有効
+セットアップ手順(`.env.example` も参照):
 
-フェーズ1では、承認済み記事は「本文コピー」ボタン(HTML形式/テキスト形式)で手動でWordPressに貼り付ける運用とする。
+1. WordPress管理画面(`https://an-english.com/wp/wp-admin`)で自動投稿専用ユーザーを
+   「投稿者」権限で作成する(管理者アカウントを自動化に使わない)
+2. そのユーザーのプロフィール画面 → アプリケーションパスワード で新規発行する
+3. プロジェクト直下に `.env` を作成し、`WP_URL` / `WP_USERNAME` / `WP_APP_PASSWORD` を設定する
+   (Telegram通知も使う場合は `TELEGRAM_TOKEN` / `TELEGRAM_CHAT_ID` も設定)
+4. 「地域情報/勉強のコツ/入試情報/保護者コラム」をWordPress側のカテゴリーとして事前に作成しておく
+   (投稿者権限では新規カテゴリー・タグの作成ができないため、未作成のものは付与されずスキップされる)
+
+`.env` が未設定の間は投稿がエラーになり `logs/errors.json` に記録されるが、承認自体は成立する
+(ステータスは `approved` のまま残り、ダッシュボードで再度「承認」を押すと投稿をリトライできる)。
+承認済み記事は引き続き「本文コピー」ボタン(HTML形式/テキスト形式)でも取得できるので、
+自動投稿が失敗した場合の手動フォールバックとして使える。

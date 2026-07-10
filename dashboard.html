@@ -365,6 +365,7 @@ async function openDetail(id) {
       <div>メタディスクリプション</div><div>${escapeHtml(p.meta_description || '-')}</div>
       <div>生成日</div><div>${p.created_at}</div>
       ${p.reviewer_note ? `<div>差し戻しメモ</div><div>${escapeHtml(p.reviewer_note)}</div>` : ''}
+      ${p.wp_link ? `<div>公開URL</div><div><a href="${escapeHtml(p.wp_link)}" target="_blank" rel="noopener">${escapeHtml(p.wp_link)}</a></div>` : ''}
     </div>
     ${fcHtml}
     <div class="article-preview">${p.body_html}</div>

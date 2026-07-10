@@ -8,10 +8,7 @@ const { ROOT } = require('./lib/config');
 
 const ERRORS_PATH = path.join(ROOT, 'logs', 'errors.json');
 
-function main() {
-  const step = process.argv[2] || 'unknown_step';
-  const detail = process.argv[3] || '';
-
+function logError(step, detail) {
   let errors = [];
   if (fs.existsSync(ERRORS_PATH)) {
     try {
@@ -36,4 +33,8 @@ function main() {
   console.error(`[log_error] 記録しました: ${step} - ${detail}`);
 }
 
-main();
+if (require.main === module) {
+  logError(process.argv[2] || 'unknown_step', process.argv[3] || '');
+}
+
+module.exports = { logError };

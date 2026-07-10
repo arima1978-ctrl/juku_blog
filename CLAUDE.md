@@ -6,7 +6,7 @@
 ## フェーズ
 
 - **フェーズ1(実装済み)**: 記事の自動生成 → ローカル保存(`data/posts.sqlite`) → `dashboard.html` でのプレビュー・承認/差し戻し管理
-- **フェーズ2(未実装)**: 承認済み記事のWordPress自動投稿。`posts.sqlite` の `wp_post_id` / `published_at` はこのために予約済み
+- **フェーズ2(実装済み、認証情報投入待ち)**: ダッシュボードで「承認」を押すと同時に`scripts/lib/wordpress.js`がWordPress REST API(`/wp-json/wp/v2/posts`)へ自動投稿し、`posts.sqlite`の`wp_post_id`/`wp_link`/`published_at`を記録する。投稿結果は`scripts/lib/telegram.js`でTelegram通知する(任意)。`.env`(`.env.example`参照)にWP_URL/WP_USERNAME/WP_APP_PASSWORD/TELEGRAM_TOKEN/TELEGRAM_CHAT_IDの設定が必要。未設定の間は投稿が失敗しログに記録されるが、承認自体は成立する(ステータスはapprovedのまま。再度「承認」を押すとリトライされる)
 
 ## パイプライン全体像
 
@@ -45,7 +45,7 @@ scripts/sync_draft_to_db.js  : verified→review_pending / escalated→rejected 
 
 **draft frontmatter(パイプライン内部)**: `written` → `edited` → `verified` / `revision_needed` / `escalated`
 
-**posts.sqlite(人間向け)**: `review_pending`(確認待ち) → `approved`(承認) or `rejected`(差し戻し) → `published`(フェーズ2で自動化予定、現状は手動更新)
+**posts.sqlite(人間向け)**: `review_pending`(確認待ち) → `approved`(承認) or `rejected`(差し戻し) → `published`(承認と同時に自動投稿成功した場合。失敗時はapprovedのまま)
 
 ## 設定ファイル
 
