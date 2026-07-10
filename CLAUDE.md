@@ -34,8 +34,8 @@ scripts/sync_draft_to_db.js  : verified→review_pending / escalated→rejected 
 | エージェント | 読む | 書く |
 |---|---|---|
 | researcher-local(早瀬) | `config/juku.yaml` | `data/topics/YYYY-MM-DD.json` |
-| planner-blog-btoc(智谷) | `config/*.yaml`, `data/topics/`, `data/recent_titles.json`, `data/rejected_notes.json`, `data/episodes.md` | `data/plans/YYYY-MM-DD.json` |
-| writer-blog-btoc(檜山) | `config/juku.yaml`, `data/plans/`, `data/episodes.md` | `data/drafts/YYYY-MM-DD-{slug}.md` |
+| planner-blog-btoc(智谷) | `config/*.yaml`, `data/topics/`, `data/recent_titles.json`, `data/rejected_notes.json`, `data/episodes.md`, `data/parent_qa.md` | `data/plans/YYYY-MM-DD.json` |
+| writer-blog-btoc(檜山) | `config/juku.yaml`, `data/plans/`, `data/episodes.md`, `data/parent_qa.md` | `data/drafts/YYYY-MM-DD-{slug}.md` |
 | editor-btoc(赤羽) | 同上のdraft | 同じdraftファイル(校正・meta_description・status更新のみ) |
 | verifier-local(石橋) | `config/juku.yaml`, `data/topics/`, `data/plans/`, `data/episodes.md`, 対象draft | 同じdraftファイル(本文修正・fact_check_report・status・retry_count) |
 

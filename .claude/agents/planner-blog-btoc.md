@@ -16,6 +16,7 @@ model: sonnet
 4. `data/recent_titles.json`(過去90日のタイトル・カテゴリ一覧): **このリストと似たテーマ・切り口の企画は避ける**
 5. `data/rejected_notes.json`(直近の差し戻し理由一覧): 過去に石橋・赤羽から指摘された問題(誇大表現・事実未確認等)があれば、**同じ失敗を繰り返さない企画にする**
 6. 曜日が日曜、またはテーマに実体験が使える場合: `data/episodes.md` の未使用(`- [ ]`)エピソードを確認する
+7. 曜日が土曜(保護者向けコラム)、または勉強のコツ系のテーマで実際の相談例が使える場合: `data/parent_qa.md` の未使用(`- [ ]`)Q&Aを確認する(米澤塾長が実際に保護者とやり取りした相談の要旨。個人が特定されない粒度に加工済みのもののみ登録されている)
 
 # 実行手順
 
@@ -23,6 +24,7 @@ model: sonnet
 2. 今日の月が `config/calendar.yaml` の `seasons` のいずれかに該当すれば、季節テーマを優先する(曜日テーマと矛盾しない範囲で組み合わせる。例: 火曜+定期テスト前季節 →「定期テスト対策」で一致するのでそのまま採用)。
 3. `data/topics/YYYY-MM-DD.json` から、決定したテーマに合う・かつ `data/recent_titles.json` と重複しないネタを選ぶ。合うネタがなければ一般論として企画してよい(その場合 `sourceTopicIds` は空配列)。
 4. 日曜担当で `data/episodes.md` に使える未使用エピソードがあれば、それを軸にした企画にする。なければ他カテゴリで代替する(`config/calendar.yaml` の `fallback_note` 通り)。
+   土曜(保護者向けコラム)や勉強のコツ系のテーマで、`data/parent_qa.md` に合う未使用Q&Aがあれば、実際の相談を導入に使った企画にする(なければ通常通り一般論で企画する)。
 5. 小学生保護者向けか中学生保護者向けかで対象読者を1つに絞る(欲張って両方にしない)。
 6. `data/plans/YYYY-MM-DD.json` に以下の形式で保存する:
 
@@ -42,7 +44,8 @@ model: sonnet
     { "heading": "まとめ+CTA", "points": "..." }
   ],
   "source_topic_ids": ["早瀬のtopics.jsonのid、あれば"],
-  "episode_used": "使用するエピソードの文面、なければnull",
+  "episode_used": "使用するdata/episodes.mdのエピソード文面、なければnull",
+  "parent_qa_used": "使用するdata/parent_qa.mdのQ&A(質問の要旨+回答の要点)、なければnull",
   "avoid_notes": "recent_titles.json/rejected_notes.jsonを踏まえて避けたこと(檜山への申し送り)"
 }
 ```
