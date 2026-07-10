@@ -228,6 +228,7 @@
     <div class="tabbar">
       <button data-tab="posts" class="active">記事一覧</button>
       <button data-tab="episodes">エピソード素材</button>
+      <button data-tab="calendar">テーマカレンダー</button>
     </div>
 
     <div id="postsTab">
@@ -260,6 +261,15 @@
         </div>
         <ul class="episode-list" id="episodeList"></ul>
       </div>
+    </div>
+
+    <div id="calendarTab" style="display:none;">
+      <p style="color:var(--muted, #888); margin: 0 0 12px;">
+        今日から1年分の予定テーマ(見通し)です。季節テーマバンク(config/seasonal_topics.yaml)が
+        優先され、対象期間外は曜日テーマ(config/calendar.yaml)にフォールバックします。
+        実際の企画時は過去記事との重複回避等も加味されるため、確定ではありません。
+      </p>
+      <div id="calendarList"></div>
     </div>
   </div>
 
@@ -529,6 +539,44 @@ document.getElementById('episodeSubmit').addEventListener('click', async () => {
   loadEpisodes();
 });
 
+// --- テーマカレンダー ---
+let calendarLoaded = false;
+async function loadThemeCalendar() {
+  const data = await fetchJson('api/theme-calendar?days=365');
+  const byMonth = new Map();
+  for (const day of data.calendar) {
+    const monthKey = day.date.slice(0, 7); // YYYY-MM
+    if (!byMonth.has(monthKey)) byMonth.set(monthKey, []);
+    byMonth.get(monthKey).push(day);
+  }
+
+  const html = [...byMonth.entries()].map(([monthKey, days]) => {
+    const rows = days.map(day => {
+      const dateLabel = day.date.slice(5).replace('-', '/');
+      if (day.source === 'seasonal_topic') {
+        return `<div class="fact-check-item">
+          <span class="fc-result fc-ok">${escapeHtml(dateLabel)}</span>
+          <span>${escapeHtml(day.title)}(${escapeHtml(day.category)})${day.alternativeCount ? ` <span style="color:var(--muted,#888);">他候補${day.alternativeCount}件</span>` : ''}</span>
+        </div>`;
+      }
+      const themeText = day.weekdayLabel
+        ? `${escapeHtml(day.weekdayLabel)}${day.category ? `(${escapeHtml(day.category)})` : ''}`
+        : '(曜日テーマ未設定)';
+      const seasonText = day.season ? ` ・季節文脈: ${escapeHtml(day.season.label)}` : '';
+      return `<div class="fact-check-item">
+        <span>${escapeHtml(dateLabel)}</span>
+        <span>${themeText}${seasonText}</span>
+      </div>`;
+    }).join('');
+    return `<details class="fact-check-box" ${monthKey === data.start.slice(0, 7) ? 'open' : ''}>
+      <summary style="cursor:pointer;font-weight:bold;">${monthKey.replace('-', '年')}月</summary>
+      ${rows}
+    </details>`;
+  }).join('');
+
+  document.getElementById('calendarList').innerHTML = html || '<p>データがありません</p>';
+}
+
 // --- タブ切り替え ---
 document.querySelectorAll('.tabbar button').forEach(btn => {
   btn.addEventListener('click', () => {
@@ -537,7 +585,12 @@ document.querySelectorAll('.tabbar button').forEach(btn => {
     const tab = btn.dataset.tab;
     document.getElementById('postsTab').style.display = tab === 'posts' ? 'block' : 'none';
     document.getElementById('episodesTab').style.display = tab === 'episodes' ? 'block' : 'none';
+    document.getElementById('calendarTab').style.display = tab === 'calendar' ? 'block' : 'none';
     if (tab === 'episodes') loadEpisodes();
+    if (tab === 'calendar' && !calendarLoaded) {
+      calendarLoaded = true;
+      loadThemeCalendar();
+    }
   });
 });
 

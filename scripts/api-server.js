@@ -30,6 +30,7 @@ const { sendTelegram } = require('./lib/telegram');
 const { logError } = require('./log_error');
 const { computeNextScheduleSlot, isWithinPublishWindow, checkStreak } = require('./lib/schedule');
 const { safeJsonParse } = require('./lib/json_field');
+const { projectThemeCalendar } = require('./lib/theme_calendar');
 
 const PORT = process.env.PORT || 3013;
 const DASHBOARD_URL = process.env.DASHBOARD_URL || `http://localhost:${PORT}`;
@@ -175,6 +176,16 @@ app.get('/api/summary', (req, res) => {
   }
 
   res.json({ ...summary, month: yearMonthPrefix, errors });
+});
+
+// ダッシュボードの「テーマカレンダー」表示用: 指定日から最大366日分の予定テーマを
+// 智谷の企画ロジックと同じ優先順位(季節テーマバンク→曜日テーマ)で計算して返す。
+// 実際の生成は行わない(あくまで見通し表示)。
+app.get('/api/theme-calendar', (req, res) => {
+  const days = Math.min(Number(req.query.days) || 365, 366);
+  const start = req.query.start || new Date().toISOString().slice(0, 10);
+  const calendar = projectThemeCalendar(start, days);
+  res.json({ start, days, calendar });
 });
 
 app.get('/api/episodes', (req, res) => {
