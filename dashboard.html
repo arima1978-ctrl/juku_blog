@@ -330,9 +330,9 @@ async function loadPosts() {
       <div class="row1">
         <div>
           <div class="title">${escapeHtml(p.title)}</div>
-          <div class="meta">${escapeHtml(p.category)} ・ ${p.created_at.slice(0,10)}</div>
+          <div class="meta">${escapeHtml(p.category)} ・ ${p.created_at.slice(0,10)}${p.publish_window_end ? ` ・ 公開期限:${escapeHtml(p.publish_window_end)}${isPastDate(p.publish_window_end) ? '(期限超過)' : ''}` : ''}${p.wp_status ? ` ・ WP:${escapeHtml(p.wp_status)}` : ''}</div>
         </div>
-        <span class="badge badge-${p.status}">${statusLabel(p.status)}</span>${p.wp_sync_error ? ' <span title="WordPress同期で問題を検知" style="color:var(--red);">⚠️</span>' : ''}
+        <span class="badge badge-${p.status}">${statusLabel(p.status)}</span>${p.wp_sync_error ? ' <span title="WordPress同期で問題を検知" style="color:var(--red);">⚠️</span>' : ''}${p.publish_window_end && isPastDate(p.publish_window_end) && p.status !== 'published' && p.status !== 'scheduled' ? ' <span title="公開期限を過ぎています" style="color:var(--red);">⏰</span>' : ''}
       </div>
     </div>
   `).join('');
@@ -385,6 +385,7 @@ async function openDetail(id) {
       <div class="fact-check-item"><span></span><span>検索意図:${breakdown.search_intent_match ?? '-'} / 地域性:${breakdown.local_relevance ?? '-'} / 季節性:${breakdown.seasonality ?? '-'} / 悩みの強さ:${breakdown.reader_concern_strength ?? '-'} / 差別化:${breakdown.differentiation ?? '-'} / 素材:${breakdown.material_availability ?? '-'}</span></div>
       ${pr.search_intent ? `<div class="fact-check-item"><span></span><span>検索意図: ${escapeHtml(pr.search_intent)}</span></div>` : ''}
       ${pr.reader_problem ? `<div class="fact-check-item"><span></span><span>読者の悩み: ${escapeHtml(pr.reader_problem)}</span></div>` : ''}
+      ${pr.local_connection ? `<div class="fact-check-item"><span></span><span>地域との関連: ${escapeHtml(pr.local_connection)}</span></div>` : ''}
       ${pr.difference_from_past_posts ? `<div class="fact-check-item"><span></span><span>過去記事との違い: ${escapeHtml(pr.difference_from_past_posts)}</span></div>` : ''}
       ${pr.cta_reason ? `<div class="fact-check-item"><span></span><span>CTAの理由: ${escapeHtml(pr.cta_reason)}</span></div>` : ''}
     </div>`;
@@ -400,6 +401,8 @@ async function openDetail(id) {
       ${(ci.episode_sources || []).length ? `<div class="fact-check-item"><span class="fc-result ${hasInvalid && (cc.invalidEpisodeIds||[]).length ? 'fc-ng' : 'fc-ok'}">エピソード</span><span>${ci.episode_sources.map(escapeHtml).join(', ')}</span></div>` : ''}
       ${(ci.parent_qa_sources || []).length ? `<div class="fact-check-item"><span class="fc-result ${hasInvalid && (cc.invalidParentQaIds||[]).length ? 'fc-ng' : 'fc-ok'}">保護者Q&A</span><span>${ci.parent_qa_sources.map(escapeHtml).join(', ')}</span></div>` : ''}
       ${(ci.web_sources || []).map(s => `<div class="fact-check-item"><span class="fc-result fc-ok">Web</span><span><a href="${escapeHtml(s.url)}" target="_blank" rel="noopener">${escapeHtml(s.source_name || s.url)}</a>${s.published_at ? ` (${escapeHtml(s.published_at)})` : ''}</span></div>`).join('')}
+      ${ci.episode_used_text ? `<div class="fact-check-item"><span></span><span>使用エピソード本文: ${escapeHtml(ci.episode_used_text)}</span></div>` : ''}
+      ${ci.parent_qa_used_text ? `<div class="fact-check-item"><span></span><span>使用Q&A本文: ${escapeHtml(ci.parent_qa_used_text)}</span></div>` : ''}
       ${hasInvalid ? `<div class="fact-check-item"><span class="fc-result fc-ng">要確認</span><span>存在しない出典ID: ${[...(cc.invalidEpisodeIds||[]), ...(cc.invalidParentQaIds||[])].map(escapeHtml).join(', ')}</span></div>` : ''}
     </div>`;
   }
@@ -425,6 +428,7 @@ async function openDetail(id) {
     ${fcHtml}
     ${simHtml}
     <div class="article-preview">${p.body_html}</div>
+    <div id="schedulePreview" class="fact-check-box">予約予定日を確認中...</div>
     <div class="actions">
       <button class="primary" onclick="approvePost(${p.id})">承認</button>
       <button class="danger" onclick="toggleRejectNote()">差し戻し</button>
@@ -438,6 +442,25 @@ async function openDetail(id) {
   `;
 
   window.currentPost = p;
+  loadSchedulePreview(p.id);
+}
+
+// 承認ボタンを押す前に、実際に承認した場合の予約予定日・警告を表示する
+async function loadSchedulePreview(id) {
+  const el = document.getElementById('schedulePreview');
+  try {
+    const preview = await fetchJson(`api/posts/${id}/schedule-preview`);
+    if (!preview.withinWindow) {
+      el.className = 'fact-check-box has-issue';
+      el.innerHTML = `<strong>⚠️ 承認しても自動投稿されません</strong><div class="fact-check-item"><span></span><span>予約予定日(${escapeHtml(preview.scheduledDate)})が公開可能期限(〜${escapeHtml(preview.publishWindowEnd)})を超えています。承認は成立しますが、投稿は保留され人間の確認が必要になります。</span></div>`;
+    } else {
+      el.className = 'fact-check-box';
+      el.innerHTML = `<strong>予約予定</strong><div class="fact-check-item"><span></span><span>承認すると ${escapeHtml(preview.scheduledDate)} にWordPressで公開予定です</span></div>` +
+        preview.streakWarnings.map(w => `<div class="fact-check-item"><span class="fc-result fc-ng">注意</span><span>${escapeHtml(w)}</span></div>`).join('');
+    }
+  } catch {
+    el.style.display = 'none';
+  }
 }
 
 function toggleRejectNote() {

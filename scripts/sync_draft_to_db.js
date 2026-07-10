@@ -83,6 +83,8 @@ function main() {
       parent_qa_sources: fm.parent_qa_sources || [],
       web_sources: fm.web_sources || [],
       citation_check: fm.citation_check || null,
+      episode_used_text: fm.episode_used_text || null,
+      parent_qa_used_text: fm.parent_qa_used_text || null,
     }),
   };
 

@@ -45,6 +45,27 @@ function getNextScheduleSlot() {
   return computeNextScheduleSlot(latest, runTime);
 }
 
+// 承認時に実際に使う判定(予約日・公開期限超過・カテゴリー/対象読者の連続警告)を
+// 承認前プレビュー(GET /api/posts/:id/schedule-preview)とも共有する。
+function computeApprovalPreview(post) {
+  const config = loadJukuConfig();
+  const slot = getNextScheduleSlot();
+  const scheduledDateLabel = slot.dateOnly;
+  const withinWindow = isWithinPublishWindow(scheduledDateLabel, post.publish_window_end);
+
+  const maxCategoryStreak = (config.generation && config.generation.max_same_category_streak) || 0;
+  const maxAudienceStreak = (config.generation && config.generation.max_same_audience_streak) || 0;
+  const categoryStreak = checkStreak(getRecentScheduledValues('category', maxCategoryStreak || 10), post.category, maxCategoryStreak);
+  const audienceStreak = checkStreak(getRecentScheduledValues('target_audience', maxAudienceStreak || 10), post.target_audience, maxAudienceStreak);
+
+  const streakWarnings = [
+    categoryStreak.warn ? `カテゴリー「${post.category}」が${categoryStreak.streak}日連続になります` : null,
+    audienceStreak.warn ? `対象読者「${post.target_audience}」が${audienceStreak.streak}日連続になります` : null,
+  ].filter(Boolean);
+
+  return { slot, scheduledDateLabel, withinWindow, streakWarnings };
+}
+
 const app = express();
 app.use(express.json());
 // プロジェクトルート全体を静的配信するとconfig/scriptsのソースまで公開されてしまうため、
@@ -71,6 +92,20 @@ app.get('/api/posts/:id', (req, res) => {
   });
 });
 
+// 承認前に、実際に承認した場合の予約予定日・公開期限超過・連続警告をプレビューする
+// (承認ボタンを押す前にダッシュボードで確認できるようにするため)。DBは変更しない。
+app.get('/api/posts/:id/schedule-preview', (req, res) => {
+  const post = getPostById(Number(req.params.id));
+  if (!post) return res.status(404).json({ error: 'not_found' });
+  const preview = computeApprovalPreview(post);
+  res.json({
+    scheduledDate: preview.scheduledDateLabel,
+    withinWindow: preview.withinWindow,
+    publishWindowEnd: post.publish_window_end || null,
+    streakWarnings: preview.streakWarnings,
+  });
+});
+
 app.post('/api/posts/:id/approve', async (req, res) => {
   const id = Number(req.params.id);
   const changes = setStatus(id, 'approved', null);
@@ -80,13 +115,12 @@ app.post('/api/posts/:id/approve', async (req, res) => {
   // 複数本公開されないよう、直近の予約枠の翌日を自動計算する。失敗しても承認自体は
   // 成立させ、ステータスはapprovedのまま残す(再度「承認」を押すとリトライできる)。
   const post = getPostById(id);
-  const slot = getNextScheduleSlot();
-  const scheduledDateLabel = slot.dateOnly;
+  const { slot, scheduledDateLabel, withinWindow, streakWarnings } = computeApprovalPreview(post);
 
   // 季節テーマ由来の記事(publish_window_endがある記事)が、計算された予約日には
   // すでに旬を過ぎている場合、自動投稿はせず人間の確認に戻す(自動での差し替え・
   // 再企画は次段階。安全側に倒し、まず必ず人間が気づける状態にする)。
-  if (!isWithinPublishWindow(scheduledDateLabel, post.publish_window_end)) {
+  if (!withinWindow) {
     const note = `⚠️ 予約日(${scheduledDateLabel})が公開可能期間(〜${post.publish_window_end})を超えています。内容が季節に合っているか確認し、必要なら差し戻すか手動で対応してください。`;
     setStatus(id, 'approved', note);
     await sendTelegram(
@@ -95,20 +129,10 @@ app.post('/api/posts/:id/approve', async (req, res) => {
     return res.json({ ok: true, published: false, reason: 'publish_window_expired' });
   }
 
-  // 同じカテゴリー/対象読者が連続しすぎていないか警告する(ブロックはしない。
-  // 人間が内容を見て、必要なら差し戻す/別記事を先に承認する判断ができるように)。
-  const config = loadJukuConfig();
-  const maxCategoryStreak = (config.generation && config.generation.max_same_category_streak) || 0;
-  const maxAudienceStreak = (config.generation && config.generation.max_same_audience_streak) || 0;
-  const categoryStreak = checkStreak(getRecentScheduledValues('category', maxCategoryStreak || 10), post.category, maxCategoryStreak);
-  const audienceStreak = checkStreak(getRecentScheduledValues('target_audience', maxAudienceStreak || 10), post.target_audience, maxAudienceStreak);
-
-  let streakWarning = '';
-  if (categoryStreak.warn) streakWarning += `\n⚠️ カテゴリー「${post.category}」が${categoryStreak.streak}日連続になります`;
-  if (audienceStreak.warn) streakWarning += `\n⚠️ 対象読者「${post.target_audience}」が${audienceStreak.streak}日連続になります`;
+  const streakWarningText = streakWarnings.map((w) => `\n⚠️ ${w}`).join('');
 
   // WordPressへの投稿処理を始める前に通知する(投稿完了後の事後通知ではなく、事前通知)
-  await sendTelegram(`📅 記事を承認しました。${scheduledDateLabel} にWordPressで公開予定です\n${post.title}\n${DASHBOARD_URL}${streakWarning}`);
+  await sendTelegram(`📅 記事を承認しました。${scheduledDateLabel} にWordPressで公開予定です\n${post.title}\n${DASHBOARD_URL}${streakWarningText}`);
 
   let published = false;
   try {
@@ -120,15 +144,7 @@ app.post('/api/posts/:id/approve', async (req, res) => {
     await sendTelegram(`⚠️ WordPress投稿に失敗しました(承認自体は完了。ダッシュボードで再度「承認」を押すとリトライできます)\n${post.title}\n${err.message}`);
   }
 
-  res.json({
-    ok: true,
-    published,
-    scheduledAt: slot.utcIso,
-    streakWarnings: [
-      categoryStreak.warn ? `カテゴリー「${post.category}」が${categoryStreak.streak}日連続` : null,
-      audienceStreak.warn ? `対象読者「${post.target_audience}」が${audienceStreak.streak}日連続` : null,
-    ].filter(Boolean),
-  });
+  res.json({ ok: true, published, scheduledAt: slot.utcIso, streakWarnings });
 });
 
 app.post('/api/posts/:id/reject', (req, res) => {

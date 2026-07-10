@@ -73,6 +73,8 @@ plan_rationale:
 episode_sources: []
 parent_qa_sources: []
 web_sources: []
+episode_used_text: null
+parent_qa_used_text: null
 cta_type: "trial_lesson"
 ---
 
@@ -86,6 +88,7 @@ cta_type: "trial_lesson"
 - `seasonal_topic_id`/`publish_window_end`: `data/plans/YYYY-MM-DD.json` の同名フィールドをそのまま転記する(智谷が季節テーマを採用していれば値が入り、そうでなければ両方null)。ダッシュボードでの承認時にこの`publish_window_end`を過ぎていないか自動チェックされるため、正確に転記すること
 - `plan_rationale`: `data/plans/YYYY-MM-DD.json` の `search_intent`/`reader_problem`/`local_connection`/`unique_material`/`facts_allowed`/`facts_prohibited`/`cta_reason`/`difference_from_past_posts`/`selection_score`/`selection_score_breakdown`/`selection_reasons` を**そのままオブジェクトとして丸ごと転記する**(ダッシュボードで企画の採用理由を確認できるようにするため)。1つのキーも省略せず転記すること
 - `episode_sources`/`parent_qa_sources`/`web_sources`: `data/plans/YYYY-MM-DD.json` の同名フィールドをそのまま転記する(智谷が記録した出典)。**新しいIDを作らない・自分で判断して追加しない**。実際に本文で使わなかった場合は空配列のままにする
+- `episode_used_text`/`parent_qa_used_text`: `data/plans/YYYY-MM-DD.json` の `episode_used`/`parent_qa_used` をそのまま転記する(ダッシュボードで「実際にどの素材を使ったか」を人間が確認できるようにするため)。使わなかった場合はnullのままにする
 - `cta_type`: `data/plans/YYYY-MM-DD.json` の `cta_type` をそのまま転記する(赤羽がCTAの整合性を確認する際に使う)
 
 # 実行手順
