@@ -4,6 +4,7 @@ data/posts.sqlite-*
 data/topics/*.json
 data/plans/*.json
 data/drafts/*.md
+data/exam_research/*.json
 data/recent_titles.json
 data/rejected_notes.json
 logs/*.log
