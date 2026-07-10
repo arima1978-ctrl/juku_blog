@@ -8,6 +8,13 @@
 // 使い方: node scripts/sync_wordpress_status.js
 // 毎日1回、daily_blog.shの冒頭(記事生成前)で自動実行される。
 
+const path = require('node:path');
+try {
+  process.loadEnvFile(path.join(__dirname, '..', '.env'));
+} catch {
+  // .env が無い場合はスキップ(WP_URL等が未設定ならWordPress呼び出し側でエラーになる)
+}
+
 const { listPostsNeedingWpSync, applyWpSyncResult } = require('./lib/db');
 const { fetchPostStatus } = require('./lib/wordpress');
 const { decideSyncAction } = require('./lib/wp_sync');
