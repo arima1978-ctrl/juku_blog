@@ -150,4 +150,35 @@ async function fetchPostStatus(wpPostId) {
   }
 }
 
-module.exports = { publishPost, fetchPostStatus };
+// dry-run用: 投稿者・カテゴリーの検証結果を(投稿せず)そのまま返す。
+// assertWordPressTargetIsValid()と同じロジックだが、例外を投げずに結果を返す。
+async function checkWordPressTargetDryRun() {
+  const config = getWpConfig();
+  const jukuConfig = loadJukuConfig();
+  const wpConf = jukuConfig.wordpress || {};
+
+  const currentUser = await wpRequest(config, 'GET', 'users/me').catch(() => null);
+  const authorCheck = validateAuthor(currentUser, wpConf);
+
+  let categoryCheck = { ok: true, skipped: true };
+  if (wpConf.category_id) {
+    const category = await fetchCategoryOrNull(config, wpConf.category_id);
+    categoryCheck = validateCategory(category, wpConf.category_id);
+  }
+
+  return { authorCheck, categoryCheck, currentUser };
+}
+
+// dry-run用: キーワードがWordPress上の既存タグと一致するかを(投稿せず)確認する。
+async function resolveTagCandidates(keywordsCsv) {
+  const config = getWpConfig();
+  const names = (keywordsCsv || '').split(',').map((k) => k.trim()).filter(Boolean);
+  const results = [];
+  for (const name of names) {
+    const id = await findTermId(config, 'tags', name);
+    results.push({ name, found: !!id, tagId: id });
+  }
+  return results;
+}
+
+module.exports = { publishPost, fetchPostStatus, checkWordPressTargetDryRun, resolveTagCandidates };
