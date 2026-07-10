@@ -59,3 +59,40 @@ CREATE TABLE IF NOT EXISTS post_analytics (
   FOREIGN KEY (post_id) REFERENCES posts(id)
 );
 CREATE INDEX IF NOT EXISTS idx_post_analytics_post_id ON post_analytics(post_id);
+
+-- 愛知県高校入試 情報ソース参照機能(features.aichi_exam_research)のキャッシュ置き場。
+-- 別DBを新設せず既存posts.sqliteに相乗りする。scripts/lib/exam_research/cache.js が読み書きする。
+-- 同一source_idを何度も取得しないよう、TTL内はここを見るだけで済ませる。
+CREATE TABLE IF NOT EXISTS exam_research_cache (
+  id               INTEGER PRIMARY KEY AUTOINCREMENT,
+  source_id        TEXT NOT NULL,       -- config/aichi_exam_sources.yamlのid
+  source_url       TEXT NOT NULL,       -- 実際に取得したURL(PDF個別URL等、entry_urlと異なる場合あり)
+  parent_url       TEXT,                -- PDFの場合、リンク元のentry_url
+  content_type      TEXT,                -- 'html' / 'pdf'
+  document_title   TEXT,                -- PDFタイトル・HTMLのtitle等
+  target_year      INTEGER,             -- 本文から抽出した対象年度(西暦。複数/不明ならNULL)
+  fetched_at       TEXT NOT NULL,       -- 取得日時(ISO8601)
+  expires_at       TEXT NOT NULL,       -- ttl_hoursから計算した有効期限(ISO8601)
+  http_status      INTEGER,
+  content_hash     TEXT,                -- 本文のハッシュ(更新検知用)
+  raw_text         TEXT,                -- 抽出直後の生テキスト(長大な場合は要約のみ保持を検討)
+  extracted_text   TEXT,                -- 記事化に使う範囲に絞ったテキスト
+  parse_status     TEXT NOT NULL,       -- 'ok' / 'fetch_failed' / 'parse_failed'
+  error_message    TEXT,
+  created_at       TEXT NOT NULL,
+  updated_at       TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_exam_research_cache_source_id ON exam_research_cache(source_id);
+CREATE INDEX IF NOT EXISTS idx_exam_research_cache_source_url ON exam_research_cache(source_url);
+
+-- ソース本文の更新検知履歴(前回取得時とのハッシュ差分を記録。既存記事の自動書き換えはしない)
+CREATE TABLE IF NOT EXISTS exam_research_updates (
+  id               INTEGER PRIMARY KEY AUTOINCREMENT,
+  source_id        TEXT NOT NULL,
+  source_url       TEXT NOT NULL,
+  previous_hash    TEXT,
+  current_hash     TEXT NOT NULL,
+  target_year      INTEGER,
+  detected_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_exam_research_updates_source_id ON exam_research_updates(source_id);

@@ -34,7 +34,8 @@ model: sonnet
 
 - **本文の主旨・エピソード・事実関係は変更しない**(創作・誇大表現のチェックは石橋の仕事。赤羽は校正・体裁のみ担当)
 - 誇大表現(「絶対」「必ず」「業界No.1」等)を見つけた場合は、断定を避ける表現に直してよい(これは校正の範囲内)
-- frontmatterの `title`・`slug`・`category`・`target_audience`・`keywords`・`plan_date`・`retry_count`・`seasonal_topic_id`・`publish_window_end`・`plan_rationale`・`episode_sources`・`parent_qa_sources`・`web_sources`・`episode_used_text`・`parent_qa_used_text` は変更しない
+- frontmatterの `title`・`slug`・`category`・`target_audience`・`keywords`・`plan_date`・`retry_count`・`seasonal_topic_id`・`publish_window_end`・`plan_rationale`・`episode_sources`・`parent_qa_sources`・`web_sources`・`episode_used_text`・`parent_qa_used_text`・`exam_target_year`・`exam_facts_used` は変更しない
+- 本文末尾に「参考情報」セクションがある場合、見出し構成の調整対象から除外する(リンク・出典表記を書き換えない)
 - `status` を `"edited"` に更新する(石橋が次にチェックできるように)。他のフィールド(`revision_notes`)は変更しない
 
 # 実行手順

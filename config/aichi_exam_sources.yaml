@@ -1,0 +1,145 @@
+# 愛知県高校入試 情報ソースバンク(features.aichi_exam_research が有効な場合のみ使用)。
+#
+# scripts/fetch_exam_research.js がこのファイルを読み、記事テーマから抽出した
+# 用途タグ(tags)に一致するソースをtier順に選定して取得する。
+# コード変更なしで追加・削除・無効化・TTL変更ができるよう、すべてここに集約する。
+#
+# 各フィールド:
+#   id: 一意なID
+#   name: ソース名(参考情報セクションの表示名にも使う)
+#   base_url: 許可ドメイン判定に使うベースURL
+#   entry_url: 取得開始点のURL
+#   tier: 1(一次情報・断定可)/2・3(参考情報・断定禁止)
+#   source_type: official/juku/media 等(表示用の分類、判定ロジックには使わない)
+#   tags: 用途タグ(英数字のみ。記事テーマとのマッチングに使う)
+#   ttl_hours: このソースのキャッシュ有効期間(時間)
+#   enabled: falseにすると選定対象から除外(削除せず一時停止する場合に使う)
+#   supports_pdf: true の場合、entry_url配下のPDFリンクも取得対象にする
+
+sources:
+  - id: aichi_board_of_education
+    name: "愛知県教育委員会 高等学校教育課"
+    base_url: "https://www.pref.aichi.jp/"
+    entry_url: "https://www.pref.aichi.jp/soshiki/kotogakko/0000027366.html"
+    tier: 1
+    source_type: official
+    tags:
+      - exam_schedule
+      - public_exam
+      - selection_system
+      - recommendation
+      - special_selection
+      - general_selection
+      - interview
+      - school_group
+      - ranking_method
+      - past_questions
+      - faq
+      - application_status
+      - capacity
+    ttl_hours: 168
+    enabled: true
+    supports_pdf: true
+
+  - id: sanaru_aichi_exam_info
+    name: "佐鳴予備校 愛知県高校入試情報"
+    base_url: "https://www.sanaru-net.com/"
+    entry_url: "https://www.sanaru-net.com/entrance-aichi/"
+    tier: 2
+    source_type: juku
+    tags:
+      - target_deviation
+      - average_score
+      - subject_analysis
+      - exam_analysis
+    ttl_hours: 720
+    enabled: true
+    supports_pdf: false
+
+  - id: kawaijuku_tokai_aichi_system
+    name: "河合塾 愛知県高校入試情報"
+    base_url: "https://www.kawai-juku.ac.jp/"
+    entry_url: "https://www.kawai-juku.ac.jp/jhgreen/tokai/system/information/"
+    tier: 2
+    source_type: juku
+    tags:
+      - multiple_selection_system
+      - private_exam
+      - application_trends
+      - exam_system
+    ttl_hours: 720
+    enabled: true
+    supports_pdf: false
+
+  - id: chunichi_shingaku_navi
+    name: "中日進学ナビ"
+    base_url: "https://edu.chunichi.co.jp/"
+    entry_url: "https://edu.chunichi.co.jp/"
+    tier: 2
+    source_type: media
+    tags:
+      - exam_answers
+      - exam_questions
+      - breaking_news
+      - local_education_news
+    ttl_hours: 24
+    enabled: true
+    supports_pdf: false
+
+  - id: inozyuku_aichi_exam
+    name: "井ノ塾 愛知県高校・中学受験情報"
+    base_url: "https://inozyuku.com/"
+    entry_url: "https://inozyuku.com/aichi_zyuken"
+    tier: 3
+    source_type: juku
+    tags:
+      - internal_score
+      - deviation_score
+      - school_district
+      - application_ratio
+      - school_event
+    ttl_hours: 720
+    enabled: true
+    supports_pdf: false
+
+  - id: axis_kobetsu_aichi_outline
+    name: "個別指導Axis 愛知県の公立高校入試概要"
+    base_url: "https://axis-kobetsu.jp/"
+    entry_url: "https://axis-kobetsu.jp/outline/juni/exam-info/general-info/aichi/"
+    tier: 3
+    source_type: juku
+    tags:
+      - ranking_method
+      - exam_system
+      - top_school_trends
+    ttl_hours: 720
+    enabled: true
+    supports_pdf: false
+
+  - id: tsubotajuku_aichi_exam
+    name: "坪田塾 愛知県公立高校入試情報"
+    base_url: "https://tsubotajuku.com/"
+    entry_url: "https://tsubotajuku.com/blog/aichi-entrance-exam/"
+    tier: 3
+    source_type: juku
+    tags:
+      - parent_guide
+      - exam_overview
+      - subject_trends
+      - study_advice
+    ttl_hours: 720
+    enabled: true
+    supports_pdf: false
+
+# 記事テーマ判定用のキーワード(scripts/lib/exam_research/topic_classifier.js が使う)。
+# 早瀬(researcher-local)の候補(headline/detail/category_hint)や智谷の企画テーマに
+# これらのいずれかが含まれていれば「愛知県高校入試関連」と判定する。
+classification_keywords:
+  - "愛知県 高校入試"
+  - "愛知県 公立高校"
+  - "高校入試"
+  - "入学者選抜"
+  - "学力検査"
+  - "推薦選抜"
+  - "特色選抜"
+  - "一般選抜"

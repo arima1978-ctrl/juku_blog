@@ -18,6 +18,7 @@ model: sonnet
 6. `data/rejected_notes.json`(直近の差し戻し理由一覧): 過去に石橋・赤羽から指摘された問題(誇大表現・事実未確認等)があれば、**同じ失敗を繰り返さない企画にする**
 7. 曜日が日曜、またはテーマに実体験が使える場合: `data/episodes.md` の未使用(`- [ ]`)エピソードを確認する。各行頭の `[EP-001]` のようなIDを控えておく(出典として記録するため)
 8. 曜日が土曜(保護者向けコラム)、または勉強のコツ系のテーマで実際の相談例が使える場合: `data/parent_qa.md` の未使用(`- [ ]`)Q&Aを確認する(米澤塾長が実際に保護者とやり取りした相談の要旨。個人が特定されない粒度に加工済みのもののみ登録されている)。各行頭の `[QA-001]` のようなIDを控えておく
+9. `data/exam_research/YYYY-MM-DD.facts.json`(愛知県高校入試 情報ソース参照機能。存在する場合のみ): 杉浦(exam-fact-structurer)が構造化した事実データ。テーマが愛知県高校入試関連の場合、この`facts`から記事に使う事実を選び、後述の`exam_facts_used`/`exam_target_year`に記録する
 
 # 実行手順
 
@@ -29,6 +30,7 @@ model: sonnet
 3. 今日の月が `config/calendar.yaml` の `seasons` のいずれかに該当すれば、季節テーマを優先する(曜日テーマと矛盾しない範囲で組み合わせる。例: 火曜+定期テスト前季節 →「定期テスト対策」で一致するのでそのまま採用)。
 4. `data/topics/YYYY-MM-DD.json` から、決定したテーマに合う・かつ `data/recent_titles.json` と重複しないネタを選ぶ。合うネタがなければ一般論として企画してよい(その場合 `sourceTopicIds` は空配列)。
    `data/recent_titles.json`に似たテーマが既にある場合は、単に諦めるのではなく次のいずれかで差別化する: (a)対象学年を変える (b)教科を変える (c)保護者相談型にする(`parent_qa_used`を軸にする) (d)チェックリスト型にする (e)地域情報型にする (f)塾長の気づき型にする(`episode_used`を軸にする) (g)別テーマに差し替える。採用した差別化方法は`difference_from_past_posts`(手順8)に明記する。
+4a. **愛知県高校入試 情報ソース参照機能(`data/exam_research/YYYY-MM-DD.facts.json`が存在する場合のみ)**: テーマが愛知県高校入試関連なら、`facts.json`の`facts`から記事に使う事実を選び`exam_facts_used`(手順9参照)に**そのままオブジェクトとして**記録し、`facts.json`の`target_year`を`exam_target_year`に記録する。`research_status`が`blocked`の場合、または使える`facts`が無い場合は`exam_facts_used`を空配列・`exam_target_year`をnullのままにし、通常のテーマ企画にフォールバックする(無理に入試記事にしない)。`facts.json`が存在しない場合は両方ともnull/空配列のままにする。
 5. 日曜担当、または手順1で`episode_preferred: true`のテーマを採用した場合: `data/episodes.md` に使える未使用エピソードがあれば、それを軸にした企画にする。なければ他カテゴリで代替する(`config/calendar.yaml` の `fallback_note` 通り)。
    土曜(保護者向けコラム)や勉強のコツ系のテーマで、`data/parent_qa.md` に合う未使用Q&Aがあれば、実際の相談を導入に使った企画にする(なければ通常通り一般論で企画する)。
 6. 小学生保護者向けか中学生保護者向けかで対象読者を1つに絞る(欲張って両方にしない。手順1採用時は`target`の範囲内で選ぶ)。
@@ -93,7 +95,9 @@ model: sonnet
     "differentiation": "0-15の数値",
     "material_availability": "0-10の数値"
   },
-  "selection_reasons": "この企画を採用した理由の要約(70点未満で採用した場合はその理由も明記)"
+  "selection_reasons": "この企画を採用した理由の要約(70点未満で採用した場合はその理由も明記)",
+  "exam_target_year": "手順4aで採用した場合はfacts.jsonのtarget_year(西暦の整数)、それ以外はnull",
+  "exam_facts_used": "手順4aで選んだfacts.jsonのfacts配列の要素をそのまま配列で記録、それ以外は空配列"
 }
 ```
 

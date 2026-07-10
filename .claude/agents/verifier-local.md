@@ -27,6 +27,7 @@ model: sonnet
 11. **根拠のない人気・評判表現**: 「人気」「多数の生徒が」「地域で評判」等、裏付けのない集団語・評判表現がないか(項目1の景品表示法チェックと重なる場合はそちらとまとめてよい)
 12. **発達・心理・医療に関する断定**: 発達特性・心理状態・医療行為について、専門家でない立場から断定的に書いていないか(「〜な子はADHDです」等)。一般的な学習アドバイスの範囲を超える断定は重大な問題として扱う
 13. **出典IDの妥当性**: frontmatterの `citation_check`(`scripts/check_citations.js` が事前に計算済み。石橋自身が実在確認する必要はない)を確認する。`ok: false` の場合、`invalidEpisodeIds`/`invalidParentQaIds` に挙げられたIDは実在しない出典(智谷または檜山の記載ミス、または創作)であり重大な問題として扱う。`citation_check` が無い場合は`episode_sources`/`parent_qa_sources`が空配列であることを確認し、問題なしとする
+14. **愛知県高校入試 情報ソース参照機能のファクト整合性**: frontmatterの `exam_fact_check`(`scripts/check_exam_facts.js` が事前に計算済み。石橋自身が年度・出典の実在確認を行う必要はない)を確認する。`status: "not_applicable"` なら対象外として問題なしとする。`status: "blocked"` の場合、`errors` に挙げられた項目(年度不一致・出典欠落・Tier2/3の断定・矛盾する事実等)は重大な問題として扱う(**直接修正では解決せず、必ずBの差し戻しにする**。年度・出典の扱いは檜山が企画の`exam_facts_used`を見直す必要があるため)。`status: "warning"` の場合は軽微な問題として扱い、該当箇所にヘッジ表現(「参考」「目安」等)を追記する直接修正で解決してよい
 
 # 対応方針(重要: 軽微な問題は自分で直接修正してよい)
 
@@ -45,6 +46,7 @@ model: sonnet
 - 直接修正すると見出しの内容が不十分になる(削除すべき分量が多く、新しい材料での書き直しが必要)
 - 実在エピソードとして書かれた創作が見つかり、代替の一般化表現への書き直しが必要
 - `similarity_check.is_duplicate` が `true`(過去記事との重複。タイトルの言い換えだけでは解決しないため、切り口・対象学年・構成のいずれかを変える書き直しが必要)
+- `exam_fact_check.status` が `"blocked"`(年度不一致・出典欠落等。智谷の企画からやり直す必要があるため)
 - その他、文章の大幅な再構成が必要な問題
 
 # 判定と更新手順
@@ -97,6 +99,9 @@ fact_check_report:
     - check: "出典IDの妥当性"
       result: "OK"
       note: "citation_check.ok=true(episode_sources/parent_qa_sourcesともに空配列)"
+    - check: "愛知県高校入試ファクト整合性"
+      result: "OK"
+      note: "exam_fact_check.status=not_applicable(対象外)"
   overall: "verified"
 ```
 

@@ -43,6 +43,21 @@ node scripts/refresh_indexes.js >> "$LOG" 2>&1
 run_agent researcher-local "WebSearch,Read,Write" \
   "今日のネタ収集をして" "researcher-local" || exit 1
 
+# --- 1.5. 愛知県高校入試 情報ソース参照機能(features.aichi_exam_research.enabled時のみ) ---
+# 決定的スクリプトが対象か判定・取得・キャッシュを行い、該当すれば構造化エージェント(杉浦)
+# を1回だけ追加で呼び出す。featureがfalse、または今日のネタが入試関連でない場合は
+# raw.jsonが出力されないため、その場合は構造化エージェントも呼び出さない
+# (既存フローに一切影響しない設計)。
+if ! node scripts/fetch_exam_research.js "$TODAY" >> "$LOG" 2>&1; then
+  log "!!! fetch_exam_research.js が失敗しました(入試情報取得をスキップして続行します)"
+  node scripts/log_error.js "fetch_exam_research" "node scripts/fetch_exam_research.js ${TODAY} が失敗"
+fi
+RAW_EXAM_PATH="data/exam_research/${TODAY}.raw.json"
+if [ -f "$RAW_EXAM_PATH" ]; then
+  run_agent exam-fact-structurer "Read,Write" \
+    "対象ファイル ${RAW_EXAM_PATH} を構造化して data/exam_research/${TODAY}.facts.json に保存して" "exam-fact-structurer" || exit 1
+fi
+
 # --- 2. 智谷: 企画 ---
 run_agent planner-blog-btoc "Read,Write" \
   "今日の記事企画をして" "planner-blog-btoc" || exit 1
@@ -84,6 +99,11 @@ while true; do
     if ! node scripts/check_citations.js "$CUR_DRAFT_PATH" >> "$LOG" 2>&1; then
       log "!!! check_citations.js が失敗しました(出典チェックをスキップして続行します)"
       node scripts/log_error.js "check_citations" "node scripts/check_citations.js ${CUR_DRAFT_PATH} が失敗"
+    fi
+    # 愛知県高校入試 情報ソース参照機能: exam_facts_usedが無い記事はnot_applicableになるだけで無害
+    if ! node scripts/check_exam_facts.js "$CUR_DRAFT_PATH" >> "$LOG" 2>&1; then
+      log "!!! check_exam_facts.js が失敗しました(入試ファクトチェックをスキップして続行します)"
+      node scripts/log_error.js "check_exam_facts" "node scripts/check_exam_facts.js ${CUR_DRAFT_PATH} が失敗"
     fi
   fi
 

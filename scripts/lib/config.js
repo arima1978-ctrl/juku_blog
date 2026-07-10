@@ -20,4 +20,8 @@ function loadCalendarConfig() {
   return loadYaml('config/calendar.yaml');
 }
 
-module.exports = { ROOT, loadYaml, loadJukuConfig, loadCalendarConfig };
+function loadExamSourcesConfig() {
+  return loadYaml('config/aichi_exam_sources.yaml');
+}
+
+module.exports = { ROOT, loadYaml, loadJukuConfig, loadCalendarConfig, loadExamSourcesConfig };

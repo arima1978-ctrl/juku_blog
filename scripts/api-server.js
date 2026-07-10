@@ -91,6 +91,7 @@ app.get('/api/posts/:id', (req, res) => {
     plan_rationale_parsed: safeJsonParse(post.plan_rationale),
     citations_parsed: safeJsonParse(post.citations),
     eyecatch_parsed: safeJsonParse(post.eyecatch),
+    exam_validation_warnings_parsed: safeJsonParse(post.exam_validation_warnings),
   });
 });
 
@@ -129,6 +130,17 @@ app.post('/api/posts/:id/approve', async (req, res) => {
       `⚠️ 公開期限超過のため自動投稿を保留しました\n${post.title}\n予約予定日: ${scheduledDateLabel} / 公開可能期限: ${post.publish_window_end}\n${DASHBOARD_URL}`
     );
     return res.json({ ok: true, published: false, reason: 'publish_window_expired' });
+  }
+
+  // 愛知県高校入試 情報ソース参照機能: 年度不一致・出典欠落等でblockedと判定された記事は
+  // 自動投稿しない(石橋の差し戻しをすり抜けて手動編集された場合等の最終防衛ライン)。
+  if (post.exam_validation_status === 'blocked') {
+    const note = `⚠️ 愛知県高校入試ファクトチェックでblockedと判定されているため自動投稿を保留しました。内容を確認し、必要なら差し戻すか手動で対応してください。`;
+    setStatus(id, 'approved', note);
+    await sendTelegram(
+      `⚠️ 入試ファクトチェックblockedのため自動投稿を保留しました\n${post.title}\n${DASHBOARD_URL}`
+    );
+    return res.json({ ok: true, published: false, reason: 'exam_fact_check_blocked' });
   }
 
   const streakWarningText = streakWarnings.map((w) => `\n⚠️ ${w}`).join('');

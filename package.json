@@ -19,9 +19,12 @@
   },
   "license": "UNLICENSED",
   "dependencies": {
+    "cheerio": "^1.2.0",
     "express": "^4.19.2",
     "gray-matter": "^4.0.3",
     "js-yaml": "^4.1.0",
-    "marked": "^12.0.2"
+    "marked": "^12.0.2",
+    "pdf-parse": "^2.4.5",
+    "robots-parser": "^3.0.1"
   }
 }

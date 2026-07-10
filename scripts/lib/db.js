@@ -57,6 +57,11 @@ function getDb() {
   // アイキャッチメタデータ(JSON文字列。赤羽が生成。実画像生成は未実装で、
   // template/headline/subheadline/altのみ保持する)
   ensureColumn(db, 'posts', 'eyecatch', 'TEXT');
+  // 愛知県高校入試 情報ソース参照機能(features.aichi_exam_research)で追加。
+  // 該当しない記事(通常記事)はいずれもNULLのまま。
+  ensureColumn(db, 'posts', 'exam_target_year', 'INTEGER');
+  ensureColumn(db, 'posts', 'exam_validation_status', 'TEXT'); // passed/warning/blocked、対象外ならNULL
+  ensureColumn(db, 'posts', 'exam_validation_warnings', 'TEXT'); // JSON配列文字列
   return db;
 }
 
@@ -66,11 +71,13 @@ function insertPost(post) {
     INSERT INTO posts (
       created_at, title, slug, category, target_audience, keywords,
       meta_description, body_md, body_html, fact_check_report, status, reviewer_note,
-      seasonal_topic_id, publish_window_end, similarity_check, plan_rationale, citations, eyecatch
+      seasonal_topic_id, publish_window_end, similarity_check, plan_rationale, citations, eyecatch,
+      exam_target_year, exam_validation_status, exam_validation_warnings
     ) VALUES (
       :created_at, :title, :slug, :category, :target_audience, :keywords,
       :meta_description, :body_md, :body_html, :fact_check_report, :status, :reviewer_note,
-      :seasonal_topic_id, :publish_window_end, :similarity_check, :plan_rationale, :citations, :eyecatch
+      :seasonal_topic_id, :publish_window_end, :similarity_check, :plan_rationale, :citations, :eyecatch,
+      :exam_target_year, :exam_validation_status, :exam_validation_warnings
     )
   `);
   const result = stmt.run({
@@ -92,6 +99,9 @@ function insertPost(post) {
     plan_rationale: post.plan_rationale || null,
     citations: post.citations || null,
     eyecatch: post.eyecatch || null,
+    exam_target_year: post.exam_target_year || null,
+    exam_validation_status: post.exam_validation_status || null,
+    exam_validation_warnings: post.exam_validation_warnings || null,
   });
   return Number(result.lastInsertRowid);
 }
@@ -203,6 +213,80 @@ function applyWpSyncResult(id, { newStatus, wpStatus, syncError, syncedAt }) {
   return Number(result.changes);
 }
 
+// 愛知県高校入試 情報ソース参照機能: source_url単位でキャッシュを引く。
+// nowIso以前に期限切れ(expires_at < nowIso)なら「使えるキャッシュなし」としてnullを返す
+// (呼び出し側は再取得の要否をこの結果だけで判断できる)。
+function getExamResearchCache(sourceUrl, nowIso) {
+  const conn = getDb();
+  const row = conn
+    .prepare('SELECT * FROM exam_research_cache WHERE source_url = ? ORDER BY fetched_at DESC LIMIT 1')
+    .get(sourceUrl);
+  if (!row) return null;
+  if (row.expires_at < nowIso) return null;
+  return row;
+}
+
+// 直近の取得結果(TTL切れも含む。ハッシュ比較による更新検知に使う)
+function getLatestExamResearchCache(sourceUrl) {
+  const conn = getDb();
+  return (
+    conn.prepare('SELECT * FROM exam_research_cache WHERE source_url = ? ORDER BY fetched_at DESC LIMIT 1').get(sourceUrl) ||
+    null
+  );
+}
+
+function insertExamResearchCache(entry) {
+  const conn = getDb();
+  const stmt = conn.prepare(`
+    INSERT INTO exam_research_cache (
+      source_id, source_url, parent_url, content_type, document_title, target_year,
+      fetched_at, expires_at, http_status, content_hash, raw_text, extracted_text,
+      parse_status, error_message, created_at, updated_at
+    ) VALUES (
+      :source_id, :source_url, :parent_url, :content_type, :document_title, :target_year,
+      :fetched_at, :expires_at, :http_status, :content_hash, :raw_text, :extracted_text,
+      :parse_status, :error_message, :created_at, :updated_at
+    )
+  `);
+  const now = entry.fetched_at;
+  const result = stmt.run({
+    source_id: entry.source_id,
+    source_url: entry.source_url,
+    parent_url: entry.parent_url || null,
+    content_type: entry.content_type || null,
+    document_title: entry.document_title || null,
+    target_year: entry.target_year || null,
+    fetched_at: entry.fetched_at,
+    expires_at: entry.expires_at,
+    http_status: entry.http_status || null,
+    content_hash: entry.content_hash || null,
+    raw_text: entry.raw_text || null,
+    extracted_text: entry.extracted_text || null,
+    parse_status: entry.parse_status,
+    error_message: entry.error_message || null,
+    created_at: now,
+    updated_at: now,
+  });
+  return Number(result.lastInsertRowid);
+}
+
+function insertExamResearchUpdateEvent(event) {
+  const conn = getDb();
+  const stmt = conn.prepare(`
+    INSERT INTO exam_research_updates (source_id, source_url, previous_hash, current_hash, target_year, detected_at)
+    VALUES (:source_id, :source_url, :previous_hash, :current_hash, :target_year, :detected_at)
+  `);
+  const result = stmt.run({
+    source_id: event.source_id,
+    source_url: event.source_url,
+    previous_hash: event.previous_hash || null,
+    current_hash: event.current_hash,
+    target_year: event.target_year || null,
+    detected_at: event.detected_at,
+  });
+  return Number(result.lastInsertRowid);
+}
+
 function listRejectedWithNotes(limit = 20) {
   const conn = getDb();
   const stmt = conn.prepare(
@@ -246,6 +330,10 @@ module.exports = {
   applyWpSyncResult,
   listRejectedWithNotes,
   monthlySummary,
+  getExamResearchCache,
+  getLatestExamResearchCache,
+  insertExamResearchCache,
+  insertExamResearchUpdateEvent,
   closeDb,
   DB_PATH,
 };

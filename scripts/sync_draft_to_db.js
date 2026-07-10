@@ -85,9 +85,16 @@ function main() {
       citation_check: fm.citation_check || null,
       episode_used_text: fm.episode_used_text || null,
       parent_qa_used_text: fm.parent_qa_used_text || null,
+      // 愛知県高校入試 情報ソース参照機能: 使用した事実一覧(表示用。ダッシュボードの
+      // 「使用した公式情報/参考情報・出典URL一覧」表示に使う。既存citations列に相乗り)
+      exam_facts_used: fm.exam_facts_used || [],
     }),
     // 赤羽が生成するアイキャッチメタデータ(実画像生成は未実装)
     eyecatch: toJsonTextOrNull(fm.eyecatch),
+    // 愛知県高校入試 情報ソース参照機能(features.aichi_exam_research)。対象外の記事はいずれもnull
+    exam_target_year: fm.exam_target_year || null,
+    exam_validation_status: (fm.exam_fact_check && fm.exam_fact_check.status) || null,
+    exam_validation_warnings: toJsonTextOrNull(fm.exam_fact_check && fm.exam_fact_check.warnings),
   };
 
   if (existing) {

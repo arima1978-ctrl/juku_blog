@@ -65,6 +65,13 @@ generation:
   # (人間が内容を見て判断できるようにするため)。
   max_same_category_streak: 2   # 同じカテゴリーが何日連続まで許容か
   max_same_audience_streak: 3   # 同じ対象読者(target_audience)が何日連続まで許容か
+features:
+  # 愛知県高校入試 情報ソース参照機能(config/aichi_exam_sources.yaml)。
+  # false(既定)の間は fetch_exam_research.js が即座に無処理で終了し、
+  # 既存の記事生成フローには一切影響しない。
+  aichi_exam_research:
+    enabled: false
+
 wordpress:
   # an-english.com は教室ごとに同名の子カテゴリー(コラム/学校情報/教室の様子等)が
   # 並ぶ構造のため、名前ではなくIDで固定指定する。

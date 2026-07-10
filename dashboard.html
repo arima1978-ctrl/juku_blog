@@ -417,6 +417,23 @@ async function openDetail(id) {
     </div>`;
   }
 
+  const examFacts = (ci && ci.exam_facts_used) || [];
+  let examHtml = '';
+  if (examFacts.length > 0) {
+    const status = p.exam_validation_status || '-';
+    const statusClass = status === 'blocked' ? 'fc-ng' : 'fc-ok';
+    const warnings = p.exam_validation_warnings_parsed || [];
+    const seenUrls = new Set();
+    const sourceRows = examFacts.filter(f => f.source_url && !seenUrls.has(f.source_url) && seenUrls.add(f.source_url));
+    examHtml = `<div class="fact-check-box ${status === 'blocked' ? 'has-issue' : ''}">
+      <strong>愛知県高校入試 情報ソース(対象年度: ${escapeHtml(String(p.exam_target_year || '-'))})</strong>
+      <div class="fact-check-item"><span class="fc-result ${statusClass}">${escapeHtml(status)}</span><span>自動投稿可否: ${status === 'blocked' ? '不可(手動対応が必要)' : '可'}</span></div>
+      ${examFacts.map(f => `<div class="fact-check-item"><span class="fc-result ${f.is_official ? 'fc-ok' : ''}">${f.is_official ? 'Tier1(公式)' : 'Tier2/3(参考)'}</span><span>${escapeHtml(f.label || f.fact_type || '')}: ${escapeHtml(f.value ?? '-')}</span></div>`).join('')}
+      ${sourceRows.map(f => `<div class="fact-check-item"><span></span><span><a href="${escapeHtml(f.source_url)}" target="_blank" rel="noopener">${escapeHtml(f.source_name || f.source_url)}</a>${f.document_title ? ` 「${escapeHtml(f.document_title)}」` : ''}${f.fetched_at ? ` (取得: ${escapeHtml(f.fetched_at.slice(0, 10))})` : ''}</span></div>`).join('')}
+      ${warnings.length ? `<div class="fact-check-item"><span class="fc-result fc-ng">警告</span><span>${warnings.map(w => escapeHtml(w.message || w.code || String(w))).join(' / ')}</span></div>` : ''}
+    </div>`;
+  }
+
   const ec = p.eyecatch_parsed;
   const ecHtml = ec ? `<div class="fact-check-box">
       <strong>アイキャッチ(メタデータのみ・実画像は未実装)</strong>
@@ -443,6 +460,7 @@ async function openDetail(id) {
     </div>
     ${prHtml}
     ${citHtml}
+    ${examHtml}
     ${ecHtml}
     ${fcHtml}
     ${simHtml}
