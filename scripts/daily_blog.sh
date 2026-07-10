@@ -62,6 +62,11 @@ while true; do
       log "!!! check_similarity.js が失敗しました(類似度チェックをスキップして続行します)"
       node scripts/log_error.js "check_similarity" "node scripts/check_similarity.js ${CUR_DRAFT_PATH} が失敗"
     fi
+    # 出典ID(episode_sources/parent_qa_sources)が実在するかも同様に検証する
+    if ! node scripts/check_citations.js "$CUR_DRAFT_PATH" >> "$LOG" 2>&1; then
+      log "!!! check_citations.js が失敗しました(出典チェックをスキップして続行します)"
+      node scripts/log_error.js "check_citations" "node scripts/check_citations.js ${CUR_DRAFT_PATH} が失敗"
+    fi
   fi
 
   run_agent verifier-local "Read,Write" \

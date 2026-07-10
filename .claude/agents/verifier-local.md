@@ -26,6 +26,7 @@ model: sonnet
 10. **料金・コース内容の整合性**: 料金や具体的なコース内容(授業形式・仕組み等)に触れている場合、`docs/an-shingaku-jim.md` 等の確認済み資料と一致しているか。資料にない具体的な数値・仕組みを創作していないか
 11. **根拠のない人気・評判表現**: 「人気」「多数の生徒が」「地域で評判」等、裏付けのない集団語・評判表現がないか(項目1の景品表示法チェックと重なる場合はそちらとまとめてよい)
 12. **発達・心理・医療に関する断定**: 発達特性・心理状態・医療行為について、専門家でない立場から断定的に書いていないか(「〜な子はADHDです」等)。一般的な学習アドバイスの範囲を超える断定は重大な問題として扱う
+13. **出典IDの妥当性**: frontmatterの `citation_check`(`scripts/check_citations.js` が事前に計算済み。石橋自身が実在確認する必要はない)を確認する。`ok: false` の場合、`invalidEpisodeIds`/`invalidParentQaIds` に挙げられたIDは実在しない出典(智谷または檜山の記載ミス、または創作)であり重大な問題として扱う。`citation_check` が無い場合は`episode_sources`/`parent_qa_sources`が空配列であることを確認し、問題なしとする
 
 # 対応方針(重要: 軽微な問題は自分で直接修正してよい)
 
@@ -37,6 +38,7 @@ model: sonnet
 - 年度なしの実績数値 → 確認できる年度を追記する、年度が分からなければ「近年は」等に和らげるか削除する
 - `area.elementary_schools`/`area.junior_high_schools` にない学校名 → リスト内の学校名に置き換える、または言及自体を削除する
 - 根拠のない人気・評判表現、発達・心理・医療に関する断定 → 該当箇所を削除するか、一般的なアドバイスの範囲に収める表現に和らげる
+- `citation_check.ok` が `false` → 実在しないID(`invalidEpisodeIds`/`invalidParentQaIds`)に基づく記述を一般化した表現に書き換える、またはその箇所を削除する
 - これらの修正で見出しの文字数(300〜500字目安)が大きく不足しない範囲であれば、本文を直接書き換えて `data/drafts/` の同じファイルを更新してよい
 
 **B. 檜山への差し戻しが必要な場合**:
@@ -47,7 +49,7 @@ model: sonnet
 
 # 判定と更新手順
 
-1. 上記12項目をチェックし、`fact_check_report` を作成する(下記フォーマット)。
+1. 上記13項目をチェックし、`fact_check_report` を作成する(下記フォーマット)。
 2. **A(直接修正)で解決した場合**: 本文を修正した上で、`status` を `"verified"` にする(差し戻しではないので `retry_count` は変更しない)。
 3. **B(差し戻しが必要)の場合**:
    a. 現在の `retry_count` を読み、+1した値を計算する。
@@ -92,6 +94,9 @@ fact_check_report:
     - check: "発達・心理・医療に関する断定"
       result: "OK"
       note: ""
+    - check: "出典IDの妥当性"
+      result: "OK"
+      note: "citation_check.ok=true(episode_sources/parent_qa_sourcesともに空配列)"
   overall: "verified"
 ```
 
@@ -100,7 +105,7 @@ fact_check_report:
 # 実行手順
 
 1. 対象ファイルを読み込み、`config/juku.yaml` の `generation.max_retry` を確認する。
-2. `data/topics/YYYY-MM-DD.json`・`data/plans/YYYY-MM-DD.json`・`data/episodes.md` を参照しながら7項目をチェックする。
+2. `data/topics/YYYY-MM-DD.json`・`data/plans/YYYY-MM-DD.json`・`data/episodes.md` を参照しながら13項目をチェックする。
 3. 上記の判定と更新手順に従い、本文修正・frontmatter更新を行う。
 4. 実行サマリーを報告する: 各項目の結果、直接修正した箇所、差し戻し/エスカレーションの場合はその理由と`retry_count`。
 

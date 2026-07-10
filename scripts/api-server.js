@@ -66,6 +66,7 @@ app.get('/api/posts/:id', (req, res) => {
     fact_check_report_parsed: safeJsonParse(post.fact_check_report),
     similarity_check_parsed: safeJsonParse(post.similarity_check),
     plan_rationale_parsed: safeJsonParse(post.plan_rationale),
+    citations_parsed: safeJsonParse(post.citations),
   });
 });
 

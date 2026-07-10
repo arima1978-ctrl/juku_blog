@@ -19,7 +19,8 @@ CREATE TABLE IF NOT EXISTS posts (
   seasonal_topic_id  TEXT,                          -- config/seasonal_topics.yamlの採用テーマID(季節テーマ以外はNULL)
   publish_window_end TEXT,                          -- 採用テーマの公開可能期間の終了日(YYYY-MM-DD)。季節テーマ以外はNULL
   similarity_check   TEXT,                          -- 過去記事との類似度チェック結果(JSON文字列。scripts/check_similarity.js)
-  plan_rationale     TEXT                           -- 智谷の企画採用理由・採点結果(JSON文字列。.claude/agents/planner-blog-btoc.md)
+  plan_rationale     TEXT,                          -- 智谷の企画採用理由・採点結果(JSON文字列。.claude/agents/planner-blog-btoc.md)
+  citations          TEXT                           -- 出典情報(episode_sources/parent_qa_sources/web_sources/citation_checkのJSON文字列)
 );
 
 CREATE INDEX IF NOT EXISTS idx_posts_status ON posts(status);

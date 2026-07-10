@@ -390,6 +390,20 @@ async function openDetail(id) {
     </div>`;
   }
 
+  const ci = p.citations_parsed;
+  let citHtml = '';
+  if (ci && ((ci.episode_sources || []).length || (ci.parent_qa_sources || []).length || (ci.web_sources || []).length)) {
+    const cc = ci.citation_check;
+    const hasInvalid = cc && cc.ok === false;
+    citHtml = `<div class="fact-check-box ${hasInvalid ? 'has-issue' : ''}">
+      <strong>出典</strong>
+      ${(ci.episode_sources || []).length ? `<div class="fact-check-item"><span class="fc-result ${hasInvalid && (cc.invalidEpisodeIds||[]).length ? 'fc-ng' : 'fc-ok'}">エピソード</span><span>${ci.episode_sources.map(escapeHtml).join(', ')}</span></div>` : ''}
+      ${(ci.parent_qa_sources || []).length ? `<div class="fact-check-item"><span class="fc-result ${hasInvalid && (cc.invalidParentQaIds||[]).length ? 'fc-ng' : 'fc-ok'}">保護者Q&A</span><span>${ci.parent_qa_sources.map(escapeHtml).join(', ')}</span></div>` : ''}
+      ${(ci.web_sources || []).map(s => `<div class="fact-check-item"><span class="fc-result fc-ok">Web</span><span><a href="${escapeHtml(s.url)}" target="_blank" rel="noopener">${escapeHtml(s.source_name || s.url)}</a>${s.published_at ? ` (${escapeHtml(s.published_at)})` : ''}</span></div>`).join('')}
+      ${hasInvalid ? `<div class="fact-check-item"><span class="fc-result fc-ng">要確認</span><span>存在しない出典ID: ${[...(cc.invalidEpisodeIds||[]), ...(cc.invalidParentQaIds||[])].map(escapeHtml).join(', ')}</span></div>` : ''}
+    </div>`;
+  }
+
   document.getElementById('detailCard').innerHTML = `
     <span class="badge badge-${p.status}">${statusLabel(p.status)}</span>
     <h2 class="detail-title">${escapeHtml(p.title)}</h2>
@@ -405,6 +419,7 @@ async function openDetail(id) {
       ${p.wp_link ? `<div>${p.status === 'scheduled' ? '公開予定URL' : '公開URL'}</div><div><a href="${escapeHtml(p.wp_link)}" target="_blank" rel="noopener">${escapeHtml(p.wp_link)}</a></div>` : ''}
     </div>
     ${prHtml}
+    ${citHtml}
     ${fcHtml}
     ${simHtml}
     <div class="article-preview">${p.body_html}</div>

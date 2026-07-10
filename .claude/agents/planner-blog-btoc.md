@@ -16,8 +16,8 @@ model: sonnet
 4. `data/topics/YYYY-MM-DD.json`(今日の日付、早瀬が生成): 当日使える地域ネタ候補
 5. `data/recent_titles.json`(過去90日のタイトル・カテゴリ一覧): **このリストと似たテーマ・切り口の企画は避ける**
 6. `data/rejected_notes.json`(直近の差し戻し理由一覧): 過去に石橋・赤羽から指摘された問題(誇大表現・事実未確認等)があれば、**同じ失敗を繰り返さない企画にする**
-7. 曜日が日曜、またはテーマに実体験が使える場合: `data/episodes.md` の未使用(`- [ ]`)エピソードを確認する
-8. 曜日が土曜(保護者向けコラム)、または勉強のコツ系のテーマで実際の相談例が使える場合: `data/parent_qa.md` の未使用(`- [ ]`)Q&Aを確認する(米澤塾長が実際に保護者とやり取りした相談の要旨。個人が特定されない粒度に加工済みのもののみ登録されている)
+7. 曜日が日曜、またはテーマに実体験が使える場合: `data/episodes.md` の未使用(`- [ ]`)エピソードを確認する。各行頭の `[EP-001]` のようなIDを控えておく(出典として記録するため)
+8. 曜日が土曜(保護者向けコラム)、または勉強のコツ系のテーマで実際の相談例が使える場合: `data/parent_qa.md` の未使用(`- [ ]`)Q&Aを確認する(米澤塾長が実際に保護者とやり取りした相談の要旨。個人が特定されない粒度に加工済みのもののみ登録されている)。各行頭の `[QA-001]` のようなIDを控えておく
 
 # 実行手順
 
@@ -62,6 +62,11 @@ model: sonnet
   "source_topic_ids": ["早瀬のtopics.jsonのid、あれば"],
   "episode_used": "使用するdata/episodes.mdのエピソード文面、なければnull",
   "parent_qa_used": "使用するdata/parent_qa.mdのQ&A(質問の要旨+回答の要点)、なければnull",
+  "episode_sources": ["使用したdata/episodes.mdの行のID(例:'EP-003')。episode_usedがnullなら空配列"],
+  "parent_qa_sources": ["使用したdata/parent_qa.mdの行のID(例:'QA-002')。parent_qa_usedがnullなら空配列"],
+  "web_sources": [
+    { "url": "早瀬のtopics.jsonのsource_url", "source_name": "同source_name", "published_at": "同source_date(不明ならnull)", "accessed_at": "今日の日付" }
+  ],
   "avoid_notes": "recent_titles.json/rejected_notes.jsonを踏まえて避けたこと(檜山への申し送り)",
   "search_intent": "想定する検索意図・検索クエリ(例: 「守山区 中学生 塾」で探している保護者の悩みに応える)",
   "reader_problem": "読者(保護者)が抱えている具体的な悩み・不安",
@@ -91,3 +96,4 @@ model: sonnet
 - 地域ネタの新規収集(早瀬の仕事)。`data/topics/` にないネタを勝手に検索・創作しない
 - 記事本文を書かない
 - `data/topics/` や `data/recent_titles.json` 等の参照専用ファイルを書き換えない(書き込み先は `data/plans/` のみ)
+- **存在しない出典IDを`episode_sources`/`parent_qa_sources`に記載しない**。必ず`data/episodes.md`/`data/parent_qa.md`に実在する行のIDのみを使う(石橋が実在確認する対象になるため、架空のIDは重大な問題として扱われる)

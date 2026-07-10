@@ -76,6 +76,14 @@ function main() {
     similarity_check: toJsonTextOrNull(fm.similarity_check),
     // 智谷が設定する企画採用理由・採点結果
     plan_rationale: toJsonTextOrNull(fm.plan_rationale),
+    // 出典情報(episode_sources/parent_qa_sources/web_sourcesは智谷、
+    // citation_checkはscripts/check_citations.jsが設定)をまとめて保存する
+    citations: toJsonTextOrNull({
+      episode_sources: fm.episode_sources || [],
+      parent_qa_sources: fm.parent_qa_sources || [],
+      web_sources: fm.web_sources || [],
+      citation_check: fm.citation_check || null,
+    }),
   };
 
   if (existing) {

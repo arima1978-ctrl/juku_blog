@@ -36,6 +36,8 @@ function getDb() {
   ensureColumn(db, 'posts', 'similarity_check', 'TEXT');
   // 智谷の企画採用理由・採点結果(JSON文字列。.claude/agents/planner-blog-btoc.md参照)
   ensureColumn(db, 'posts', 'plan_rationale', 'TEXT');
+  // 出典情報(episode_sources/parent_qa_sources/web_sources/citation_checkをまとめたJSON文字列)
+  ensureColumn(db, 'posts', 'citations', 'TEXT');
   return db;
 }
 
@@ -45,11 +47,11 @@ function insertPost(post) {
     INSERT INTO posts (
       created_at, title, slug, category, target_audience, keywords,
       meta_description, body_md, body_html, fact_check_report, status, reviewer_note,
-      seasonal_topic_id, publish_window_end, similarity_check, plan_rationale
+      seasonal_topic_id, publish_window_end, similarity_check, plan_rationale, citations
     ) VALUES (
       :created_at, :title, :slug, :category, :target_audience, :keywords,
       :meta_description, :body_md, :body_html, :fact_check_report, :status, :reviewer_note,
-      :seasonal_topic_id, :publish_window_end, :similarity_check, :plan_rationale
+      :seasonal_topic_id, :publish_window_end, :similarity_check, :plan_rationale, :citations
     )
   `);
   const result = stmt.run({
@@ -69,6 +71,7 @@ function insertPost(post) {
     publish_window_end: post.publish_window_end || null,
     similarity_check: post.similarity_check || null,
     plan_rationale: post.plan_rationale || null,
+    citations: post.citations || null,
   });
   return Number(result.lastInsertRowid);
 }
