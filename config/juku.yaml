@@ -37,11 +37,23 @@ generation:
   daily_count: 1
   run_time: "05:00"
   max_retry: 2
+  # 過去記事との類似度チェック(scripts/lib/similarity.js)の閾値(0〜1)。
+  # いずれか1つでも閾値以上ならis_duplicate=trueと判定する。
+  duplicate_threshold:
+    title: 0.8
+    headings: 0.75
+    body: 0.7
 wordpress:
   # an-english.com は教室ごとに同名の子カテゴリー(コラム/学校情報/教室の様子等)が
   # 並ぶ構造のため、名前ではなくIDで固定指定する。
   # 2026-07-10 確認: 「小幡教室用のカテゴリー」(school13, ID=139) > 「コラム」(ID=263)
   category_id: 263
+  # 投稿前検証用(scripts/lib/wordpress_validation.js): 「教室からのBLOG」一覧が
+  # 投稿者IDで絞り込まれているため、想定と異なるアカウントで誤って投稿しないよう
+  # 認証中ユーザーがこのID・表示名と一致するか毎回確認する。
+  # 2026-07-10 確認: 米澤塾長の実アカウント(ID=13、表示名を「米澤由里子」に設定変更済み)
+  author_id: 13
+  author_display_name: "米澤由里子"
 
 # 提供コース一覧(実データ、an-english.com/school/obata/ より):
 #   アンイングリッシュクラブ(英会話)/アンそろばんクラブ/アン美文字クラブ(習字)/

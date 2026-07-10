@@ -28,6 +28,12 @@ function getDb() {
   db.exec(schema);
   // フェーズ2(WordPress自動投稿)で追加: 実際に投稿されたWordPress側のURL
   ensureColumn(db, 'posts', 'wp_link', 'TEXT');
+  // 季節テーマ管理で追加: config/seasonal_topics.yamlのどのテーマを採用したか、
+  // そのテーマの公開可能期間の終了日(YYYY-MM-DD)。季節テーマ以外の記事はどちらもNULL。
+  ensureColumn(db, 'posts', 'seasonal_topic_id', 'TEXT');
+  ensureColumn(db, 'posts', 'publish_window_end', 'TEXT');
+  // 過去記事との類似度チェック結果(JSON文字列。scripts/lib/similarity.js参照)
+  ensureColumn(db, 'posts', 'similarity_check', 'TEXT');
   return db;
 }
 
@@ -36,10 +42,12 @@ function insertPost(post) {
   const stmt = conn.prepare(`
     INSERT INTO posts (
       created_at, title, slug, category, target_audience, keywords,
-      meta_description, body_md, body_html, fact_check_report, status, reviewer_note
+      meta_description, body_md, body_html, fact_check_report, status, reviewer_note,
+      seasonal_topic_id, publish_window_end, similarity_check
     ) VALUES (
       :created_at, :title, :slug, :category, :target_audience, :keywords,
-      :meta_description, :body_md, :body_html, :fact_check_report, :status, :reviewer_note
+      :meta_description, :body_md, :body_html, :fact_check_report, :status, :reviewer_note,
+      :seasonal_topic_id, :publish_window_end, :similarity_check
     )
   `);
   const result = stmt.run({
@@ -55,6 +63,9 @@ function insertPost(post) {
     fact_check_report: post.fact_check_report || null,
     status: post.status || 'review_pending',
     reviewer_note: post.reviewer_note || null,
+    seasonal_topic_id: post.seasonal_topic_id || null,
+    publish_window_end: post.publish_window_end || null,
+    similarity_check: post.similarity_check || null,
   });
   return Number(result.lastInsertRowid);
 }

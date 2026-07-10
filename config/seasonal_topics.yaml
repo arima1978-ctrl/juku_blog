@@ -1,0 +1,860 @@
+# 日付範囲(publish_window)を持つ季節テーマ候補バンク。
+#
+# config/calendar.yaml の `seasons`(月単位の粗い季節文脈)とは別に、
+# 「この期間だけ旬」なテーマを厳密な日付範囲で管理するための新規ファイル。
+# 智谷(planner-blog-btoc)がこのファイルを読み、当日が publish_window に
+# 含まれるテーマの中から優先度順に企画候補として検討する(エージェント統合は次段階)。
+#
+# 各フィールド:
+#   id: 一意なID(fallback_topic_idの参照先としても使う)
+#   title: テーマ(タイトル案そのものではなく企画の切り口)
+#   category: 地域情報/勉強のコツ/入試情報/保護者コラム のいずれか
+#   target: elementary_parent / junior_high_parent の配列(両方可)
+#   keywords.primary: メイン検索キーワード
+#   keywords.secondary: サブ検索キーワード
+#   publish_window: このテーマが「旬」である期間(この期間外には投稿しない)
+#   priority: 同一期間内での優先度(高いほど優先。0-100の目安)
+#   locality_required: 地域固有名詞(守山区・小幡等)への言及が必須か
+#   school_name_required: 具体的な学校名への言及が必須か
+#   episode_preferred: episodes.md/parent_qa.mdの実話素材を優先的に使うべきか
+#   fallback_topic_id: 期限切れ・素材不足時に差し替える代替テーマのID(なければnull)
+#   allowed_cta: この記事末尾に使ってよいCTA種別(id一覧はREADME参照)
+#   season_dependency: high(旬を過ぎたら価値が下がる)/medium/low
+
+seasonal_topics:
+  # --- 7月11日〜7月20日: 夏休み前の準備 ---
+  - id: summer-study-status-check
+    title: "夏休み前に確認したい子どもの学習状況"
+    category: "保護者コラム"
+    target: ["elementary_parent", "junior_high_parent"]
+    keywords:
+      primary: "夏休み前 勉強"
+      secondary: ["夏休み 学習計画", "1学期 復習"]
+    publish_window: { start: "2026-07-11", end: "2026-07-20" }
+    priority: 100
+    locality_required: true
+    school_name_required: false
+    episode_preferred: true
+    fallback_topic_id: summer-study-plan
+    allowed_cta: ["learning_consultation", "trial_lesson"]
+    season_dependency: high
+
+  - id: junior-high-summer-study-hours
+    title: "中学生の夏休みの勉強時間"
+    category: "勉強のコツ"
+    target: ["junior_high_parent"]
+    keywords:
+      primary: "中学生 夏休み 勉強時間"
+      secondary: ["中学生 夏休み 勉強法"]
+    publish_window: { start: "2026-07-11", end: "2026-07-20" }
+    priority: 90
+    locality_required: false
+    school_name_required: false
+    episode_preferred: false
+    fallback_topic_id: summer-study-plan
+    allowed_cta: ["learning_consultation"]
+    season_dependency: high
+
+  - id: elementary-summer-study-habit
+    title: "小学生の夏休みの学習習慣"
+    category: "勉強のコツ"
+    target: ["elementary_parent"]
+    keywords:
+      primary: "小学生 夏休み 学習習慣"
+      secondary: ["夏休み 家庭学習"]
+    publish_window: { start: "2026-07-11", end: "2026-07-20" }
+    priority: 85
+    locality_required: false
+    school_name_required: false
+    episode_preferred: true
+    fallback_topic_id: summer-study-plan
+    allowed_cta: ["learning_consultation", "trial_lesson"]
+    season_dependency: high
+
+  - id: summer-study-plan
+    title: "夏休みの宿題計画"
+    category: "勉強のコツ"
+    target: ["elementary_parent", "junior_high_parent"]
+    keywords:
+      primary: "夏休み 宿題 計画"
+      secondary: ["夏休み スケジュール"]
+    publish_window: { start: "2026-07-11", end: "2026-07-20" }
+    priority: 80
+    locality_required: false
+    school_name_required: false
+    episode_preferred: false
+    fallback_topic_id: null
+    allowed_cta: ["learning_consultation"]
+    season_dependency: medium
+
+  - id: report-card-how-to-read
+    title: "通知表の見方"
+    category: "保護者コラム"
+    target: ["elementary_parent", "junior_high_parent"]
+    keywords:
+      primary: "通知表 見方"
+      secondary: ["通知表 評価"]
+    publish_window: { start: "2026-07-11", end: "2026-07-20" }
+    priority: 75
+    locality_required: false
+    school_name_required: false
+    episode_preferred: false
+    fallback_topic_id: summer-study-plan
+    allowed_cta: ["learning_consultation"]
+    season_dependency: high
+
+  - id: moriyama-summer-course-tips
+    title: "守山区で夏期講習を選ぶポイント"
+    category: "地域情報"
+    target: ["elementary_parent", "junior_high_parent"]
+    keywords:
+      primary: "守山区 夏期講習"
+      secondary: ["小幡 夏期講習", "守山区 塾"]
+    publish_window: { start: "2026-07-11", end: "2026-07-20" }
+    priority: 95
+    locality_required: true
+    school_name_required: false
+    episode_preferred: false
+    fallback_topic_id: summer-study-plan
+    allowed_cta: ["summer_course_info", "trial_lesson"]
+    season_dependency: high
+
+  - id: summer-course-effectiveness
+    title: "夏期講習だけでも効果はあるか"
+    category: "勉強のコツ"
+    target: ["elementary_parent", "junior_high_parent"]
+    keywords:
+      primary: "夏期講習 効果"
+      secondary: ["夏期講習だけ"]
+    publish_window: { start: "2026-07-11", end: "2026-07-20" }
+    priority: 70
+    locality_required: false
+    school_name_required: false
+    episode_preferred: false
+    fallback_topic_id: summer-study-plan
+    allowed_cta: ["summer_course_info"]
+    season_dependency: medium
+
+  - id: junior-high-math-review
+    title: "中学生の数学復習"
+    category: "勉強のコツ"
+    target: ["junior_high_parent"]
+    keywords:
+      primary: "中学生 数学 復習"
+      secondary: ["中学 数学 苦手"]
+    publish_window: { start: "2026-07-11", end: "2026-07-20" }
+    priority: 65
+    locality_required: false
+    school_name_required: false
+    episode_preferred: false
+    fallback_topic_id: summer-study-plan
+    allowed_cta: ["learning_consultation"]
+    season_dependency: low
+
+  - id: junior-high-english-review
+    title: "中学生の英語復習"
+    category: "勉強のコツ"
+    target: ["junior_high_parent"]
+    keywords:
+      primary: "中学生 英語 復習"
+      secondary: ["中学 英語 苦手"]
+    publish_window: { start: "2026-07-11", end: "2026-07-20" }
+    priority: 65
+    locality_required: false
+    school_name_required: false
+    episode_preferred: false
+    fallback_topic_id: summer-study-plan
+    allowed_cta: ["learning_consultation"]
+    season_dependency: low
+
+  - id: starting-juku-in-summer
+    title: "夏休みから塾を始めても遅くないか"
+    category: "保護者コラム"
+    target: ["elementary_parent", "junior_high_parent"]
+    keywords:
+      primary: "夏休み 塾 始める"
+      secondary: ["塾 夏から"]
+    publish_window: { start: "2026-07-11", end: "2026-07-20" }
+    priority: 88
+    locality_required: false
+    school_name_required: false
+    episode_preferred: true
+    fallback_topic_id: summer-study-plan
+    allowed_cta: ["trial_lesson", "learning_consultation"]
+    season_dependency: high
+
+  # --- 7月21日〜7月31日: 夏休み序盤 ---
+  - id: summer-first-day-house-rules
+    title: "夏休み初日の家庭ルール"
+    category: "保護者コラム"
+    target: ["elementary_parent", "junior_high_parent"]
+    keywords:
+      primary: "夏休み 家庭ルール"
+      secondary: ["夏休み 過ごし方"]
+    publish_window: { start: "2026-07-21", end: "2026-07-31" }
+    priority: 90
+    locality_required: false
+    school_name_required: false
+    episode_preferred: true
+    fallback_topic_id: summer-early-review
+    allowed_cta: ["learning_consultation"]
+    season_dependency: high
+
+  - id: child-wont-study-in-summer
+    title: "夏休みに子どもが勉強しない理由"
+    category: "保護者コラム"
+    target: ["elementary_parent", "junior_high_parent"]
+    keywords:
+      primary: "夏休み 勉強しない"
+      secondary: ["子供 勉強しない 夏休み"]
+    publish_window: { start: "2026-07-21", end: "2026-07-31" }
+    priority: 95
+    locality_required: false
+    school_name_required: false
+    episode_preferred: true
+    fallback_topic_id: summer-early-review
+    allowed_cta: ["learning_consultation", "trial_lesson"]
+    season_dependency: high
+
+  - id: elementary-summer-study-hours
+    title: "小学生の夏休みの勉強時間"
+    category: "勉強のコツ"
+    target: ["elementary_parent"]
+    keywords:
+      primary: "小学生 夏休み 勉強時間"
+      secondary: ["小学生 夏休み 勉強法"]
+    publish_window: { start: "2026-07-21", end: "2026-07-31" }
+    priority: 80
+    locality_required: false
+    school_name_required: false
+    episode_preferred: false
+    fallback_topic_id: summer-early-review
+    allowed_cta: ["learning_consultation"]
+    season_dependency: medium
+
+  - id: junior-high-1-summer-review
+    title: "中学1年生の夏休み復習"
+    category: "勉強のコツ"
+    target: ["junior_high_parent"]
+    keywords:
+      primary: "中1 夏休み 復習"
+      secondary: ["中学1年生 夏休み 勉強"]
+    publish_window: { start: "2026-07-21", end: "2026-07-31" }
+    priority: 75
+    locality_required: false
+    school_name_required: false
+    episode_preferred: false
+    fallback_topic_id: summer-early-review
+    allowed_cta: ["learning_consultation"]
+    season_dependency: medium
+
+  - id: junior-high-2-summer-review
+    title: "中学2年生の夏休み復習"
+    category: "勉強のコツ"
+    target: ["junior_high_parent"]
+    keywords:
+      primary: "中2 夏休み 復習"
+      secondary: ["中学2年生 夏休み 勉強"]
+    publish_window: { start: "2026-07-21", end: "2026-07-31" }
+    priority: 75
+    locality_required: false
+    school_name_required: false
+    episode_preferred: false
+    fallback_topic_id: summer-early-review
+    allowed_cta: ["learning_consultation"]
+    season_dependency: medium
+
+  - id: junior-high-3-exam-study
+    title: "中学3年生の受験勉強"
+    category: "入試情報"
+    target: ["junior_high_parent"]
+    keywords:
+      primary: "中3 夏休み 受験勉強"
+      secondary: ["高校受験 夏休み"]
+    publish_window: { start: "2026-07-21", end: "2026-07-31" }
+    priority: 92
+    locality_required: false
+    school_name_required: false
+    episode_preferred: false
+    fallback_topic_id: summer-early-review
+    allowed_cta: ["course_consultation", "trial_lesson"]
+    season_dependency: high
+
+  - id: summer-lifestyle-rhythm
+    title: "夏休みの生活リズム"
+    category: "保護者コラム"
+    target: ["elementary_parent", "junior_high_parent"]
+    keywords:
+      primary: "夏休み 生活リズム"
+      secondary: ["夏休み 早寝早起き"]
+    publish_window: { start: "2026-07-21", end: "2026-07-31" }
+    priority: 70
+    locality_required: false
+    school_name_required: false
+    episode_preferred: false
+    fallback_topic_id: summer-early-review
+    allowed_cta: ["learning_consultation"]
+    season_dependency: medium
+
+  - id: elementary-calculation-mistakes
+    title: "小学生の計算ミス"
+    category: "勉強のコツ"
+    target: ["elementary_parent"]
+    keywords:
+      primary: "小学生 計算ミス"
+      secondary: ["計算ミス 減らす"]
+    publish_window: { start: "2026-07-21", end: "2026-07-31" }
+    priority: 60
+    locality_required: false
+    school_name_required: false
+    episode_preferred: false
+    fallback_topic_id: summer-early-review
+    allowed_cta: ["learning_consultation"]
+    season_dependency: low
+
+  - id: japanese-reading-comprehension
+    title: "国語の読解力"
+    category: "勉強のコツ"
+    target: ["elementary_parent", "junior_high_parent"]
+    keywords:
+      primary: "国語 読解力"
+      secondary: ["読解力 鍛える"]
+    publish_window: { start: "2026-07-21", end: "2026-07-31" }
+    priority: 60
+    locality_required: false
+    school_name_required: false
+    episode_preferred: false
+    fallback_topic_id: summer-early-review
+    allowed_cta: ["learning_consultation"]
+    season_dependency: low
+
+  - id: english-vocabulary-memorization
+    title: "英単語の覚え方"
+    category: "勉強のコツ"
+    target: ["junior_high_parent"]
+    keywords:
+      primary: "英単語 覚え方"
+      secondary: ["中学生 英単語 暗記"]
+    publish_window: { start: "2026-07-21", end: "2026-07-31" }
+    priority: 60
+    locality_required: false
+    school_name_required: false
+    episode_preferred: false
+    fallback_topic_id: summer-early-review
+    allowed_cta: ["learning_consultation"]
+    season_dependency: low
+
+  - id: summer-early-review
+    title: "夏休み序盤の振り返り"
+    category: "保護者コラム"
+    target: ["elementary_parent", "junior_high_parent"]
+    keywords:
+      primary: "夏休み 序盤 振り返り"
+      secondary: ["夏休み 前半 総括"]
+    publish_window: { start: "2026-07-21", end: "2026-07-31" }
+    priority: 65
+    locality_required: false
+    school_name_required: false
+    episode_preferred: false
+    fallback_topic_id: null
+    allowed_cta: ["learning_consultation"]
+    season_dependency: medium
+
+  # --- 8月1日〜8月10日: 苦手科目の克服 ---
+  - id: why-math-becomes-weak
+    title: "数学が苦手になる原因"
+    category: "勉強のコツ"
+    target: ["junior_high_parent"]
+    keywords:
+      primary: "数学 苦手 原因"
+      secondary: ["数学 苦手 克服"]
+    publish_window: { start: "2026-08-01", end: "2026-08-10" }
+    priority: 85
+    locality_required: false
+    school_name_required: false
+    episode_preferred: false
+    fallback_topic_id: weak-subject-one-week-plan
+    allowed_cta: ["learning_consultation"]
+    season_dependency: low
+
+  - id: why-english-becomes-weak
+    title: "英語が苦手になる原因"
+    category: "勉強のコツ"
+    target: ["junior_high_parent"]
+    keywords:
+      primary: "英語 苦手 原因"
+      secondary: ["英語 苦手 克服"]
+    publish_window: { start: "2026-08-01", end: "2026-08-10" }
+    priority: 85
+    locality_required: false
+    school_name_required: false
+    episode_preferred: false
+    fallback_topic_id: weak-subject-one-week-plan
+    allowed_cta: ["learning_consultation"]
+    season_dependency: low
+
+  - id: japanese-word-problems
+    title: "国語の文章問題"
+    category: "勉強のコツ"
+    target: ["elementary_parent", "junior_high_parent"]
+    keywords:
+      primary: "国語 文章問題"
+      secondary: ["国語 読解問題 対策"]
+    publish_window: { start: "2026-08-01", end: "2026-08-10" }
+    priority: 60
+    locality_required: false
+    school_name_required: false
+    episode_preferred: false
+    fallback_topic_id: weak-subject-one-week-plan
+    allowed_cta: ["learning_consultation"]
+    season_dependency: low
+
+  - id: elementary-word-problems
+    title: "小学生の文章題"
+    category: "勉強のコツ"
+    target: ["elementary_parent"]
+    keywords:
+      primary: "小学生 文章題"
+      secondary: ["文章題 苦手"]
+    publish_window: { start: "2026-08-01", end: "2026-08-10" }
+    priority: 60
+    locality_required: false
+    school_name_required: false
+    episode_preferred: false
+    fallback_topic_id: weak-subject-one-week-plan
+    allowed_cta: ["learning_consultation"]
+    season_dependency: low
+
+  - id: kanji-memorization
+    title: "漢字の覚え方"
+    category: "勉強のコツ"
+    target: ["elementary_parent"]
+    keywords:
+      primary: "漢字 覚え方"
+      secondary: ["漢字 暗記 コツ"]
+    publish_window: { start: "2026-08-01", end: "2026-08-10" }
+    priority: 55
+    locality_required: false
+    school_name_required: false
+    episode_preferred: false
+    fallback_topic_id: weak-subject-one-week-plan
+    allowed_cta: ["learning_consultation"]
+    season_dependency: low
+
+  - id: reducing-careless-mistakes
+    title: "ケアレスミスを減らす方法"
+    category: "勉強のコツ"
+    target: ["elementary_parent", "junior_high_parent"]
+    keywords:
+      primary: "ケアレスミス 減らす"
+      secondary: ["うっかりミス 対策"]
+    publish_window: { start: "2026-08-01", end: "2026-08-10" }
+    priority: 65
+    locality_required: false
+    school_name_required: false
+    episode_preferred: false
+    fallback_topic_id: weak-subject-one-week-plan
+    allowed_cta: ["learning_consultation"]
+    season_dependency: low
+
+  - id: encouraging-child-who-avoids-hard-problems
+    title: "わからない問題を放置する子への声かけ"
+    category: "保護者コラム"
+    target: ["elementary_parent", "junior_high_parent"]
+    keywords:
+      primary: "わからない問題 放置 声かけ"
+      secondary: ["子供 勉強 わからない 対応"]
+    publish_window: { start: "2026-08-01", end: "2026-08-10" }
+    priority: 80
+    locality_required: false
+    school_name_required: false
+    episode_preferred: true
+    fallback_topic_id: weak-subject-one-week-plan
+    allowed_cta: ["learning_consultation"]
+    season_dependency: low
+
+  - id: studying-without-improving-grades
+    title: "勉強しても成績が上がらない原因"
+    category: "保護者コラム"
+    target: ["elementary_parent", "junior_high_parent"]
+    keywords:
+      primary: "勉強しても成績が上がらない"
+      secondary: ["成績 上がらない 原因"]
+    publish_window: { start: "2026-08-01", end: "2026-08-10" }
+    priority: 90
+    locality_required: false
+    school_name_required: false
+    episode_preferred: true
+    fallback_topic_id: weak-subject-one-week-plan
+    allowed_cta: ["learning_consultation", "trial_lesson"]
+    season_dependency: low
+
+  - id: how-to-use-workbooks
+    title: "問題集の使い方"
+    category: "勉強のコツ"
+    target: ["elementary_parent", "junior_high_parent"]
+    keywords:
+      primary: "問題集 使い方"
+      secondary: ["問題集 選び方"]
+    publish_window: { start: "2026-08-01", end: "2026-08-10" }
+    priority: 55
+    locality_required: false
+    school_name_required: false
+    episode_preferred: false
+    fallback_topic_id: weak-subject-one-week-plan
+    allowed_cta: ["learning_consultation"]
+    season_dependency: low
+
+  - id: weak-subject-one-week-plan
+    title: "苦手科目を克服する1週間計画"
+    category: "勉強のコツ"
+    target: ["elementary_parent", "junior_high_parent"]
+    keywords:
+      primary: "苦手科目 克服 計画"
+      secondary: ["苦手科目 1週間"]
+    publish_window: { start: "2026-08-01", end: "2026-08-10" }
+    priority: 70
+    locality_required: false
+    school_name_required: false
+    episode_preferred: false
+    fallback_topic_id: null
+    allowed_cta: ["learning_consultation"]
+    season_dependency: low
+
+  # --- 8月11日〜8月20日: 夏休み中盤 ---
+  - id: studying-during-obon
+    title: "お盆中の勉強"
+    category: "保護者コラム"
+    target: ["elementary_parent", "junior_high_parent"]
+    keywords:
+      primary: "お盆 勉強"
+      secondary: ["お盆休み 勉強"]
+    publish_window: { start: "2026-08-11", end: "2026-08-20" }
+    priority: 70
+    locality_required: false
+    school_name_required: false
+    episode_preferred: false
+    fallback_topic_id: summer-midway-check
+    allowed_cta: ["learning_consultation"]
+    season_dependency: high
+
+  - id: studying-during-travel
+    title: "帰省・旅行中の勉強"
+    category: "保護者コラム"
+    target: ["elementary_parent", "junior_high_parent"]
+    keywords:
+      primary: "帰省 旅行 勉強"
+      secondary: ["旅行中 宿題"]
+    publish_window: { start: "2026-08-11", end: "2026-08-20" }
+    priority: 65
+    locality_required: false
+    school_name_required: false
+    episode_preferred: false
+    fallback_topic_id: summer-midway-check
+    allowed_cta: ["learning_consultation"]
+    season_dependency: high
+
+  - id: tablet-learning-cautions
+    title: "タブレット学習の注意点"
+    category: "保護者コラム"
+    target: ["elementary_parent", "junior_high_parent"]
+    keywords:
+      primary: "タブレット学習 注意点"
+      secondary: ["タブレット 勉強 デメリット"]
+    publish_window: { start: "2026-08-11", end: "2026-08-20" }
+    priority: 60
+    locality_required: false
+    school_name_required: false
+    episode_preferred: false
+    fallback_topic_id: summer-midway-check
+    allowed_cta: ["learning_consultation"]
+    season_dependency: low
+
+  - id: smartphone-and-study-balance
+    title: "スマホと勉強の両立"
+    category: "保護者コラム"
+    target: ["junior_high_parent"]
+    keywords:
+      primary: "スマホ 勉強 両立"
+      secondary: ["中学生 スマホ 時間"]
+    publish_window: { start: "2026-08-11", end: "2026-08-20" }
+    priority: 65
+    locality_required: false
+    school_name_required: false
+    episode_preferred: true
+    fallback_topic_id: summer-midway-check
+    allowed_cta: ["learning_consultation"]
+    season_dependency: low
+
+  - id: unfinished-summer-homework
+    title: "夏休みの宿題が終わらないとき"
+    category: "保護者コラム"
+    target: ["elementary_parent", "junior_high_parent"]
+    keywords:
+      primary: "夏休み 宿題 終わらない"
+      secondary: ["宿題 間に合わない"]
+    publish_window: { start: "2026-08-11", end: "2026-08-20" }
+    priority: 90
+    locality_required: false
+    school_name_required: false
+    episode_preferred: true
+    fallback_topic_id: summer-midway-check
+    allowed_cta: ["learning_consultation", "trial_lesson"]
+    season_dependency: high
+
+  - id: summer-second-half-recovery
+    title: "夏休み後半の立て直し"
+    category: "保護者コラム"
+    target: ["elementary_parent", "junior_high_parent"]
+    keywords:
+      primary: "夏休み 後半 立て直し"
+      secondary: ["夏休み 後半 挽回"]
+    publish_window: { start: "2026-08-11", end: "2026-08-20" }
+    priority: 80
+    locality_required: false
+    school_name_required: false
+    episode_preferred: false
+    fallback_topic_id: summer-midway-check
+    allowed_cta: ["learning_consultation"]
+    season_dependency: high
+
+  - id: book-report-writing
+    title: "読書感想文"
+    category: "勉強のコツ"
+    target: ["elementary_parent"]
+    keywords:
+      primary: "読書感想文 書き方"
+      secondary: ["読書感想文 コツ"]
+    publish_window: { start: "2026-08-11", end: "2026-08-20" }
+    priority: 75
+    locality_required: false
+    school_name_required: false
+    episode_preferred: false
+    fallback_topic_id: summer-midway-check
+    allowed_cta: ["learning_consultation"]
+    season_dependency: high
+
+  - id: free-research-project
+    title: "自由研究"
+    category: "勉強のコツ"
+    target: ["elementary_parent"]
+    keywords:
+      primary: "自由研究 テーマ"
+      secondary: ["自由研究 やり方"]
+    publish_window: { start: "2026-08-11", end: "2026-08-20" }
+    priority: 75
+    locality_required: false
+    school_name_required: false
+    episode_preferred: false
+    fallback_topic_id: summer-midway-check
+    allowed_cta: ["learning_consultation"]
+    season_dependency: high
+
+  - id: junior-high-science-report
+    title: "中学生の理科レポート"
+    category: "勉強のコツ"
+    target: ["junior_high_parent"]
+    keywords:
+      primary: "中学生 理科 レポート"
+      secondary: ["理科 自由研究"]
+    publish_window: { start: "2026-08-11", end: "2026-08-20" }
+    priority: 55
+    locality_required: false
+    school_name_required: false
+    episode_preferred: false
+    fallback_topic_id: summer-midway-check
+    allowed_cta: ["learning_consultation"]
+    season_dependency: medium
+
+  - id: summer-midway-check
+    title: "夏休み中盤の学習確認"
+    category: "保護者コラム"
+    target: ["elementary_parent", "junior_high_parent"]
+    keywords:
+      primary: "夏休み 中盤 学習確認"
+      secondary: ["夏休み 折り返し"]
+    publish_window: { start: "2026-08-11", end: "2026-08-20" }
+    priority: 65
+    locality_required: false
+    school_name_required: false
+    episode_preferred: false
+    fallback_topic_id: null
+    allowed_cta: ["learning_consultation"]
+    season_dependency: medium
+
+  # --- 8月21日〜8月31日: 2学期に向けて ---
+  - id: why-grades-drop-in-second-term
+    title: "2学期に成績が下がりやすい理由"
+    category: "保護者コラム"
+    target: ["elementary_parent", "junior_high_parent"]
+    keywords:
+      primary: "2学期 成績 下がる"
+      secondary: ["2学期 成績 落ちる 理由"]
+    publish_window: { start: "2026-08-21", end: "2026-08-31" }
+    priority: 90
+    locality_required: false
+    school_name_required: false
+    episode_preferred: false
+    fallback_topic_id: connect-summer-to-second-term
+    allowed_cta: ["learning_consultation", "trial_lesson"]
+    season_dependency: high
+
+  - id: post-summer-test
+    title: "夏休み明けテスト"
+    category: "勉強のコツ"
+    target: ["junior_high_parent"]
+    keywords:
+      primary: "夏休み明けテスト 対策"
+      secondary: ["夏休み明け テスト 勉強"]
+    publish_window: { start: "2026-08-21", end: "2026-08-31" }
+    priority: 95
+    locality_required: false
+    school_name_required: false
+    episode_preferred: false
+    fallback_topic_id: connect-summer-to-second-term
+    allowed_cta: ["learning_consultation", "trial_lesson"]
+    season_dependency: high
+
+  - id: local-junior-high-second-term-test-prep
+    title: "近隣中学校の2学期定期テスト準備"
+    category: "勉強のコツ"
+    target: ["junior_high_parent"]
+    keywords:
+      primary: "守山区 中学校 2学期 定期テスト"
+      secondary: ["守山中学校 定期テスト", "守山東中学校 定期テスト"]
+    publish_window: { start: "2026-08-21", end: "2026-08-31" }
+    priority: 92
+    locality_required: true
+    school_name_required: true
+    episode_preferred: false
+    fallback_topic_id: connect-summer-to-second-term
+    allowed_cta: ["learning_consultation", "trial_lesson"]
+    season_dependency: high
+
+  - id: how-to-improve-naishinten
+    title: "内申点を上げる方法"
+    category: "入試情報"
+    target: ["junior_high_parent"]
+    keywords:
+      primary: "内申点 上げる方法"
+      secondary: ["内申点 対策"]
+    publish_window: { start: "2026-08-21", end: "2026-08-31" }
+    priority: 80
+    locality_required: false
+    school_name_required: false
+    episode_preferred: false
+    fallback_topic_id: connect-summer-to-second-term
+    allowed_cta: ["course_consultation"]
+    season_dependency: medium
+
+  - id: homework-submission-and-naishinten
+    title: "宿題提出と内申点"
+    category: "入試情報"
+    target: ["junior_high_parent"]
+    keywords:
+      primary: "宿題 提出 内申点"
+      secondary: ["提出物 内申点 関係"]
+    publish_window: { start: "2026-08-21", end: "2026-08-31" }
+    priority: 60
+    locality_required: false
+    school_name_required: false
+    episode_preferred: false
+    fallback_topic_id: connect-summer-to-second-term
+    allowed_cta: ["course_consultation"]
+    season_dependency: medium
+
+  - id: benefits-of-starting-juku-in-second-term
+    title: "2学期から塾を始めるメリット"
+    category: "保護者コラム"
+    target: ["elementary_parent", "junior_high_parent"]
+    keywords:
+      primary: "2学期 塾 始める"
+      secondary: ["塾 秋から"]
+    publish_window: { start: "2026-08-21", end: "2026-08-31" }
+    priority: 85
+    locality_required: false
+    school_name_required: false
+    episode_preferred: false
+    fallback_topic_id: connect-summer-to-second-term
+    allowed_cta: ["trial_lesson", "learning_consultation"]
+    season_dependency: high
+
+  - id: individual-vs-group-instruction
+    title: "個別指導と集団指導"
+    category: "保護者コラム"
+    target: ["elementary_parent", "junior_high_parent"]
+    keywords:
+      primary: "個別指導 集団指導 違い"
+      secondary: ["塾 個別 集団 どっち"]
+    publish_window: { start: "2026-08-21", end: "2026-08-31" }
+    priority: 55
+    locality_required: false
+    school_name_required: false
+    episode_preferred: false
+    fallback_topic_id: connect-summer-to-second-term
+    allowed_cta: ["trial_lesson"]
+    season_dependency: low
+
+  - id: what-to-check-in-trial-lesson
+    title: "無料体験で確認すること"
+    category: "保護者コラム"
+    target: ["elementary_parent", "junior_high_parent"]
+    keywords:
+      primary: "無料体験 確認 ポイント"
+      secondary: ["塾 体験授業 チェック"]
+    publish_window: { start: "2026-08-21", end: "2026-08-31" }
+    priority: 55
+    locality_required: false
+    school_name_required: false
+    episode_preferred: false
+    fallback_topic_id: connect-summer-to-second-term
+    allowed_cta: ["trial_lesson"]
+    season_dependency: low
+
+  - id: juku-not-improving-grades
+    title: "塾に通っても成績が上がらないとき"
+    category: "保護者コラム"
+    target: ["elementary_parent", "junior_high_parent"]
+    keywords:
+      primary: "塾 通っても 成績 上がらない"
+      secondary: ["塾 効果ない"]
+    publish_window: { start: "2026-08-21", end: "2026-08-31" }
+    priority: 60
+    locality_required: false
+    school_name_required: false
+    episode_preferred: false
+    fallback_topic_id: connect-summer-to-second-term
+    allowed_cta: ["learning_consultation"]
+    season_dependency: low
+
+  - id: moriyama-junior-high-juku-selection
+    title: "守山区で中学生の塾を選ぶポイント"
+    category: "地域情報"
+    target: ["junior_high_parent"]
+    keywords:
+      primary: "守山区 中学生 塾"
+      secondary: ["小幡 中学生 塾"]
+    publish_window: { start: "2026-08-21", end: "2026-08-31" }
+    priority: 90
+    locality_required: true
+    school_name_required: false
+    episode_preferred: false
+    fallback_topic_id: connect-summer-to-second-term
+    allowed_cta: ["trial_lesson", "learning_consultation"]
+    season_dependency: medium
+
+  - id: connect-summer-to-second-term
+    title: "夏休みの学習を2学期につなげる方法"
+    category: "保護者コラム"
+    target: ["elementary_parent", "junior_high_parent"]
+    keywords:
+      primary: "夏休み 2学期 つなげる"
+      secondary: ["夏休み 総復習"]
+    publish_window: { start: "2026-08-21", end: "2026-08-31" }
+    priority: 70
+    locality_required: false
+    school_name_required: false
+    episode_preferred: false
+    fallback_topic_id: null
+    allowed_cta: ["learning_consultation"]
+    season_dependency: medium

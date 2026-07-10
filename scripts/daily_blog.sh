@@ -52,6 +52,18 @@ while true; do
   run_agent editor-btoc "Read,Write" \
     "今日の記事を校正して" "editor-btoc" || exit 1
 
+  # 赤羽が見出し・本文を確定させた直後に、過去記事との類似度をチェックし
+  # frontmatterのsimilarity_checkに記録する(石橋が判定材料として読む)。
+  # 失敗してもパイプライン自体は止めない(類似度チェックは付加的なチェックのため)。
+  CUR_STATUS_LINE=$(node scripts/get_draft_status.js "$TODAY")
+  CUR_DRAFT_PATH=$(echo "$CUR_STATUS_LINE" | cut -f2)
+  if [ -n "$CUR_DRAFT_PATH" ]; then
+    if ! node scripts/check_similarity.js "$CUR_DRAFT_PATH" >> "$LOG" 2>&1; then
+      log "!!! check_similarity.js が失敗しました(類似度チェックをスキップして続行します)"
+      node scripts/log_error.js "check_similarity" "node scripts/check_similarity.js ${CUR_DRAFT_PATH} が失敗"
+    fi
+  fi
+
   run_agent verifier-local "Read,Write" \
     "今日の記事をファクトチェックして" "verifier-local" || exit 1
 

@@ -14,7 +14,11 @@ CREATE TABLE IF NOT EXISTS posts (
   status             TEXT NOT NULL DEFAULT 'review_pending', -- review_pending/approved/rejected/scheduled/published
   reviewer_note      TEXT,                          -- 差し戻し時のメモ
   published_at       TEXT,                          -- 公開(予定)日時。scheduledの間は未来の予約日時、実際に公開されても値は更新しない
-  wp_post_id         TEXT                           -- WordPress投稿ID(フェーズ2用)
+  wp_post_id         TEXT,                          -- WordPress投稿ID(フェーズ2用)
+  wp_link            TEXT,                          -- WordPress投稿URL(予約中は?p=形式、公開後はパーマリンク)
+  seasonal_topic_id  TEXT,                          -- config/seasonal_topics.yamlの採用テーマID(季節テーマ以外はNULL)
+  publish_window_end TEXT,                          -- 採用テーマの公開可能期間の終了日(YYYY-MM-DD)。季節テーマ以外はNULL
+  similarity_check   TEXT                           -- 過去記事との類似度チェック結果(JSON文字列。scripts/check_similarity.js)
 );
 
 CREATE INDEX IF NOT EXISTS idx_posts_status ON posts(status);

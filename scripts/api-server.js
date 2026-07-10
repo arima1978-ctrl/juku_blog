@@ -27,6 +27,7 @@ const { ROOT, loadJukuConfig } = require('./lib/config');
 const { publishPost } = require('./lib/wordpress');
 const { sendTelegram } = require('./lib/telegram');
 const { logError } = require('./log_error');
+const { computeNextScheduleSlot, isWithinPublishWindow } = require('./lib/schedule');
 
 const PORT = process.env.PORT || 3013;
 const DASHBOARD_URL = process.env.DASHBOARD_URL || `http://localhost:${PORT}`;
@@ -35,27 +36,11 @@ const ERRORS_PATH = path.join(ROOT, 'logs', 'errors.json');
 // ダッシュボードの確認が不定期でも、承認をまとめて行った際に同日に複数本
 // 公開されないよう、直近の予約済み/公開済み日の翌日を次の枠として予約投稿する。
 // (このサイトはJST運用のため、WordPressの`date`フィールドにはJSTのwall-clockを渡す)
-function computeNextScheduleSlot() {
+function getNextScheduleSlot() {
   const config = loadJukuConfig();
   const runTime = (config.generation && config.generation.run_time) || '05:00';
-  const [hh, mm] = runTime.split(':');
-
-  const toJstDay = (d) => new Date(d.getTime() + 9 * 3600 * 1000).toISOString().slice(0, 10);
-  const now = new Date();
   const latest = getLatestScheduleDate();
-
-  let baseDay = latest ? toJstDay(new Date(latest)) : toJstDay(now);
-  const todayJstDay = toJstDay(now);
-  if (baseDay < todayJstDay) baseDay = todayJstDay;
-
-  const nextDay = new Date(`${baseDay}T00:00:00Z`);
-  nextDay.setUTCDate(nextDay.getUTCDate() + 1);
-  const nextDayStr = nextDay.toISOString().slice(0, 10);
-
-  return {
-    wpDate: `${nextDayStr}T${hh}:${mm}:00`,
-    utcIso: new Date(`${nextDayStr}T${hh}:${mm}:00+09:00`).toISOString(),
-  };
+  return computeNextScheduleSlot(latest, runTime);
 }
 
 const app = express();
@@ -83,7 +68,15 @@ app.get('/api/posts/:id', (req, res) => {
       factCheckReport = { raw: post.fact_check_report };
     }
   }
-  res.json({ ...post, fact_check_report_parsed: factCheckReport });
+  let similarityCheck = null;
+  if (post.similarity_check) {
+    try {
+      similarityCheck = JSON.parse(post.similarity_check);
+    } catch {
+      similarityCheck = { raw: post.similarity_check };
+    }
+  }
+  res.json({ ...post, fact_check_report_parsed: factCheckReport, similarity_check_parsed: similarityCheck });
 });
 
 app.post('/api/posts/:id/approve', async (req, res) => {
@@ -95,8 +88,20 @@ app.post('/api/posts/:id/approve', async (req, res) => {
   // 複数本公開されないよう、直近の予約枠の翌日を自動計算する。失敗しても承認自体は
   // 成立させ、ステータスはapprovedのまま残す(再度「承認」を押すとリトライできる)。
   const post = getPostById(id);
-  const slot = computeNextScheduleSlot();
-  const scheduledDateLabel = slot.wpDate.slice(0, 10);
+  const slot = getNextScheduleSlot();
+  const scheduledDateLabel = slot.dateOnly;
+
+  // 季節テーマ由来の記事(publish_window_endがある記事)が、計算された予約日には
+  // すでに旬を過ぎている場合、自動投稿はせず人間の確認に戻す(自動での差し替え・
+  // 再企画は次段階。安全側に倒し、まず必ず人間が気づける状態にする)。
+  if (!isWithinPublishWindow(scheduledDateLabel, post.publish_window_end)) {
+    const note = `⚠️ 予約日(${scheduledDateLabel})が公開可能期間(〜${post.publish_window_end})を超えています。内容が季節に合っているか確認し、必要なら差し戻すか手動で対応してください。`;
+    setStatus(id, 'approved', note);
+    await sendTelegram(
+      `⚠️ 公開期限超過のため自動投稿を保留しました\n${post.title}\n予約予定日: ${scheduledDateLabel} / 公開可能期限: ${post.publish_window_end}\n${DASHBOARD_URL}`
+    );
+    return res.json({ ok: true, published: false, reason: 'publish_window_expired' });
+  }
 
   // WordPressへの投稿処理を始める前に通知する(投稿完了後の事後通知ではなく、事前通知)
   await sendTelegram(`📅 記事を承認しました。${scheduledDateLabel} にWordPressで公開予定です\n${post.title}\n${DASHBOARD_URL}`);

@@ -282,6 +282,11 @@ function statusLabel(status) {
   return { review_pending: '確認待ち', approved: '承認', rejected: '差し戻し', scheduled: '予約済み', published: '公開済み' }[status] || status;
 }
 
+function isPastDate(yyyyMmDd) {
+  const today = new Date().toISOString().slice(0, 10);
+  return yyyyMmDd < today;
+}
+
 function escapeHtml(s) {
   return (s || '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
@@ -357,6 +362,19 @@ async function openDetail(id) {
     </div>`;
   }
 
+  const sc = p.similarity_check_parsed;
+  let simHtml = '';
+  if (sc && sc.matched_post_id !== null && sc.matched_post_id !== undefined) {
+    simHtml = `<div class="fact-check-box ${sc.is_duplicate ? 'has-issue' : ''}">
+      <strong>過去記事との類似度チェック</strong>
+      <div class="fact-check-item">
+        <span class="fc-result ${sc.is_duplicate ? 'fc-ng' : 'fc-ok'}">${sc.is_duplicate ? '重複の疑いあり' : 'OK'}</span>
+        <span>最高類似度 ${sc.highest_score} (id=${sc.matched_post_id} "${escapeHtml(sc.matched_title || '')}")</span>
+      </div>
+      <div class="fact-check-item"><span></span><span>タイトル: ${sc.checks.title} / 見出し: ${sc.checks.headings} / 本文: ${sc.checks.body}</span></div>
+    </div>`;
+  }
+
   document.getElementById('detailCard').innerHTML = `
     <span class="badge badge-${p.status}">${statusLabel(p.status)}</span>
     <h2 class="detail-title">${escapeHtml(p.title)}</h2>
@@ -366,11 +384,13 @@ async function openDetail(id) {
       <div>検索キーワード</div><div>${escapeHtml(p.keywords || '-')}</div>
       <div>メタディスクリプション</div><div>${escapeHtml(p.meta_description || '-')}</div>
       <div>生成日</div><div>${p.created_at}</div>
+      ${p.publish_window_end ? `<div>季節テーマの公開期限</div><div>${isPastDate(p.publish_window_end) ? `<span style="color:var(--red);font-weight:bold;">${escapeHtml(p.publish_window_end)}(期限超過)</span>` : escapeHtml(p.publish_window_end)}</div>` : ''}
       ${p.reviewer_note ? `<div>差し戻しメモ</div><div>${escapeHtml(p.reviewer_note)}</div>` : ''}
       ${p.status === 'scheduled' && p.published_at ? `<div>公開予定日</div><div>${escapeHtml(p.published_at.slice(0, 10))}</div>` : ''}
       ${p.wp_link ? `<div>${p.status === 'scheduled' ? '公開予定URL' : '公開URL'}</div><div><a href="${escapeHtml(p.wp_link)}" target="_blank" rel="noopener">${escapeHtml(p.wp_link)}</a></div>` : ''}
     </div>
     ${fcHtml}
+    ${simHtml}
     <div class="article-preview">${p.body_html}</div>
     <div class="actions">
       <button class="primary" onclick="approvePost(${p.id})">承認</button>

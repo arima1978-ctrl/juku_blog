@@ -15,6 +15,7 @@
 const https = require('node:https');
 const { URL } = require('node:url');
 const { loadJukuConfig } = require('./config');
+const { validateAuthor, validateCategory } = require('./wordpress_validation');
 
 function getWpConfig() {
   const baseUrl = process.env.WP_URL;
@@ -71,13 +72,43 @@ async function findTermId(config, taxonomy, name) {
   return exact ? exact.id : null;
 }
 
+async function fetchCategoryOrNull(config, categoryId) {
+  try {
+    return await wpRequest(config, 'GET', `categories/${categoryId}`);
+  } catch {
+    return null;
+  }
+}
+
+// 投稿前に、認証中のWordPressユーザー・投稿先カテゴリーが想定通りかを確認する。
+// 「教室からのBLOG」一覧が投稿者IDで絞り込まれる構造のため、想定と異なるアカウント
+// で誤って投稿すると記事が意図した場所に表示されない、という事故を防ぐための検証。
+async function assertWordPressTargetIsValid(config, wpConf) {
+  const currentUser = await wpRequest(config, 'GET', 'users/me').catch(() => null);
+  const authorCheck = validateAuthor(currentUser, wpConf);
+  if (!authorCheck.ok) {
+    throw new Error(`WordPress投稿者の事前検証に失敗しました: ${authorCheck.reason}`);
+  }
+
+  if (wpConf && wpConf.category_id) {
+    const category = await fetchCategoryOrNull(config, wpConf.category_id);
+    const categoryCheck = validateCategory(category, wpConf.category_id);
+    if (!categoryCheck.ok) {
+      throw new Error(`WordPressカテゴリーの事前検証に失敗しました: ${categoryCheck.reason}`);
+    }
+  }
+}
+
 // date: WordPressサイトのローカル時刻(このサイトはJST確認済み)のwall-clock文字列
 // (例: "2026-07-12T05:00:00")。指定するとstatus:'future'の予約投稿になる。
 // 省略時は従来通り即時公開(status:'publish')。
 async function publishPost(post, { date } = {}) {
   const config = getWpConfig();
   const jukuConfig = loadJukuConfig();
-  const categoryId = jukuConfig.wordpress && jukuConfig.wordpress.category_id;
+  const wpConf = jukuConfig.wordpress || {};
+  const categoryId = wpConf.category_id;
+
+  await assertWordPressTargetIsValid(config, wpConf);
 
   const tagNames = (post.keywords || '').split(',').map((k) => k.trim()).filter(Boolean);
   const tagIds = [];

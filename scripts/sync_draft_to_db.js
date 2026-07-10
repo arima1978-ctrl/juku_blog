@@ -65,6 +65,14 @@ function main() {
     fact_check_report: factCheckReport,
     status: dbStatus,
     reviewer_note: fm.reviewer_note || (dbStatus === 'rejected' ? '自動エスカレーション: 石橋のチェックで2回差し戻し。要人間確認' : null),
+    // 季節テーマ(config/seasonal_topics.yaml)を採用した記事の場合のみ智谷が企画時に設定する。
+    // 通常テーマの記事はどちらもnullのまま(公開期限のチェック対象外になる)。
+    seasonal_topic_id: fm.seasonal_topic_id || null,
+    publish_window_end: fm.publish_window_end || null,
+    // scripts/check_similarity.js が設定する過去記事との類似度チェック結果
+    similarity_check: fm.similarity_check
+      ? (typeof fm.similarity_check === 'string' ? fm.similarity_check : JSON.stringify(fm.similarity_check, null, 2))
+      : null,
   };
 
   if (existing) {

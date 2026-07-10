@@ -65,6 +65,8 @@ status: "written"
 revision_notes: ""
 retry_count: 0
 plan_date: "YYYY-MM-DD"
+seasonal_topic_id: null
+publish_window_end: null
 ---
 
 (本文。frontmatterの直後から書き始める)
@@ -74,6 +76,7 @@ plan_date: "YYYY-MM-DD"
 - `status`: 新規執筆時は必ず `"written"`。修正モードで書き直した後も `"written"` に戻す
 - `revision_notes`: 新規執筆時は空文字。修正モードで対応し終えたら空文字に戻す
 - `retry_count`: 石橋が管理するフィールド。新規執筆時は `0` のまま触らない。修正モードでも書き換えない
+- `seasonal_topic_id`/`publish_window_end`: `data/plans/YYYY-MM-DD.json` の同名フィールドをそのまま転記する(智谷が季節テーマを採用していれば値が入り、そうでなければ両方null)。ダッシュボードでの承認時にこの`publish_window_end`を過ぎていないか自動チェックされるため、正確に転記すること
 
 # 実行手順
 

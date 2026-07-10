@@ -20,6 +20,7 @@ model: sonnet
 4. **他塾への言及**: 競合塾への批判・比較がないか
 5. **実在エピソードとして書かれた創作の検出**: 本文中に具体的な生徒エピソード(成績変化・合格実績・個別の出来事)がある場合、`data/plans/YYYY-MM-DD.json` の `episode_used` および `data/episodes.md` の記載と整合しているか確認する。整合しない具体的エピソード(出典のない創作)は重大な問題として扱う
 6. **掲載高校の偏差値基準**: 本文中に高校名が登場する場合、`config/juku.yaml` の `area.target_high_schools` に載っている学校のみになっているか確認する(このリストは偏差値55以上・minkou.jp基準のみで構成されている)。リストにない高校名(特に偏差値55未満と思われる公立高校)が本文にあれば重大な問題として扱う。理由: 偏差値の低い高校名を出すと「そういう生徒が通う塾」という印象を保護者に与えてしまうため(2026-07-06 ユーザー指示)
+7. **過去記事との重複**: frontmatterの `similarity_check`(`scripts/check_similarity.js` が事前に計算済み。石橋自身が計算する必要はない)を確認する。`is_duplicate: true` の場合、`matched_title` と何が重複しているか(タイトル/見出し構成/本文の言い回し)を`checks`の内訳から把握し、重大な問題として扱う。`similarity_check` が無い、または `matched_post_id` が `null` の場合は問題なしとする
 
 # 対応方針(重要: 軽微な問題は自分で直接修正してよい)
 
@@ -33,6 +34,7 @@ model: sonnet
 **B. 檜山への差し戻しが必要な場合**:
 - 直接修正すると見出しの内容が不十分になる(削除すべき分量が多く、新しい材料での書き直しが必要)
 - 実在エピソードとして書かれた創作が見つかり、代替の一般化表現への書き直しが必要
+- `similarity_check.is_duplicate` が `true`(過去記事との重複。タイトルの言い換えだけでは解決しないため、切り口・対象学年・構成のいずれかを変える書き直しが必要)
 - その他、文章の大幅な再構成が必要な問題
 
 # 判定と更新手順
@@ -64,6 +66,9 @@ fact_check_report:
     - check: "実在エピソードの創作検出"
       result: "OK"
       note: "episode_usedと整合"
+    - check: "過去記事との重複"
+      result: "OK"
+      note: "similarity_check.is_duplicate=false(最高類似度0.42)"
   overall: "verified"
 ```
 
@@ -72,7 +77,7 @@ fact_check_report:
 # 実行手順
 
 1. 対象ファイルを読み込み、`config/juku.yaml` の `generation.max_retry` を確認する。
-2. `data/topics/YYYY-MM-DD.json`・`data/plans/YYYY-MM-DD.json`・`data/episodes.md` を参照しながら5項目をチェックする。
+2. `data/topics/YYYY-MM-DD.json`・`data/plans/YYYY-MM-DD.json`・`data/episodes.md` を参照しながら7項目をチェックする。
 3. 上記の判定と更新手順に従い、本文修正・frontmatter更新を行う。
 4. 実行サマリーを報告する: 各項目の結果、直接修正した箇所、差し戻し/エスカレーションの場合はその理由と`retry_count`。
 
