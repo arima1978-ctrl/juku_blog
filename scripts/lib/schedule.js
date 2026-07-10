@@ -35,4 +35,23 @@ function isWithinPublishWindow(scheduledDateOnly, windowEnd) {
   return scheduledDateOnly <= windowEnd;
 }
 
-module.exports = { computeNextScheduleSlot, isWithinPublishWindow, toJstDay };
+// 直近の予約済み/公開済み記事の値(カテゴリー・対象読者等)を新しい日付順(直近が先頭)で受け取り、
+// 新しい記事の値を加えるとmaxStreak日を超えて連続してしまうかを判定する。
+// ブロックはせず「警告すべきか」を返すだけ(承認自体は止めない設計)。
+// recentValues: ["勉強のコツ", "勉強のコツ", ...] (直近が先頭)
+function checkStreak(recentValues, newValue, maxStreak) {
+  if (!newValue || !maxStreak || maxStreak <= 0) return { warn: false, streak: 0 };
+
+  let streak = 1; // 新しい記事自身の分
+  for (const v of recentValues) {
+    if (v === newValue) {
+      streak++;
+    } else {
+      break;
+    }
+  }
+
+  return { warn: streak > maxStreak, streak };
+}
+
+module.exports = { computeNextScheduleSlot, isWithinPublishWindow, checkStreak, toJstDay };

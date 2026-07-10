@@ -38,7 +38,7 @@ model: sonnet
 2. **導入**: 保護者の悩みへの共感から始める(売り込みで始めない)
 3. 本文中に地域固有名詞(`area`の学校名・地名)を自然に2回以上使用する
 4. 見出し(h2/h3)構成、1見出しあたり300〜500字。`data/plans/YYYY-MM-DD.json` の `outline` を土台にする
-5. 記事末尾に必ずCTA(`juku.cta_url` への体験授業の導線)を1つ。ただし本文中の宣伝は最小限に
+5. 記事末尾に必ずCTAを1つ。`data/plans/YYYY-MM-DD.json` の `cta_type` に対応する `config/juku.yaml` の `juku.cta_types[cta_type]` の `label` をリンク文言にし、`url`(nullなら`juku.cta_url`)へのリンクにする。ただし本文中の宣伝は最小限に
 6. 文字数は2,000〜3,000字
 7. **高校名を挙げる場合は `area.target_high_schools` に載っている学校のみを使う(厳守)**。このリストは偏差値55以上(みんなの高校情報 minkou.jp基準)の学校だけで構成されている。それ以外の高校名(特に偏差値の低い公立高校)を本文中に創作・追加しない。理由: 偏差値の低い高校名を出すと「そういう生徒が通う塾」という印象を保護者に与えてしまうため(2026-07-06 ユーザー指示)
 
@@ -73,6 +73,7 @@ plan_rationale:
 episode_sources: []
 parent_qa_sources: []
 web_sources: []
+cta_type: "trial_lesson"
 ---
 
 (本文。frontmatterの直後から書き始める)
@@ -85,6 +86,7 @@ web_sources: []
 - `seasonal_topic_id`/`publish_window_end`: `data/plans/YYYY-MM-DD.json` の同名フィールドをそのまま転記する(智谷が季節テーマを採用していれば値が入り、そうでなければ両方null)。ダッシュボードでの承認時にこの`publish_window_end`を過ぎていないか自動チェックされるため、正確に転記すること
 - `plan_rationale`: `data/plans/YYYY-MM-DD.json` の `search_intent`/`reader_problem`/`local_connection`/`unique_material`/`facts_allowed`/`facts_prohibited`/`cta_reason`/`difference_from_past_posts`/`selection_score`/`selection_score_breakdown`/`selection_reasons` を**そのままオブジェクトとして丸ごと転記する**(ダッシュボードで企画の採用理由を確認できるようにするため)。1つのキーも省略せず転記すること
 - `episode_sources`/`parent_qa_sources`/`web_sources`: `data/plans/YYYY-MM-DD.json` の同名フィールドをそのまま転記する(智谷が記録した出典)。**新しいIDを作らない・自分で判断して追加しない**。実際に本文で使わなかった場合は空配列のままにする
+- `cta_type`: `data/plans/YYYY-MM-DD.json` の `cta_type` をそのまま転記する(赤羽がCTAの整合性を確認する際に使う)
 
 # 実行手順
 

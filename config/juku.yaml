@@ -3,6 +3,24 @@ juku:
   brand_voice: "親しみやすく誠実。専門用語を避け、保護者の不安に寄り添う"
   cta_url: "https://an-english.com/school/obata/"   # 教室紹介ページ(体験授業専用ページ未確認のため暫定。確定次第差し替え)
   line_url: ""                  # LINE登録URL(未確認)
+  # 記事内容に応じてCTAの文言を切り替える(URLは専用ページが未確認のため現状すべてcta_urlと同じ。
+  # 専用ページが用意でき次第、各typeのurlに個別のURLを設定する)
+  cta_types:
+    trial_lesson:
+      label: "体験授業のお申込みはこちら"
+      url: null   # nullの場合はcta_urlを使う
+    learning_consultation:
+      label: "学習相談のご予約はこちら"
+      url: null
+    school_tour:
+      label: "教室見学のお申込みはこちら"
+      url: null
+    summer_course_info:
+      label: "夏期講習の詳細はこちら"
+      url: null
+    course_consultation:
+      label: "進路・学習相談のご予約はこちら"
+      url: null
 area:
   prefecture: "愛知県"
   city: "名古屋市守山区"
@@ -43,6 +61,10 @@ generation:
     title: 0.8
     headings: 0.75
     body: 0.7
+  # 予約投稿時の連続性チェック(scripts/lib/schedule.js)。ブロックはせず警告のみ
+  # (人間が内容を見て判断できるようにするため)。
+  max_same_category_streak: 2   # 同じカテゴリーが何日連続まで許容か
+  max_same_audience_streak: 3   # 同じ対象読者(target_audience)が何日連続まで許容か
 wordpress:
   # an-english.com は教室ごとに同名の子カテゴリー(コラム/学校情報/教室の様子等)が
   # 並ぶ構造のため、名前ではなくIDで固定指定する。

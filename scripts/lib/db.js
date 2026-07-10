@@ -147,6 +147,19 @@ function getLatestScheduleDate() {
   return row && row.latest ? row.latest : null;
 }
 
+// 直近の予約済み/公開済み記事のcategory(またはtarget_audience)を、予約日時の新しい順で返す。
+// scripts/lib/schedule.js の checkStreak() に渡し、同じ値の連続を検知するために使う。
+function getRecentScheduledValues(column, limit) {
+  if (column !== 'category' && column !== 'target_audience') {
+    throw new Error(`getRecentScheduledValues: 不正なcolumn: ${column}`);
+  }
+  const conn = getDb();
+  const stmt = conn.prepare(
+    `SELECT ${column} AS value FROM posts WHERE status IN ('scheduled', 'published') ORDER BY published_at DESC LIMIT ?`
+  );
+  return stmt.all(limit).map((r) => r.value);
+}
+
 function listRejectedWithNotes(limit = 20) {
   const conn = getDb();
   const stmt = conn.prepare(
@@ -185,6 +198,7 @@ module.exports = {
   setStatus,
   setScheduled,
   getLatestScheduleDate,
+  getRecentScheduledValues,
   listRejectedWithNotes,
   monthlySummary,
   DB_PATH,
