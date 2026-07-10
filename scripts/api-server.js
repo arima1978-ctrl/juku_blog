@@ -28,6 +28,7 @@ const { sendTelegram } = require('./lib/telegram');
 const { logError } = require('./log_error');
 
 const PORT = process.env.PORT || 3013;
+const DASHBOARD_URL = process.env.DASHBOARD_URL || `http://localhost:${PORT}`;
 const ERRORS_PATH = path.join(ROOT, 'logs', 'errors.json');
 
 const app = express();
@@ -66,12 +67,15 @@ app.post('/api/posts/:id/approve', async (req, res) => {
   // 承認と同時にWordPressへ自動投稿する(フェーズ2)。失敗しても承認自体は成立させ、
   // ステータスはapprovedのまま残す(再度「承認」を押すと投稿をリトライできる)。
   const post = getPostById(id);
+
+  // WordPressへの投稿処理を始める前に通知する(投稿完了後の事後通知ではなく、事前通知)
+  await sendTelegram(`📝 記事を承認しました。WordPressへ投稿します\n${post.title}\n${DASHBOARD_URL}`);
+
   let published = false;
   try {
     const result = await publishPost(post);
     setPublished(id, { wpPostId: result.wpPostId, wpLink: result.link, publishedAt: new Date().toISOString() });
     published = true;
-    await sendTelegram(`✅ ブログ記事を公開しました\n${post.title}\n${result.link}`);
   } catch (err) {
     logError('wordpress_publish', `${post.title}: ${err.message}`);
     await sendTelegram(`⚠️ WordPress投稿に失敗しました(承認自体は完了。ダッシュボードで再度「承認」を押すとリトライできます)\n${post.title}\n${err.message}`);
