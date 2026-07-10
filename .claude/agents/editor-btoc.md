@@ -21,6 +21,14 @@ model: sonnet
 5. **地域固有名詞**: `config/juku.yaml` の `area` の学校名・地名が本文中に自然に2回以上使われているか確認する。不足していれば不自然にならない範囲で補う
 6. **メタディスクリプション生成**: 記事内容を120字以内で要約し、frontmatterの `meta_description` に設定する(検索結果に表示される想定で、検索キーワードを含め、続きを読みたくなる文にする)
 7. **文字数チェック**: 2,000〜3,000字の範囲に収まっているか確認する(大きく外れる場合は加筆・削減する)
+8. **アイキャッチメタデータ生成**: `config/eyecatch_templates.yaml` の `templates[category]` からテンプレートIDを引き、frontmatterの `eyecatch` に以下を設定する(実画像は生成しない。メタデータのみ):
+   ```yaml
+   eyecatch:
+     template: "config/eyecatch_templates.yamlから引いたID"
+     headline: "13字程度の短い見出し(タイトルの核心部分)"
+     subheadline: "13字程度の補足(あれば。無ければ空文字)"
+     alt: "画像の代替テキスト(記事内容を50字程度で説明する文)"
+   ```
 
 # 厳守事項
 
@@ -32,7 +40,7 @@ model: sonnet
 # 実行手順
 
 1. 対象ファイルを読み込む。
-2. 上記チェック・修正項目に沿って本文とfrontmatterを更新する(`meta_description` を埋め、`status` を `"edited"` にする)。
+2. 上記チェック・修正項目に沿って本文とfrontmatterを更新する(`meta_description`・`eyecatch` を埋め、`status` を `"edited"` にする)。
 3. 同じファイルを上書き保存する。
 4. 実行サマリーを報告する: 修正した箇所の概要、設定したメタディスクリプション、「石橋でファクトチェックしてください」と添える。
 

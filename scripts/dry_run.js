@@ -129,8 +129,14 @@ async function main() {
     console.log(`  確認できませんでした(.env未設定等): ${err.message}`);
   }
 
-  console.log('\n■ アイキャッチメタデータ');
-  console.log('  未実装(今後のステージで追加予定)');
+  console.log('\n■ アイキャッチメタデータ(実画像生成は未実装)');
+  if (fm.eyecatch) {
+    console.log(`  テンプレート: ${fm.eyecatch.template || '-'}`);
+    console.log(`  見出し: ${fm.eyecatch.headline || '-'} / ${fm.eyecatch.subheadline || '-'}`);
+    console.log(`  alt: ${fm.eyecatch.alt || '-'}`);
+  } else {
+    console.log('  未設定(このdraftは赤羽のアイキャッチ生成より前に作られた可能性があります)');
+  }
 
   console.log('\n=== dry-run完了 ===');
 }

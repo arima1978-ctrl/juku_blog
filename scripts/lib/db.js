@@ -43,6 +43,9 @@ function getDb() {
   ensureColumn(db, 'posts', 'wp_status', 'TEXT');
   ensureColumn(db, 'posts', 'wp_last_synced_at', 'TEXT');
   ensureColumn(db, 'posts', 'wp_sync_error', 'TEXT');
+  // アイキャッチメタデータ(JSON文字列。赤羽が生成。実画像生成は未実装で、
+  // template/headline/subheadline/altのみ保持する)
+  ensureColumn(db, 'posts', 'eyecatch', 'TEXT');
   return db;
 }
 
@@ -52,11 +55,11 @@ function insertPost(post) {
     INSERT INTO posts (
       created_at, title, slug, category, target_audience, keywords,
       meta_description, body_md, body_html, fact_check_report, status, reviewer_note,
-      seasonal_topic_id, publish_window_end, similarity_check, plan_rationale, citations
+      seasonal_topic_id, publish_window_end, similarity_check, plan_rationale, citations, eyecatch
     ) VALUES (
       :created_at, :title, :slug, :category, :target_audience, :keywords,
       :meta_description, :body_md, :body_html, :fact_check_report, :status, :reviewer_note,
-      :seasonal_topic_id, :publish_window_end, :similarity_check, :plan_rationale, :citations
+      :seasonal_topic_id, :publish_window_end, :similarity_check, :plan_rationale, :citations, :eyecatch
     )
   `);
   const result = stmt.run({
@@ -77,6 +80,7 @@ function insertPost(post) {
     similarity_check: post.similarity_check || null,
     plan_rationale: post.plan_rationale || null,
     citations: post.citations || null,
+    eyecatch: post.eyecatch || null,
   });
   return Number(result.lastInsertRowid);
 }

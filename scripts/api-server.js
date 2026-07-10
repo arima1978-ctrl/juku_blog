@@ -89,6 +89,7 @@ app.get('/api/posts/:id', (req, res) => {
     similarity_check_parsed: safeJsonParse(post.similarity_check),
     plan_rationale_parsed: safeJsonParse(post.plan_rationale),
     citations_parsed: safeJsonParse(post.citations),
+    eyecatch_parsed: safeJsonParse(post.eyecatch),
   });
 });
 

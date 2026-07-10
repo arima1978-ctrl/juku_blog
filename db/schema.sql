@@ -23,7 +23,8 @@ CREATE TABLE IF NOT EXISTS posts (
   citations          TEXT,                          -- 出典情報(episode_sources/parent_qa_sources/web_sources/citation_checkのJSON文字列)
   wp_status          TEXT,                          -- 最後に確認できたWordPress側の実際のstatus(future/publish/draft/pending/trash等)
   wp_last_synced_at  TEXT,                          -- scripts/sync_wordpress_status.js が最後に確認した日時(ISO8601)
-  wp_sync_error      TEXT                           -- 同期時に検知した問題(記事消失・想定外ステータス等)。問題なければNULL
+  wp_sync_error      TEXT,                          -- 同期時に検知した問題(記事消失・想定外ステータス等)。問題なければNULL
+  eyecatch           TEXT                           -- アイキャッチメタデータ(JSON文字列: template/headline/subheadline/alt)。赤羽が生成。実画像生成は未実装
 );
 
 CREATE INDEX IF NOT EXISTS idx_posts_status ON posts(status);
@@ -38,3 +39,23 @@ CREATE TABLE IF NOT EXISTS episode_usage (
   used_at     TEXT,
   FOREIGN KEY (used_in_post_id) REFERENCES posts(id)
 );
+
+-- 将来のSearch Console等との連携を見据えた記事成果データの置き場(設計のみ、
+-- 現時点ではどのスクリプトからも書き込まれない。Search Console API連携は未実装)。
+-- 同一記事・同一期間で複数回記録できるよう (post_id, period, recorded_at) で管理する。
+CREATE TABLE IF NOT EXISTS post_analytics (
+  id               INTEGER PRIMARY KEY AUTOINCREMENT,
+  post_id          INTEGER NOT NULL,
+  period           TEXT NOT NULL,      -- '7d' (公開後7日) / '30d' (公開後30日) 等
+  recorded_at      TEXT NOT NULL,      -- 記録日時(ISO8601)
+  impressions      INTEGER,            -- Search Console: 表示回数
+  clicks           INTEGER,            -- Search Console: クリック数
+  ctr              REAL,               -- Search Console: クリック率
+  avg_position     REAL,               -- Search Console: 平均掲載順位
+  search_queries   TEXT,               -- 上位検索クエリ(JSON配列文字列)
+  cta_clicks       INTEGER,            -- CTAリンクのクリック数(計測未実装)
+  inquiries        INTEGER,            -- 問い合わせ数(計測未実装)
+  trial_signups    INTEGER,            -- 体験申込数(計測未実装)
+  FOREIGN KEY (post_id) REFERENCES posts(id)
+);
+CREATE INDEX IF NOT EXISTS idx_post_analytics_post_id ON post_analytics(post_id);

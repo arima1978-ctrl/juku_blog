@@ -86,6 +86,8 @@ function main() {
       episode_used_text: fm.episode_used_text || null,
       parent_qa_used_text: fm.parent_qa_used_text || null,
     }),
+    // 赤羽が生成するアイキャッチメタデータ(実画像生成は未実装)
+    eyecatch: toJsonTextOrNull(fm.eyecatch),
   };
 
   if (existing) {

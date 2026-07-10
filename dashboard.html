@@ -407,6 +407,14 @@ async function openDetail(id) {
     </div>`;
   }
 
+  const ec = p.eyecatch_parsed;
+  const ecHtml = ec ? `<div class="fact-check-box">
+      <strong>アイキャッチ(メタデータのみ・実画像は未実装)</strong>
+      <div class="fact-check-item"><span></span><span>テンプレート: ${escapeHtml(ec.template || '-')}</span></div>
+      <div class="fact-check-item"><span></span><span>見出し: ${escapeHtml(ec.headline || '-')}${ec.subheadline ? ' / ' + escapeHtml(ec.subheadline) : ''}</span></div>
+      <div class="fact-check-item"><span></span><span>alt: ${escapeHtml(ec.alt || '-')}</span></div>
+    </div>` : '';
+
   document.getElementById('detailCard').innerHTML = `
     <span class="badge badge-${p.status}">${statusLabel(p.status)}</span>
     <h2 class="detail-title">${escapeHtml(p.title)}</h2>
@@ -425,6 +433,7 @@ async function openDetail(id) {
     </div>
     ${prHtml}
     ${citHtml}
+    ${ecHtml}
     ${fcHtml}
     ${simHtml}
     <div class="article-preview">${p.body_html}</div>

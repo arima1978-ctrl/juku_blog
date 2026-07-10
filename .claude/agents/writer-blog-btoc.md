@@ -76,12 +76,14 @@ web_sources: []
 episode_used_text: null
 parent_qa_used_text: null
 cta_type: "trial_lesson"
+eyecatch: null
 ---
 
 (本文。frontmatterの直後から書き始める)
 ```
 
 - `meta_description`: 新規執筆時は空文字のまま(赤羽が付与する)
+- `eyecatch`: 新規執筆時はnullのまま(赤羽がアイキャッチメタデータを付与する)
 - `status`: 新規執筆時は必ず `"written"`。修正モードで書き直した後も `"written"` に戻す
 - `revision_notes`: 新規執筆時は空文字。修正モードで対応し終えたら空文字に戻す
 - `retry_count`: 石橋が管理するフィールド。新規執筆時は `0` のまま触らない。修正モードでも書き換えない
