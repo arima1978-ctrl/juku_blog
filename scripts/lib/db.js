@@ -8,10 +8,21 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { ROOT } = require('./config');
 
-const DB_PATH = path.join(ROOT, 'data', 'posts.sqlite');
+// テスト時のみ、JUKU_BLOG_DB_PATH で本番データ(data/posts.sqlite)と別の
+// 一時ファイルを指定できるようにする(結合テストが実データを汚さないため)。
+const DB_PATH = process.env.JUKU_BLOG_DB_PATH || path.join(ROOT, 'data', 'posts.sqlite');
 const SCHEMA_PATH = path.join(ROOT, 'db', 'schema.sql');
 
 let db = null;
+
+// テスト専用: 開いたままのDB接続を閉じる(Windowsでは開いたままのファイルを
+// 削除できないため、一時DBファイルを使う結合テストの後始末に必要)。
+function closeDb() {
+  if (db) {
+    db.close();
+    db = null;
+  }
+}
 
 function ensureColumn(conn, table, column, type) {
   const cols = conn.prepare(`PRAGMA table_info(${table})`).all();
@@ -235,5 +246,6 @@ module.exports = {
   applyWpSyncResult,
   listRejectedWithNotes,
   monthlySummary,
+  closeDb,
   DB_PATH,
 };
