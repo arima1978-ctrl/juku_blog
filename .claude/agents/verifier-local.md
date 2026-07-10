@@ -10,7 +10,7 @@ model: sonnet
 
 # 対象の特定
 
-`data/drafts/YYYY-MM-DD-{slug}.md`(今日の日付、`status: "edited"` のもの)を探す。`config/juku.yaml` の `generation.max_retry`(差し戻し上限、既定2)も確認する。
+呼び出し時の指示文に「対象ファイル `data/drafts/...`」のように具体的なパスが明示されている場合は、必ずそのファイルをそのまま対象にする(自分で探さない)。パスの明示が無い場合のみ、`data/drafts/YYYY-MM-DD-{slug}.md`(今日の日付、`status: "edited"` のもの)を探す。**あなたは`Read`/`Write`のみでディレクトリ一覧表示ができないため、パスが明示されずファイル名も分からない場合は、推測で複数パターンを試すのではなく、その旨を報告して停止する**(呼び出し元に正しいパスを指定し直してもらう)。`config/juku.yaml` の `generation.max_retry`(差し戻し上限、既定2)も確認する。
 
 # チェック項目(すべて必須)
 

@@ -55,8 +55,20 @@ run_agent writer-blog-btoc "Read,Write" \
 MAX_RETRY=$(node -e "console.log(require('./scripts/lib/config').loadJukuConfig().generation.max_retry)")
 attempt=0
 while true; do
+  # 赤羽・石橋は Read/Write のみでディレクトリ一覧表示ができず、指示文に
+  # ファイルパスが無いと自力では発見できない(推測に頼って発見失敗した実例あり)。
+  # get_draft_status.js(fs.readdirSyncで確実に発見する決定的スクリプト)が
+  # 見つけたパスを、指示文に明示して渡す。
+  PRE_STATUS_LINE=$(node scripts/get_draft_status.js "$TODAY")
+  PRE_DRAFT_PATH=$(echo "$PRE_STATUS_LINE" | cut -f2)
+  if [ -z "$PRE_DRAFT_PATH" ]; then
+    log "!!! 本日のドラフトが見つかりません(檜山の執筆直後)"
+    node scripts/log_error.js "writer-blog-btoc" "data/drafts/${TODAY}-*.md が見つかりません(執筆直後)"
+    exit 1
+  fi
+
   run_agent editor-btoc "Read,Write" \
-    "今日の記事を校正して" "editor-btoc" || exit 1
+    "対象ファイル ${PRE_DRAFT_PATH} を校正して" "editor-btoc" || exit 1
 
   # 赤羽が見出し・本文を確定させた直後に、過去記事との類似度をチェックし
   # frontmatterのsimilarity_checkに記録する(石橋が判定材料として読む)。
@@ -76,7 +88,7 @@ while true; do
   fi
 
   run_agent verifier-local "Read,Write" \
-    "今日の記事をファクトチェックして" "verifier-local" || exit 1
+    "対象ファイル ${CUR_DRAFT_PATH:-$PRE_DRAFT_PATH} をファクトチェックして" "verifier-local" || exit 1
 
   STATUS_LINE=$(node scripts/get_draft_status.js "$TODAY")
   STATUS=$(echo "$STATUS_LINE" | cut -f1)
@@ -96,7 +108,7 @@ while true; do
       fi
       log "差し戻し(${attempt}回目)。檜山に修正を依頼します"
       run_agent writer-blog-btoc "Read,Write" \
-        "差し戻しを修正して" "writer-blog-btoc(修正モード)" || exit 1
+        "対象ファイル ${DRAFT_PATH} の差し戻しを修正して" "writer-blog-btoc(修正モード)" || exit 1
       ;;
     not_found)
       log "!!! 本日のドラフトが見つかりません"
