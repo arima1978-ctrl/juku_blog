@@ -38,6 +38,11 @@ function getDb() {
   ensureColumn(db, 'posts', 'plan_rationale', 'TEXT');
   // 出典情報(episode_sources/parent_qa_sources/web_sources/citation_checkをまとめたJSON文字列)
   ensureColumn(db, 'posts', 'citations', 'TEXT');
+  // WordPress公開状態の同期(scripts/sync_wordpress_status.js)。WordPressが実体の正であり、
+  // ここはあくまで最後に確認できた状態のキャッシュ。
+  ensureColumn(db, 'posts', 'wp_status', 'TEXT');
+  ensureColumn(db, 'posts', 'wp_last_synced_at', 'TEXT');
+  ensureColumn(db, 'posts', 'wp_sync_error', 'TEXT');
   return db;
 }
 
@@ -160,6 +165,29 @@ function getRecentScheduledValues(column, limit) {
   return stmt.all(limit).map((r) => r.value);
 }
 
+// WordPress側の状態確認が必要な記事(予約済みでwp_post_idが分かっているもの)
+function listPostsNeedingWpSync() {
+  const conn = getDb();
+  const stmt = conn.prepare("SELECT * FROM posts WHERE status = 'scheduled' AND wp_post_id IS NOT NULL");
+  return stmt.all();
+}
+
+// scripts/lib/wp_sync.js の decideSyncAction() の結果を反映する
+function applyWpSyncResult(id, { newStatus, wpStatus, syncError, syncedAt }) {
+  const conn = getDb();
+  const stmt = conn.prepare(
+    'UPDATE posts SET status = :status, wp_status = :wp_status, wp_sync_error = :wp_sync_error, wp_last_synced_at = :synced_at WHERE id = :id'
+  );
+  const result = stmt.run({
+    status: newStatus,
+    wp_status: wpStatus,
+    wp_sync_error: syncError || null,
+    synced_at: syncedAt,
+    id,
+  });
+  return Number(result.changes);
+}
+
 function listRejectedWithNotes(limit = 20) {
   const conn = getDb();
   const stmt = conn.prepare(
@@ -199,6 +227,8 @@ module.exports = {
   setScheduled,
   getLatestScheduleDate,
   getRecentScheduledValues,
+  listPostsNeedingWpSync,
+  applyWpSyncResult,
   listRejectedWithNotes,
   monthlySummary,
   DB_PATH,

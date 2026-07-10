@@ -20,7 +20,10 @@ CREATE TABLE IF NOT EXISTS posts (
   publish_window_end TEXT,                          -- 採用テーマの公開可能期間の終了日(YYYY-MM-DD)。季節テーマ以外はNULL
   similarity_check   TEXT,                          -- 過去記事との類似度チェック結果(JSON文字列。scripts/check_similarity.js)
   plan_rationale     TEXT,                          -- 智谷の企画採用理由・採点結果(JSON文字列。.claude/agents/planner-blog-btoc.md)
-  citations          TEXT                           -- 出典情報(episode_sources/parent_qa_sources/web_sources/citation_checkのJSON文字列)
+  citations          TEXT,                          -- 出典情報(episode_sources/parent_qa_sources/web_sources/citation_checkのJSON文字列)
+  wp_status          TEXT,                          -- 最後に確認できたWordPress側の実際のstatus(future/publish/draft/pending/trash等)
+  wp_last_synced_at  TEXT,                          -- scripts/sync_wordpress_status.js が最後に確認した日時(ISO8601)
+  wp_sync_error      TEXT                           -- 同期時に検知した問題(記事消失・想定外ステータス等)。問題なければNULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_posts_status ON posts(status);

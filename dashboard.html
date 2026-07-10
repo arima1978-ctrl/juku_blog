@@ -332,7 +332,7 @@ async function loadPosts() {
           <div class="title">${escapeHtml(p.title)}</div>
           <div class="meta">${escapeHtml(p.category)} ・ ${p.created_at.slice(0,10)}</div>
         </div>
-        <span class="badge badge-${p.status}">${statusLabel(p.status)}</span>
+        <span class="badge badge-${p.status}">${statusLabel(p.status)}</span>${p.wp_sync_error ? ' <span title="WordPress同期で問題を検知" style="color:var(--red);">⚠️</span>' : ''}
       </div>
     </div>
   `).join('');
@@ -417,6 +417,8 @@ async function openDetail(id) {
       ${p.reviewer_note ? `<div>差し戻しメモ</div><div>${escapeHtml(p.reviewer_note)}</div>` : ''}
       ${p.status === 'scheduled' && p.published_at ? `<div>公開予定日</div><div>${escapeHtml(p.published_at.slice(0, 10))}</div>` : ''}
       ${p.wp_link ? `<div>${p.status === 'scheduled' ? '公開予定URL' : '公開URL'}</div><div><a href="${escapeHtml(p.wp_link)}" target="_blank" rel="noopener">${escapeHtml(p.wp_link)}</a></div>` : ''}
+      ${p.wp_status ? `<div>WordPress同期状態</div><div>${escapeHtml(p.wp_status)}${p.wp_last_synced_at ? ` (最終確認: ${escapeHtml(p.wp_last_synced_at.slice(0, 16).replace('T', ' '))})` : ''}</div>` : ''}
+      ${p.wp_sync_error ? `<div>同期エラー</div><div><span style="color:var(--red);font-weight:bold;">${escapeHtml(p.wp_sync_error)}</span></div>` : ''}
     </div>
     ${prHtml}
     ${citHtml}

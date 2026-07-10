@@ -30,7 +30,13 @@ run_agent() {
   return 0
 }
 
-# --- 0. 参照用インデックスの更新(智谷が過去90日の重複・差し戻し理由を読めるように) ---
+# --- 0a. WordPress公開状態の同期(scheduled→publishedへの反映、記事消失等の検知) ---
+if ! node scripts/sync_wordpress_status.js >> "$LOG" 2>&1; then
+  log "!!! sync_wordpress_status.js が失敗しました(同期をスキップして続行します)"
+  node scripts/log_error.js "sync_wordpress_status" "node scripts/sync_wordpress_status.js が失敗"
+fi
+
+# --- 0b. 参照用インデックスの更新(智谷が過去90日の重複・差し戻し理由を読めるように) ---
 node scripts/refresh_indexes.js >> "$LOG" 2>&1
 
 # --- 1. 早瀬: 地域ネタ収集 ---

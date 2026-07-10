@@ -54,7 +54,9 @@ function wpRequest(config, method, wpPath, body) {
         if (res.statusCode >= 200 && res.statusCode < 300) {
           resolve(parsed);
         } else {
-          reject(new Error(`WordPress API ${method} ${wpPath} が ${res.statusCode} を返しました: ${JSON.stringify(parsed)}`));
+          const err = new Error(`WordPress API ${method} ${wpPath} が ${res.statusCode} を返しました: ${JSON.stringify(parsed)}`);
+          err.statusCode = res.statusCode;
+          reject(err);
         }
       });
     });
@@ -132,4 +134,20 @@ async function publishPost(post, { date } = {}) {
   return { wpPostId: created.id, link: created.link, date: created.date };
 }
 
-module.exports = { publishPost };
+// WordPress上の実際のstatus(future/publish/draft/pending/trash等)を取得する。
+// 予約投稿(status:future)は認証なしでは見えないため認証付きで取得する。
+// 記事が見つからない(削除された)場合は例外を投げず { status: 'not_found' } を返す。
+async function fetchPostStatus(wpPostId) {
+  const config = getWpConfig();
+  try {
+    const post = await wpRequest(config, 'GET', `posts/${wpPostId}?context=edit`);
+    return { status: post.status };
+  } catch (err) {
+    if (err.statusCode === 404) {
+      return { status: 'not_found' };
+    }
+    throw err;
+  }
+}
+
+module.exports = { publishPost, fetchPostStatus };
