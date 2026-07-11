@@ -181,6 +181,21 @@
     font-family: inherit;
   }
 
+  .edit-form-area { display: none; margin-top: 10px; background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; padding: 14px; }
+  .edit-form-area label { display: block; font-size: 0.82rem; color: var(--text-muted); margin: 10px 0 4px; }
+  .edit-form-area label:first-child { margin-top: 0; }
+  .edit-form-area input[type="text"],
+  .edit-form-area textarea {
+    width: 100%;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    padding: 8px;
+    font-family: inherit;
+    font-size: 0.92rem;
+  }
+  .edit-form-area textarea.meta { min-height: 60px; }
+  .edit-form-area textarea.body { min-height: 320px; }
+
   /* エピソード素材 */
   .episode-section {
     background: var(--card-bg);
@@ -469,6 +484,7 @@ async function openDetail(id) {
     <div class="actions">
       <button class="primary" onclick="approvePost(${p.id})">承認</button>
       <button class="danger" onclick="toggleRejectNote()">差し戻し</button>
+      ${p.status === 'review_pending' ? `<button onclick="toggleEditForm()">編集</button>` : ''}
       <button onclick="copyBody('html', ${p.id})">本文コピー(HTML)</button>
       <button onclick="copyBody('text', ${p.id})">本文コピー(テキスト)</button>
     </div>
@@ -476,6 +492,25 @@ async function openDetail(id) {
       <textarea id="rejectNote" placeholder="差し戻し理由を入力(翌日の企画で同じ失敗を避けるために使われます)"></textarea>
       <button class="danger" style="margin-top:8px;" onclick="rejectPost(${p.id})">差し戻しを確定</button>
     </div>
+    ${p.status === 'review_pending' ? `
+    <div class="edit-form-area" id="editFormArea">
+      <label>タイトル</label>
+      <input type="text" id="editTitle" value="${escapeHtml(p.title)}">
+      <label>カテゴリ</label>
+      <input type="text" id="editCategory" value="${escapeHtml(p.category)}">
+      <label>想定読者</label>
+      <input type="text" id="editTargetAudience" value="${escapeHtml(p.target_audience || '')}">
+      <label>検索キーワード(カンマ区切り)</label>
+      <input type="text" id="editKeywords" value="${escapeHtml(p.keywords || '')}">
+      <label>メタディスクリプション</label>
+      <textarea class="meta" id="editMetaDescription">${escapeHtml(p.meta_description || '')}</textarea>
+      <label>本文(Markdown)</label>
+      <textarea class="body" id="editBodyMd">${escapeHtml(p.body_md)}</textarea>
+      <div class="actions" style="margin-top:12px;">
+        <button class="primary" onclick="saveEdit(${p.id})">保存</button>
+        <button onclick="toggleEditForm()">キャンセル</button>
+      </div>
+    </div>` : ''}
   `;
 
   window.currentPost = p;
@@ -503,6 +538,33 @@ async function loadSchedulePreview(id) {
 function toggleRejectNote() {
   const el = document.getElementById('rejectNoteArea');
   el.style.display = el.style.display === 'block' ? 'none' : 'block';
+}
+
+function toggleEditForm() {
+  const el = document.getElementById('editFormArea');
+  if (!el) return;
+  el.style.display = el.style.display === 'block' ? 'none' : 'block';
+}
+
+async function saveEdit(id) {
+  const fields = {
+    title: document.getElementById('editTitle').value,
+    category: document.getElementById('editCategory').value,
+    target_audience: document.getElementById('editTargetAudience').value,
+    keywords: document.getElementById('editKeywords').value,
+    meta_description: document.getElementById('editMetaDescription').value,
+    body_md: document.getElementById('editBodyMd').value,
+  };
+  try {
+    await fetchJson(`api/posts/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(fields),
+    });
+    await openDetail(id);
+  } catch (err) {
+    alert(`保存に失敗しました: ${err.message}`);
+  }
 }
 
 async function approvePost(id) {

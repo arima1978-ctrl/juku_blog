@@ -151,6 +151,19 @@ function listTitlesSince(sinceIso) {
   return stmt.all(sinceIso);
 }
 
+// ダッシュボードからの編集(review_pendingの記事のみ、api-server.js側で制御)用の
+// 汎用フィールド更新。updatePostBySlugと同じ動的SQL生成パターンだが、
+// ダッシュボードは数値idで記事を扱うためidで更新する。
+function updatePostFields(id, fields) {
+  const conn = getDb();
+  const cols = Object.keys(fields);
+  if (cols.length === 0) return 0;
+  const setClause = cols.map((c) => `${c} = :${c}`).join(', ');
+  const stmt = conn.prepare(`UPDATE posts SET ${setClause} WHERE id = :id`);
+  const result = stmt.run({ ...fields, id });
+  return Number(result.changes);
+}
+
 function setStatus(id, status, reviewerNote) {
   const conn = getDb();
   const stmt = conn.prepare('UPDATE posts SET status = :status, reviewer_note = :reviewer_note WHERE id = :id');
@@ -318,6 +331,7 @@ module.exports = {
   getDb,
   insertPost,
   updatePostBySlug,
+  updatePostFields,
   getPostBySlug,
   getPostById,
   listPosts,

@@ -18,11 +18,13 @@ const {
   getPostById,
   setStatus,
   setScheduled,
+  updatePostFields,
   getLatestScheduleDate,
   getRecentScheduledValues,
   listRejectedWithNotes,
   monthlySummary,
 } = require('./lib/db');
+const { marked } = require('marked');
 const { listEpisodes, appendEpisode } = require('./lib/episodes');
 const { ROOT, loadJukuConfig } = require('./lib/config');
 const { publishPost } = require('./lib/wordpress');
@@ -93,6 +95,34 @@ app.get('/api/posts/:id', (req, res) => {
     eyecatch_parsed: safeJsonParse(post.eyecatch),
     exam_validation_warnings_parsed: safeJsonParse(post.exam_validation_warnings),
   });
+});
+
+// ダッシュボードからの直接編集(承認前のreview_pendingの記事のみ許可。承認後は
+// WordPress側に既に反映されている可能性があるため対象外。承認後に直したい場合は
+// 差し戻すか、WordPress管理画面で直接編集する運用)。
+const EDITABLE_FIELDS = ['title', 'category', 'target_audience', 'keywords', 'meta_description', 'body_md'];
+
+app.patch('/api/posts/:id', (req, res) => {
+  const id = Number(req.params.id);
+  const post = getPostById(id);
+  if (!post) return res.status(404).json({ error: 'not_found' });
+  if (post.status !== 'review_pending') {
+    return res.status(400).json({ error: 'not_editable', message: '承認前(review_pending)の記事のみ編集できます' });
+  }
+
+  const updates = {};
+  for (const key of EDITABLE_FIELDS) {
+    if (req.body[key] !== undefined) updates[key] = req.body[key];
+  }
+  if (Object.keys(updates).length === 0) return res.status(400).json({ error: 'no_fields' });
+
+  if (updates.body_md !== undefined) {
+    updates.body_html = marked.parse(updates.body_md);
+  }
+
+  const changes = updatePostFields(id, updates);
+  if (changes === 0) return res.status(404).json({ error: 'not_found' });
+  res.json({ ok: true });
 });
 
 // 承認前に、実際に承認した場合の予約予定日・公開期限超過・連続警告をプレビューする
