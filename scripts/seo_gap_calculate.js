@@ -1,9 +1,15 @@
 'use strict';
 
-// Keyword Gap判定 + 優先度スコア算出。seo_page_analyze.jsが保存したテーマ(seo_topics/
-// seo_page_topics)と、自社記事(posts)・Search Console実績(seo_gsc_queries)・
-// 検索需要CSV(seo_keyword_metrics)・順位CSV(seo_serp_rankings)を突き合わせ、
-// seo_keyword_candidates(+evidence+既存記事紐付け)を更新する。
+// Keyword Gap判定 + 優先度スコア算出。seo_page_analyze.jsが保存した複合キーワード
+// (seo_compound_keywords/seo_page_compound_keywords)と、自社記事(posts)・
+// Search Console実績(seo_gsc_queries)・検索需要CSV(seo_keyword_metrics)・
+// 順位CSV(seo_serp_rankings)を突き合わせ、seo_keyword_candidates(+evidence+
+// 既存記事紐付け)を更新する。
+//
+// 2026-07-13の設計変更: 単語単体(seo_topics)をそのまま候補化するのをやめ、
+// 「地域×塾」等の複合キーワード(seo_compound_keywords)のみを候補生成の対象にする。
+// 既存の単語単体候補(旧仕様で生成されたもの)はDBに残るが、このスクリプトの
+// 再実行では更新されない(新規に単語単体候補が作られることもない)。
 //
 // 既存candidateのstatus(承認/除外等、人間が設定した値)は再計算時も保持される
 // (upsertKeywordCandidateはstatusを更新しない)。
@@ -15,16 +21,32 @@ const path = require('node:path');
 const { loadJukuConfig, ROOT } = require('./lib/config');
 const { listPosts } = require('./lib/db');
 const seoDb = require('./lib/seo_db');
-const { buildDictionaryEntries } = require('./lib/seo/keyword_extractor');
 const { buildAreaDictionary, GENERIC_EXCLUSION_TERMS } = require('./lib/seo/dictionaries');
-const { buildOwnCoverageIndex, getOwnCoverage, isOwnContentThinner } = require('./lib/seo/own_content_analyzer');
+const { buildDictionaryEntries } = require('./lib/seo/keyword_extractor');
+const { buildOwnCompoundCoverageIndex, getOwnCompoundCoverage, isOwnContentThinner } = require('./lib/seo/own_content_analyzer');
 const { classifyKeywordGap } = require('./lib/seo/gap_classifier');
 const { computePriorityScore, computeAreaRelevanceRatio, computeInquiryIntentRatio, isLowIntentKeyword } = require('./lib/seo/priority_scorer');
-const { decideRecommendedAction } = require('./lib/seo/recommended_action');
+const { decideRecommendedAction, SCHOOL_PAGE_TEMPLATES } = require('./lib/seo/recommended_action');
+const { computeDataConfidence } = require('./lib/seo/data_confidence');
+const { detectCannibalization } = require('./lib/seo/cannibalization');
 const { logError } = require('./log_error');
 
 const PAGES_DIR = path.join(ROOT, 'data', 'seo', 'pages');
 const MAX_EVIDENCE_PER_CANDIDATE = 5;
+
+// template_type別の検索意図ラベル(ダッシュボード表示用)
+const SEARCH_INTENT_BY_TEMPLATE = {
+  area_juku: 'general_service',
+  area_grade_juku: 'general_service',
+  area_teaching_style: 'general_service',
+  area_subject_juku: 'general_service',
+  school_juku: 'general_service',
+  area_koko_nyushi: 'exam_prep',
+  area_teiki_test: 'exam_prep',
+  school_teiki_test: 'exam_prep',
+  area_season_course: 'seasonal_course',
+  area_muryou_taiken: 'trial_inquiry',
+};
 
 function clamp01(value) {
   return Math.max(0, Math.min(1, value));
@@ -39,11 +61,20 @@ function readPageBodyLength(contentHash) {
   }
 }
 
-function groupByTopic(rows) {
+function parseKeywordComponents(raw) {
+  if (!raw) return {};
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
+}
+
+function groupByCompound(rows) {
   const groups = new Map();
   for (const row of rows) {
-    if (!groups.has(row.topic_id)) groups.set(row.topic_id, []);
-    groups.get(row.topic_id).push(row);
+    if (!groups.has(row.compound_keyword_id)) groups.set(row.compound_keyword_id, []);
+    groups.get(row.compound_keyword_id).push(row);
   }
   return groups;
 }
@@ -79,32 +110,38 @@ async function main() {
 
   try {
     const ownPosts = listPosts({}).filter((p) => p.status !== 'rejected');
-    const ownCoverageIndex = buildOwnCoverageIndex(ownPosts, dictionaryEntries, seoConfig.extraction_weights, exclusionTerms);
+    const ownCompoundCoverageIndex = buildOwnCompoundCoverageIndex(ownPosts, dictionaryEntries, seoConfig.extraction_weights, exclusionTerms);
 
-    const topicRows = seoDb.listTopicCoverage();
-    const topicGroups = groupByTopic(topicRows);
+    const compoundRows = seoDb.listCompoundKeywordCoverage();
+    const compoundGroups = groupByCompound(compoundRows);
     const totalCompetitorsConsidered = seoDb.countAnalyzedCompetitors();
-    stats.topics_extracted = topicGroups.size;
+    stats.topics_extracted = compoundGroups.size;
 
-    for (const rows of topicGroups.values()) {
+    for (const rows of compoundGroups.values()) {
       const first = rows[0];
-      const normalizedKeyword = first.normalized_keyword;
+      const compoundKeyword = first.compound_keyword;
+      const templateType = first.template_type;
+      const components = parseKeywordComponents(first.keyword_components);
       const competitorIds = new Set(rows.map((r) => r.competitor_id));
       const competitorCount = competitorIds.size;
       const competitorDomains = Array.from(competitorIds).map((id) => competitorDomainById.get(id)).filter(Boolean);
 
-      const ownCoverage = getOwnCoverage(ownCoverageIndex, normalizedKeyword);
+      const ownCoverage = getOwnCompoundCoverage(ownCompoundCoverageIndex, compoundKeyword);
       const ownHasArticle = Boolean(ownCoverage);
+      const existingPostId = ownCoverage ? ownCoverage.postId : null;
 
-      const gscAgg = seoDb.getGscAggregateForKeyword(normalizedKeyword);
+      const gscAgg = seoDb.getGscAggregateForKeyword(compoundKeyword);
       const ownAvgPosition = gscAgg ? gscAgg.avgPosition : null;
       const ownImpressions = gscAgg ? gscAgg.impressions : null;
       const ownCtr = gscAgg ? gscAgg.ctr : null;
 
-      const competitorBestPosition = seoDb.getCompetitorBestPosition(normalizedKeyword, competitorDomains);
-      const searchDemand = seoDb.getKeywordDemand(normalizedKeyword);
+      const competitorBestPosition = seoDb.getCompetitorBestPosition(compoundKeyword, competitorDomains);
+      const searchDemand = seoDb.getKeywordDemand(compoundKeyword);
 
-      const bestEvidenceRow = rows.reduce((best, r) => ((r.score || 0) > (best.score || 0) ? r : best), rows[0]);
+      const bestEvidenceRow = rows.reduce(
+        (best, r) => ((r.cooccurrence_score || 0) > (best.cooccurrence_score || 0) ? r : best),
+        rows[0]
+      );
       const competitorBodyLength = readPageBodyLength(bestEvidenceRow.content_hash);
       const ownContentThinner = isOwnContentThinner(ownCoverage, competitorBodyLength);
 
@@ -123,8 +160,9 @@ async function main() {
 
       if (!classification.gapType) continue; // 根拠不十分(no_evidence_either_side)は候補化しない
 
-      const areaRelevanceRatio = computeAreaRelevanceRatio(normalizedKeyword, areaDictionary);
-      const inquiryIntentRatio = computeInquiryIntentRatio(normalizedKeyword);
+      const areaRelevanceRatio = computeAreaRelevanceRatio(compoundKeyword, areaDictionary);
+      const inquiryIntentRatio = computeInquiryIntentRatio(compoundKeyword);
+      const isLowIntent = isLowIntentKeyword(compoundKeyword);
       const competitorAdoptionRatio = totalCompetitorsConsidered > 0 ? competitorCount / totalCompetitorsConsidered : 0;
       const competitorRankRatio =
         competitorBestPosition != null && ownAvgPosition != null
@@ -150,21 +188,40 @@ async function main() {
 
       const recommendedAction = decideRecommendedAction({
         gapType: classification.gapType,
-        isLowIntent: isLowIntentKeyword(normalizedKeyword),
+        isLowIntent,
         ownHasArticle,
+        templateType,
+        existingPostId,
       });
+
+      // data_confidence: priority_scoreとは独立した「どれだけ確からしいデータに基づくか」の指標。
+      const sameZoneAcrossEvidence = rows.find((r) => r.same_zone)?.same_zone || null;
+      const { score: dataConfidence } = computeDataConfidence({
+        competitorCount,
+        evidencePageCount: rows.length,
+        sameZone: sameZoneAcrossEvidence,
+        hasGscData: gscAgg !== null,
+        hasSearchDemandData: searchDemand !== null,
+        hasSerpData: competitorBestPosition !== null,
+      });
+
+      // カニバリゼーション警告(GSC実績ベース: 同一クエリで複数の自社ページに表示があるか)
+      const cannibalizationWarning = detectCannibalization(seoDb.getGscPagesForQuery(compoundKeyword));
+
+      const searchIntent = SEARCH_INTENT_BY_TEMPLATE[templateType] || 'general_service';
+      const contentType = SCHOOL_PAGE_TEMPLATES.has(templateType) ? 'school_page' : 'blog_article';
 
       if (dryRun) {
         console.log(
-          `[seo_gap_calculate][dry-run] ${normalizedKeyword}: gap=${classification.gapType} score=${score} action=${recommendedAction}`
+          `[seo_gap_calculate][dry-run] ${compoundKeyword}: gap=${classification.gapType} score=${score} confidence=${dataConfidence} action=${recommendedAction}`
         );
         continue;
       }
 
       const candidateResult = seoDb.upsertKeywordCandidate(
         {
-          normalized_keyword: normalizedKeyword,
-          raw_keyword: first.raw_keyword,
+          normalized_keyword: compoundKeyword,
+          raw_keyword: null,
           target_area: first.target_area,
           target_school: first.target_school,
           target_grade: first.target_grade,
@@ -176,6 +233,14 @@ async function main() {
           own_avg_position: ownAvgPosition,
           competitor_count: competitorCount,
           recommended_action: recommendedAction,
+          keyword_components: components,
+          template_type: templateType,
+          cooccurrence_score: bestEvidenceRow.cooccurrence_score,
+          search_intent: searchIntent,
+          content_type: contentType,
+          data_confidence: dataConfidence,
+          existing_post_id: existingPostId,
+          cannibalization_warning: cannibalizationWarning,
           analysis_run_id: runId,
         },
         nowIso
@@ -184,15 +249,17 @@ async function main() {
       if (candidateResult.isNew) stats.candidates_created += 1;
       else stats.candidates_updated += 1;
 
-      const topEvidence = [...rows].sort((a, b) => (b.score || 0) - (a.score || 0)).slice(0, MAX_EVIDENCE_PER_CANDIDATE);
+      const topEvidence = [...rows]
+        .sort((a, b) => (b.cooccurrence_score || 0) - (a.cooccurrence_score || 0))
+        .slice(0, MAX_EVIDENCE_PER_CANDIDATE);
       for (const row of topEvidence) {
         seoDb.insertCandidateEvidence(
           {
             candidate_id: candidateResult.id,
             competitor_page_id: row.page_id,
-            evidence_type: row.extraction_method,
+            evidence_type: row.same_zone || 'page',
             detail: { url: row.canonical_url, title: row.page_title },
-            confidence: row.confidence,
+            confidence: row.cooccurrence_score,
           },
           nowIso
         );
@@ -204,7 +271,7 @@ async function main() {
             candidate_id: candidateResult.id,
             post_id: ownCoverage.postId,
             similarity_score: null,
-            match_reason: 'topic_keyword_match',
+            match_reason: 'compound_keyword_match',
           },
           nowIso
         );

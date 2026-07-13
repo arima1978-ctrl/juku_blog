@@ -365,3 +365,34 @@ CREATE TABLE IF NOT EXISTS seo_import_jobs (
   created_at      TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_seo_import_jobs_job_type ON seo_import_jobs(job_type);
+
+-- 複合キーワード(「地域×塾」等のテンプレートで組み立てたキーワード)の辞書。
+-- seo_topics/seo_page_topics(単語単位)とは別に、テンプレートマッチ結果を保持する。
+CREATE TABLE IF NOT EXISTS seo_compound_keywords (
+  id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+  compound_keyword    TEXT NOT NULL,
+  template_type       TEXT NOT NULL,   -- area_juku/area_grade_juku/area_teaching_style/...
+  keyword_components  TEXT NOT NULL,   -- JSON: {area, school, grade, subject, teaching_style, service, exam}
+  target_area         TEXT,
+  target_school       TEXT,
+  target_grade        TEXT,
+  target_subject      TEXT,
+  created_at          TEXT NOT NULL,
+  UNIQUE (compound_keyword, template_type, target_area, target_school, target_grade, target_subject)
+);
+CREATE INDEX IF NOT EXISTS idx_seo_compound_keywords_compound_keyword ON seo_compound_keywords(compound_keyword);
+CREATE INDEX IF NOT EXISTS idx_seo_compound_keywords_template_type ON seo_compound_keywords(template_type);
+
+-- どの競合ページで複合キーワードが検出されたか(共起の強さ・ゾーンを記録)。
+CREATE TABLE IF NOT EXISTS seo_page_compound_keywords (
+  id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+  page_id              INTEGER NOT NULL,
+  compound_keyword_id  INTEGER NOT NULL,
+  cooccurrence_score   REAL,            -- 1.0=同一ゾーン共起、0.7=ページ内別ゾーン共起
+  same_zone            TEXT,            -- 'title'/'h1'/'h2'、別ゾーンのみならNULL
+  created_at           TEXT NOT NULL,
+  FOREIGN KEY (page_id) REFERENCES seo_competitor_pages(id),
+  FOREIGN KEY (compound_keyword_id) REFERENCES seo_compound_keywords(id),
+  UNIQUE (page_id, compound_keyword_id)
+);
+CREATE INDEX IF NOT EXISTS idx_seo_page_compound_keywords_compound_keyword_id ON seo_page_compound_keywords(compound_keyword_id);

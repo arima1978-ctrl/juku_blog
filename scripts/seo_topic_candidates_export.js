@@ -2,8 +2,10 @@
 
 // 智谷(planner-blog-btoc)へ承認済みキーワード候補を橋渡しする決定的スクリプト(LLM不使用)。
 // features.competitor_keyword_analysis.enabled と .use_for_topic_selection が両方trueで、
-// かつ承認済み(approved)候補が1件以上ある場合のみ data/seo_candidates/YYYY-MM-DD.json を
-// 出力する。それ以外(機能OFF・候補0件)は何も出力しない
+// かつ承認済み(approved)かつapproved_action='create_article'の候補が1件以上ある場合のみ
+// data/seo_candidates/YYYY-MM-DD.json を出力する。それ以外(機能OFF・候補0件)は何も出力しない
+// (improve_existing_article/improve_school_pageとして承認された候補は自動記事生成へ渡さず、
+// ダッシュボード上の改善タスクとして別途管理する)。
 // (愛知県高校入試機能のfetch_exam_research.jsと同じ「無ければ何も作らない」設計。
 // 智谷はこのファイルが存在しない日は完全に無視するため、既存の企画ロジックに影響しない)。
 //
@@ -32,11 +34,11 @@ function main(dateArg) {
   }
 
   const candidates = seoDb
-    .listKeywordCandidates({ status: 'approved', orderBy: 'priority_score' })
+    .listKeywordCandidates({ status: 'approved', approvedAction: 'create_article', orderBy: 'priority_score' })
     .slice(0, MAX_CANDIDATES);
 
   if (candidates.length === 0) {
-    console.log('[seo_topic_candidates_export] 承認済み候補が無いため無処理で終了します');
+    console.log('[seo_topic_candidates_export] 承認済み(新規記事)候補が無いため無処理で終了します');
     return;
   }
 

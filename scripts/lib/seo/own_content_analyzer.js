@@ -7,6 +7,7 @@
 // (自社記事数がposts.sqlite全件でも軽量に処理できる規模のため)。
 
 const { extractKeywordCandidates } = require('./keyword_extractor');
+const { buildCompoundKeywords } = require('./compound_keyword_builder');
 
 // Markdown本文からh2/h3見出しを{level,text}配列として抽出する
 // (scripts/lib/similarity.jsのextractHeadingsは1つの文字列に結合してしまうため、
@@ -61,6 +62,36 @@ function getOwnCoverage(index, normalizedKeyword) {
   return index.get(normalizedKeyword) || null;
 }
 
+// 複合キーワード版のカバレッジ索引。自社の同一記事内で構成語が共起している場合のみ
+// カバー済みとみなす(別々の記事が別々の単語を扱っているだけでは、その複合キーワードを
+// カバーしているとはみなさない)。
+// 戻り値: Map<compoundKeyword, { postId, title, slug, score, templateType, bodyLength }>
+function buildOwnCompoundCoverageIndex(posts, dictionaryEntries, weights, exclusionTerms = []) {
+  const index = new Map();
+  for (const post of posts) {
+    const candidates = extractKeywordCandidates(postToPage(post), dictionaryEntries, weights, exclusionTerms);
+    const compounds = buildCompoundKeywords(candidates);
+    for (const compound of compounds) {
+      const existing = index.get(compound.compoundKeyword);
+      if (!existing || compound.cooccurrenceScore > existing.score) {
+        index.set(compound.compoundKeyword, {
+          postId: post.id,
+          title: post.title,
+          slug: post.slug,
+          score: compound.cooccurrenceScore,
+          templateType: compound.templateType,
+          bodyLength: (post.body_md || '').length,
+        });
+      }
+    }
+  }
+  return index;
+}
+
+function getOwnCompoundCoverage(index, compoundKeyword) {
+  return index.get(compoundKeyword) || null;
+}
+
 // 自社記事が競合ページより明らかに情報量で劣るか(文字数ベースの簡易判定)。
 // 判定材料が無ければnull(gap_classifier側は「不明」を「劣っているとはみなさない」扱いにする)。
 function isOwnContentThinner(ownCoverage, competitorBodyLength, thinnerRatio = 0.6) {
@@ -68,4 +99,11 @@ function isOwnContentThinner(ownCoverage, competitorBodyLength, thinnerRatio = 0
   return ownCoverage.bodyLength < competitorBodyLength * thinnerRatio;
 }
 
-module.exports = { parseMarkdownHeadings, buildOwnCoverageIndex, getOwnCoverage, isOwnContentThinner };
+module.exports = {
+  parseMarkdownHeadings,
+  buildOwnCoverageIndex,
+  getOwnCoverage,
+  buildOwnCompoundCoverageIndex,
+  getOwnCompoundCoverage,
+  isOwnContentThinner,
+};

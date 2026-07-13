@@ -6,6 +6,8 @@ const {
   parseMarkdownHeadings,
   buildOwnCoverageIndex,
   getOwnCoverage,
+  buildOwnCompoundCoverageIndex,
+  getOwnCompoundCoverage,
   isOwnContentThinner,
 } = require('../scripts/lib/seo/own_content_analyzer');
 const { buildDictionaryEntries } = require('../scripts/lib/seo/keyword_extractor');
@@ -56,4 +58,38 @@ test('isOwnContentThinner: 十分な長さがあればfalse', () => {
 test('isOwnContentThinner: 判定材料が無ければnull', () => {
   assert.equal(isOwnContentThinner(null, 1000), null);
   assert.equal(isOwnContentThinner({ bodyLength: 100 }, 0), null);
+});
+
+test('buildOwnCompoundCoverageIndex: 同一記事内で共起する複合キーワードをカバー済みとして索引化する', () => {
+  const posts = [
+    {
+      id: 1,
+      title: '守山区の個別指導塾の選び方',
+      slug: 'moriyama-juku-guide',
+      meta_description: '',
+      body_md: '本文',
+    },
+  ];
+  const entries = buildDictionaryEntries(loadJukuConfig());
+  const index = buildOwnCompoundCoverageIndex(posts, entries, WEIGHTS);
+  const areaJuku = getOwnCompoundCoverage(index, '守山区 塾');
+  assert.ok(areaJuku);
+  assert.equal(areaJuku.postId, 1);
+  const areaTeachingStyle = getOwnCompoundCoverage(index, '守山区 個別指導');
+  assert.ok(areaTeachingStyle);
+});
+
+test('buildOwnCompoundCoverageIndex: 別々の記事が別々の語を扱っているだけではカバー済みにならない', () => {
+  const posts = [
+    { id: 1, title: '守山区の教育事情', slug: 'a', meta_description: '', body_md: '本文' },
+    { id: 2, title: '個別指導のメリット', slug: 'b', meta_description: '', body_md: '本文' },
+  ];
+  const entries = buildDictionaryEntries(loadJukuConfig());
+  const index = buildOwnCompoundCoverageIndex(posts, entries, WEIGHTS);
+  assert.equal(getOwnCompoundCoverage(index, '守山区 個別指導'), null);
+});
+
+test('getOwnCompoundCoverage: 存在しない複合キーワードはnull', () => {
+  const index = buildOwnCompoundCoverageIndex([], [], WEIGHTS);
+  assert.equal(getOwnCompoundCoverage(index, '存在しない 複合語'), null);
 });

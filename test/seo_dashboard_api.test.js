@@ -73,7 +73,7 @@ test('候補の承認→キュー投入→詳細取得がAPI経由で行える',
   const approveRes = await fetch(`http://localhost:${PORT}/api/seo/candidates/${created.id}/approve`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ reason: 'API経由の承認テスト' }),
+    body: JSON.stringify({ action: 'create_article', reason: 'API経由の承認テスト' }),
   });
   assert.equal(approveRes.status, 200);
   const approveBody = await approveRes.json();
@@ -91,6 +91,30 @@ test('候補の承認→キュー投入→詳細取得がAPI経由で行える',
   // 二重キュー投入はエラーになる
   const secondQueueRes = await fetch(`http://localhost:${PORT}/api/seo/candidates/${created.id}/queue`, { method: 'POST' });
   assert.equal(secondQueueRes.status, 400);
+});
+
+test('POST /api/seo/candidates/:id/approve: actionが不正なら400', async () => {
+  const seoDb = require('../scripts/lib/seo_db');
+  const created = seoDb.upsertKeywordCandidate({ normalized_keyword: '不正action候補', gap_type: 'missing', priority_score: 50 }, '2026-07-13T00:00:00.000Z');
+  require('../scripts/lib/db').closeDb();
+
+  const res = await fetch(`http://localhost:${PORT}/api/seo/candidates/${created.id}/approve`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ reason: 'action未指定' }),
+  });
+  assert.equal(res.status, 400);
+});
+
+test('POST /api/seo/candidates/:id/hold: 保留(reviewing)へ遷移できる', async () => {
+  const seoDb = require('../scripts/lib/seo_db');
+  const created = seoDb.upsertKeywordCandidate({ normalized_keyword: '保留テスト候補', gap_type: 'untapped', priority_score: 40 }, '2026-07-13T00:00:00.000Z');
+  require('../scripts/lib/db').closeDb();
+
+  const res = await fetch(`http://localhost:${PORT}/api/seo/candidates/${created.id}/hold`, { method: 'POST' });
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.equal(body.to, 'reviewing');
 });
 
 after(async () => {

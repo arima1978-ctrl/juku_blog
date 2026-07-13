@@ -274,11 +274,31 @@ app.get('/api/seo/candidates/:id', (req, res) => {
   });
 });
 
+// 承認時にaction(新規記事/既存記事改善/校舎ページ改善のいずれか)を確定させる。
+// approved_actionは人間が確定した最終判断であり、recommended_action(機械判定)は上書きしない。
+const APPROVABLE_ACTIONS = new Set(['create_article', 'improve_existing_article', 'improve_school_page']);
+
 app.post('/api/seo/candidates/:id/approve', (req, res) => {
   const id = Number(req.params.id);
   if (!seoDb.getKeywordCandidateById(id)) return res.status(404).json({ error: 'not_found' });
+  const action = req.body && req.body.action;
+  if (!APPROVABLE_ACTIONS.has(action)) {
+    return res.status(400).json({ error: 'invalid_action', message: `actionは${[...APPROVABLE_ACTIONS].join('/')}のいずれかを指定してください` });
+  }
   const reason = (req.body && req.body.reason) || null;
-  const result = seoDb.updateCandidateStatus(id, { toStatus: 'approved', reason, actor: 'dashboard' }, new Date().toISOString());
+  const result = seoDb.updateCandidateStatus(
+    id,
+    { toStatus: 'approved', reason, actor: 'dashboard', approvedAction: action },
+    new Date().toISOString()
+  );
+  res.json({ ok: true, ...result });
+});
+
+app.post('/api/seo/candidates/:id/hold', (req, res) => {
+  const id = Number(req.params.id);
+  if (!seoDb.getKeywordCandidateById(id)) return res.status(404).json({ error: 'not_found' });
+  const reason = (req.body && req.body.reason) || null;
+  const result = seoDb.updateCandidateStatus(id, { toStatus: 'reviewing', reason, actor: 'dashboard' }, new Date().toISOString());
   res.json({ ok: true, ...result });
 });
 

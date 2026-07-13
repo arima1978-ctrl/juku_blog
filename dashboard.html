@@ -719,6 +719,11 @@ const recommendedActionLabel = {
   add_internal_links: '内部リンク追加', update_for_current_year: '年度更新', merge_articles: '記事統合',
   monitor: 'monitor(様子見)', exclude: '除外',
 };
+const searchIntentLabel = {
+  general_service: '一般的な塾探し', exam_prep: '受験・テスト対策', seasonal_course: '季節講習',
+  trial_inquiry: '体験・問い合わせ',
+};
+const contentTypeLabel = { blog_article: 'ブログ記事', school_page: '校舎ページ' };
 
 async function loadSeoCompetitors() {
   const el = document.getElementById('seoCompetitorList');
@@ -764,7 +769,9 @@ async function loadSeoCandidates() {
           <div class="title">${escapeHtml(c.normalized_keyword)}</div>
           <div class="meta">
             競合数:${c.competitor_count ?? '-'} ・ 検索需要:${c.search_demand ?? '不明'} ・ 自社順位:${c.own_avg_position != null ? Math.round(c.own_avg_position) : '-'}
+            ・ 確度:${c.data_confidence ?? '-'}点 ・ ${escapeHtml(contentTypeLabel[c.content_type] || c.content_type || '-')}
             ・ 推奨:${escapeHtml(recommendedActionLabel[c.recommended_action] || c.recommended_action || '-')}
+            ${c.cannibalization_warning ? ' <span style="color:var(--red);" title="同一クエリで複数ページに表示があります">⚠️カニバリ</span>' : ''}
           </div>
         </div>
         <div style="text-align:right;">
@@ -806,20 +813,28 @@ async function openSeoCandidateDetail(id) {
     <div class="fact-check-item"><span></span><span>${escapeHtml(h.created_at)}: ${escapeHtml(h.from_status || '-')} → ${escapeHtml(h.to_status)}${h.reason ? `(${escapeHtml(h.reason)})` : ''} by ${escapeHtml(h.actor)}</span></div>
   `).join('');
 
+  const cannibalRows = c.cannibalization_warning && c.cannibalization_warning.pages
+    ? c.cannibalization_warning.pages.map(p => `<div class="fact-check-item"><span class="fc-result fc-ng">重複表示</span><span>${escapeHtml(p.page)}(表示回数:${p.impressions})</span></div>`).join('')
+    : '';
+
   document.getElementById('seoCandidateDetailCard').innerHTML = `
     <span class="gap-badge gap-${escapeHtml(c.gap_type)}">${escapeHtml(gapTypeLabel[c.gap_type] || c.gap_type)}</span>
     <span class="badge badge-${c.status === 'rejected' ? 'rejected' : 'approved'}">${escapeHtml(c.status)}</span>
     <h2 class="detail-title">${escapeHtml(c.normalized_keyword)}</h2>
     <div class="detail-meta-grid">
-      <div>元キーワード</div><div>${escapeHtml(c.raw_keyword || '-')}</div>
+      <div>テンプレート</div><div>${escapeHtml(c.template_type || '-')}</div>
+      <div>検索意図</div><div>${escapeHtml(searchIntentLabel[c.search_intent] || c.search_intent || '-')}</div>
+      <div>コンテンツ種別</div><div>${escapeHtml(contentTypeLabel[c.content_type] || c.content_type || '-')}</div>
       <div>優先度スコア</div><div class="score-num">${c.priority_score}点</div>
+      <div>データ確度(data_confidence)</div><div>${c.data_confidence ?? '-'}点</div>
       <div>推奨アクション</div><div>${escapeHtml(recommendedActionLabel[c.recommended_action] || c.recommended_action || '-')}</div>
+      ${c.approved_action ? `<div>承認済みアクション</div><div>${escapeHtml(recommendedActionLabel[c.approved_action] || c.approved_action)}</div>` : ''}
       <div>競合数</div><div>${c.competitor_count ?? '-'}</div>
       <div>検索需要(月間)</div><div>${c.search_demand ?? '不明(検索数0とは区別)'}</div>
       <div>自社平均順位</div><div>${c.own_avg_position != null ? Math.round(c.own_avg_position * 10) / 10 : '実績なし'}</div>
     </div>
     <div class="fact-check-box">
-      <strong>スコア内訳</strong>
+      <strong>優先度スコア内訳</strong>
       ${breakdownRows}
     </div>
     <div class="fact-check-box">
@@ -827,18 +842,32 @@ async function openSeoCandidateDetail(id) {
       ${evidenceRows}
     </div>
     ${existingRows ? `<div class="fact-check-box"><strong>関連する既存記事(カニバリゼーション注意)</strong>${existingRows}</div>` : ''}
+    ${cannibalRows ? `<div class="fact-check-box has-issue"><strong>⚠️ Search Console上のカニバリゼーション警告</strong>${cannibalRows}</div>` : ''}
     ${historyRows ? `<div class="fact-check-box"><strong>操作履歴</strong>${historyRows}</div>` : ''}
     <div class="actions">
-      ${c.status === 'discovered' || c.status === 'reviewing' ? `<button class="primary" onclick="approveSeoCandidate(${c.id})">承認</button>` : ''}
+      ${c.status !== 'approved' && c.status !== 'queued' && c.status !== 'article_created' && c.status !== 'rejected' ? `
+        <button class="primary" onclick="approveSeoCandidate(${c.id}, 'create_article')">新規記事として承認</button>
+        <button class="primary" onclick="approveSeoCandidate(${c.id}, 'improve_existing_article')">既存記事改善として承認</button>
+        <button class="primary" onclick="approveSeoCandidate(${c.id}, 'improve_school_page')">校舎ページ改善として承認</button>
+        <button onclick="holdSeoCandidate(${c.id})">保留</button>
+      ` : ''}
       ${c.status === 'approved' ? `<button class="primary" onclick="queueSeoCandidate(${c.id})">記事生成キューへ</button>` : ''}
       ${c.status !== 'rejected' ? `<button class="danger" onclick="rejectSeoCandidate(${c.id})">除外</button>` : ''}
     </div>
   `;
 }
 
-async function approveSeoCandidate(id) {
+async function approveSeoCandidate(id, action) {
   const reason = prompt('承認理由(任意)') || '';
   await fetchJson(`api/seo/candidates/${id}/approve`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, reason }),
+  });
+  openSeoCandidateDetail(id);
+}
+
+async function holdSeoCandidate(id) {
+  const reason = prompt('保留理由(任意)') || '';
+  await fetchJson(`api/seo/candidates/${id}/hold`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reason }),
   });
   openSeoCandidateDetail(id);

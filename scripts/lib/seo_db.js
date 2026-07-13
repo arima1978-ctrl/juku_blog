@@ -326,6 +326,88 @@ function listTopicCoverage() {
     .all();
 }
 
+// ---- seo_compound_keywords / seo_page_compound_keywords --------------------
+
+function upsertCompoundKeyword(compound, nowIso) {
+  const conn = getDb();
+  const key = {
+    compound_keyword: compound.compound_keyword,
+    template_type: compound.template_type,
+    target_area: compound.target_area || null,
+    target_school: compound.target_school || null,
+    target_grade: compound.target_grade || null,
+    target_subject: compound.target_subject || null,
+  };
+  const existing = conn
+    .prepare(
+      `SELECT id FROM seo_compound_keywords WHERE compound_keyword = :compound_keyword
+        AND template_type = :template_type AND target_area IS :target_area
+        AND target_school IS :target_school AND target_grade IS :target_grade
+        AND target_subject IS :target_subject`
+    )
+    .get(key);
+  if (existing) return existing.id;
+  const result = conn
+    .prepare(
+      `INSERT INTO seo_compound_keywords (compound_keyword, template_type, keyword_components, target_area, target_school, target_grade, target_subject, created_at)
+       VALUES (:compound_keyword, :template_type, :keyword_components, :target_area, :target_school, :target_grade, :target_subject, :created_at)`
+    )
+    .run({
+      compound_keyword: compound.compound_keyword,
+      template_type: compound.template_type,
+      keyword_components: JSON.stringify(compound.keyword_components || {}),
+      target_area: key.target_area,
+      target_school: key.target_school,
+      target_grade: key.target_grade,
+      target_subject: key.target_subject,
+      created_at: nowIso,
+    });
+  return Number(result.lastInsertRowid);
+}
+
+function upsertPageCompoundKeyword(entry, nowIso) {
+  const conn = getDb();
+  const existing = conn
+    .prepare('SELECT id FROM seo_page_compound_keywords WHERE page_id = ? AND compound_keyword_id = ?')
+    .get(entry.page_id, entry.compound_keyword_id);
+  if (existing) {
+    conn
+      .prepare('UPDATE seo_page_compound_keywords SET cooccurrence_score = :cooccurrence_score, same_zone = :same_zone WHERE id = :id')
+      .run({ id: existing.id, cooccurrence_score: entry.cooccurrence_score ?? null, same_zone: entry.same_zone || null });
+    return existing.id;
+  }
+  const result = conn
+    .prepare(
+      `INSERT INTO seo_page_compound_keywords (page_id, compound_keyword_id, cooccurrence_score, same_zone, created_at)
+       VALUES (:page_id, :compound_keyword_id, :cooccurrence_score, :same_zone, :created_at)`
+    )
+    .run({
+      page_id: entry.page_id,
+      compound_keyword_id: entry.compound_keyword_id,
+      cooccurrence_score: entry.cooccurrence_score ?? null,
+      same_zone: entry.same_zone || null,
+      created_at: nowIso,
+    });
+  return Number(result.lastInsertRowid);
+}
+
+// Gap判定用: 競合ページから検出された全複合キーワードを、ページ・競合情報とJOINして返す。
+// 呼び出し側(seo_gap_calculate.js)でcompound_keyword_id単位にグルーピングして使う。
+function listCompoundKeywordCoverage() {
+  const conn = getDb();
+  return conn
+    .prepare(
+      `SELECT ck.id AS compound_keyword_id, ck.compound_keyword, ck.template_type, ck.keyword_components,
+              ck.target_area, ck.target_school, ck.target_grade, ck.target_subject,
+              pck.page_id, pck.cooccurrence_score, pck.same_zone,
+              p.competitor_id, p.canonical_url, p.title AS page_title, p.content_hash
+       FROM seo_compound_keywords ck
+       JOIN seo_page_compound_keywords pck ON pck.compound_keyword_id = ck.id
+       JOIN seo_competitor_pages p ON p.id = pck.page_id`
+    )
+    .all();
+}
+
 // ---- seo_gsc_queries -------------------------------------------------------
 
 function upsertGscQueryRow(row, nowIso) {
@@ -357,6 +439,13 @@ function upsertGscQueryRow(row, nowIso) {
 function listGscQueriesForKeyword(query) {
   const conn = getDb();
   return conn.prepare('SELECT * FROM seo_gsc_queries WHERE query = ? ORDER BY date DESC').all(query);
+}
+
+// カニバリゼーション検知(scripts/lib/seo/cannibalization.js)用: 同一クエリの
+// ページ別・日付別GSC実績を{page, impressions}の配列で返す。
+function getGscPagesForQuery(query) {
+  const conn = getDb();
+  return conn.prepare('SELECT page, impressions FROM seo_gsc_queries WHERE query = ?').all(query);
 }
 
 // 表示回数で重み付けした平均順位・CTRを返す(表示回数0のクエリを平均で埋もれさせないため)。
@@ -490,6 +579,10 @@ function upsertKeywordCandidate(candidate, nowIso) {
           score_breakdown = :score_breakdown, search_demand = :search_demand, own_avg_position = :own_avg_position,
           competitor_count = :competitor_count, recommended_action = :recommended_action,
           suggested_title = :suggested_title, suggested_outline = :suggested_outline,
+          keyword_components = :keyword_components, template_type = :template_type,
+          cooccurrence_score = :cooccurrence_score, search_intent = :search_intent,
+          content_type = :content_type, data_confidence = :data_confidence,
+          existing_post_id = :existing_post_id, cannibalization_warning = :cannibalization_warning,
           analysis_run_id = :analysis_run_id, updated_at = :updated_at
         WHERE id = :id`
       )
@@ -505,6 +598,14 @@ function upsertKeywordCandidate(candidate, nowIso) {
         recommended_action: candidate.recommended_action || null,
         suggested_title: candidate.suggested_title || null,
         suggested_outline: toJson(candidate.suggested_outline),
+        keyword_components: toJson(candidate.keyword_components),
+        template_type: candidate.template_type || null,
+        cooccurrence_score: candidate.cooccurrence_score ?? null,
+        search_intent: candidate.search_intent || null,
+        content_type: candidate.content_type || null,
+        data_confidence: candidate.data_confidence ?? null,
+        existing_post_id: candidate.existing_post_id ?? null,
+        cannibalization_warning: toJson(candidate.cannibalization_warning),
         analysis_run_id: candidate.analysis_run_id || null,
         updated_at: nowIso,
       });
@@ -515,11 +616,17 @@ function upsertKeywordCandidate(candidate, nowIso) {
       `INSERT INTO seo_keyword_candidates (
         normalized_keyword, raw_keyword, target_area, target_school, target_grade, target_subject,
         gap_type, priority_score, score_breakdown, search_demand, own_avg_position, competitor_count,
-        recommended_action, suggested_title, suggested_outline, status, analysis_run_id, created_at, updated_at
+        recommended_action, suggested_title, suggested_outline,
+        keyword_components, template_type, cooccurrence_score, search_intent, content_type,
+        data_confidence, existing_post_id, cannibalization_warning,
+        status, analysis_run_id, created_at, updated_at
       ) VALUES (
         :normalized_keyword, :raw_keyword, :target_area, :target_school, :target_grade, :target_subject,
         :gap_type, :priority_score, :score_breakdown, :search_demand, :own_avg_position, :competitor_count,
-        :recommended_action, :suggested_title, :suggested_outline, :status, :analysis_run_id, :created_at, :updated_at
+        :recommended_action, :suggested_title, :suggested_outline,
+        :keyword_components, :template_type, :cooccurrence_score, :search_intent, :content_type,
+        :data_confidence, :existing_post_id, :cannibalization_warning,
+        :status, :analysis_run_id, :created_at, :updated_at
       )`
     )
     .run({
@@ -538,6 +645,14 @@ function upsertKeywordCandidate(candidate, nowIso) {
       recommended_action: candidate.recommended_action || null,
       suggested_title: candidate.suggested_title || null,
       suggested_outline: toJson(candidate.suggested_outline),
+      keyword_components: toJson(candidate.keyword_components),
+      template_type: candidate.template_type || null,
+      cooccurrence_score: candidate.cooccurrence_score ?? null,
+      search_intent: candidate.search_intent || null,
+      content_type: candidate.content_type || null,
+      data_confidence: candidate.data_confidence ?? null,
+      existing_post_id: candidate.existing_post_id ?? null,
+      cannibalization_warning: toJson(candidate.cannibalization_warning),
       status: candidate.status || 'discovered',
       analysis_run_id: candidate.analysis_run_id || null,
       created_at: nowIso,
@@ -546,14 +661,24 @@ function upsertKeywordCandidate(candidate, nowIso) {
   return { id: Number(result.lastInsertRowid), isNew: true, previousStatus: null };
 }
 
+function parseCandidateJsonFields(row) {
+  return {
+    ...row,
+    score_breakdown: fromJson(row.score_breakdown),
+    suggested_outline: fromJson(row.suggested_outline),
+    keyword_components: fromJson(row.keyword_components),
+    cannibalization_warning: fromJson(row.cannibalization_warning),
+  };
+}
+
 function getKeywordCandidateById(id) {
   const conn = getDb();
   const row = conn.prepare('SELECT * FROM seo_keyword_candidates WHERE id = ?').get(id);
   if (!row) return null;
-  return { ...row, score_breakdown: fromJson(row.score_breakdown), suggested_outline: fromJson(row.suggested_outline) };
+  return parseCandidateJsonFields(row);
 }
 
-function listKeywordCandidates({ status, gapType, targetArea, minPriorityScore, orderBy } = {}) {
+function listKeywordCandidates({ status, gapType, targetArea, minPriorityScore, approvedAction, orderBy } = {}) {
   const conn = getDb();
   let query = 'SELECT * FROM seo_keyword_candidates WHERE 1=1';
   const params = {};
@@ -573,27 +698,36 @@ function listKeywordCandidates({ status, gapType, targetArea, minPriorityScore, 
     query += ' AND priority_score >= :min_priority_score';
     params.min_priority_score = minPriorityScore;
   }
+  if (approvedAction) {
+    query += ' AND approved_action = :approved_action';
+    params.approved_action = approvedAction;
+  }
   const orderColumns = { priority_score: 'priority_score DESC', updated_at: 'updated_at DESC', search_demand: 'search_demand DESC' };
   query += ` ORDER BY ${orderColumns[orderBy] || 'priority_score DESC'}`;
-  return conn
-    .prepare(query)
-    .all(params)
-    .map((row) => ({ ...row, score_breakdown: fromJson(row.score_breakdown), suggested_outline: fromJson(row.suggested_outline) }));
+  return conn.prepare(query).all(params).map(parseCandidateJsonFields);
 }
 
 // 候補の状態遷移。二重キュー登録を防ぐため、queuedへの遷移はapproved以外からは許可しない。
-function updateCandidateStatus(id, { toStatus, reason, actor }, nowIso) {
+// approvedActionを渡すと、承認時に人間が確定した最終アクション(新規記事/既存記事改善/
+// 校舎ページ改善)をapproved_actionへ記録する(recommended_actionは機械判定のまま上書きしない)。
+function updateCandidateStatus(id, { toStatus, reason, actor, approvedAction }, nowIso) {
   const conn = getDb();
   const current = conn.prepare('SELECT status FROM seo_keyword_candidates WHERE id = ?').get(id);
   if (!current) throw new Error(`updateCandidateStatus: candidate id=${id} が見つかりません`);
   if (toStatus === 'queued' && current.status !== 'approved') {
     throw new Error(`updateCandidateStatus: queuedにはapproved状態からのみ遷移可能です(現状: ${current.status})`);
   }
-  conn.prepare('UPDATE seo_keyword_candidates SET status = :status, updated_at = :updated_at WHERE id = :id').run({
-    status: toStatus,
-    updated_at: nowIso,
-    id,
-  });
+  if (approvedAction !== undefined) {
+    conn
+      .prepare('UPDATE seo_keyword_candidates SET status = :status, approved_action = :approved_action, updated_at = :updated_at WHERE id = :id')
+      .run({ status: toStatus, approved_action: approvedAction, updated_at: nowIso, id });
+  } else {
+    conn.prepare('UPDATE seo_keyword_candidates SET status = :status, updated_at = :updated_at WHERE id = :id').run({
+      status: toStatus,
+      updated_at: nowIso,
+      id,
+    });
+  }
   conn
     .prepare(
       `INSERT INTO seo_candidate_status_history (candidate_id, from_status, to_status, reason, actor, created_at)
@@ -771,9 +905,13 @@ module.exports = {
   upsertPageTopic,
   listTopicsForPage,
   listTopicCoverage,
+  upsertCompoundKeyword,
+  upsertPageCompoundKeyword,
+  listCompoundKeywordCoverage,
   upsertGscQueryRow,
   listGscQueriesForKeyword,
   getGscAggregateForKeyword,
+  getGscPagesForQuery,
   upsertKeywordMetric,
   getKeywordMetric,
   upsertSerpRanking,

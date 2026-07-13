@@ -10,6 +10,7 @@ const {
   GRADES,
   SUBJECTS,
   TEACHING_STYLES,
+  SERVICE_TERMS,
   EXAM_TERMS,
   buildAreaDictionary,
 } = require('./dictionaries');
@@ -28,6 +29,7 @@ function buildDictionaryEntries(jukuConfig) {
   push('grade', GRADES);
   push('subject', SUBJECTS);
   push('teaching_style', TEACHING_STYLES);
+  push('service', SERVICE_TERMS);
   push('exam', EXAM_TERMS);
 
   return entries;

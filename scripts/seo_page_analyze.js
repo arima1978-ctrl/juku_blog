@@ -12,6 +12,7 @@ const path = require('node:path');
 const { loadJukuConfig } = require('./lib/config');
 const seoDb = require('./lib/seo_db');
 const { buildDictionaryEntries, extractKeywordCandidates } = require('./lib/seo/keyword_extractor');
+const { buildCompoundKeywords } = require('./lib/seo/compound_keyword_builder');
 const { GENERIC_EXCLUSION_TERMS } = require('./lib/seo/dictionaries');
 const { ROOT } = require('./lib/config');
 const { logError } = require('./log_error');
@@ -71,6 +72,7 @@ async function main() {
 
   const nowIso = new Date().toISOString();
   let topicsExtracted = 0;
+  let compoundsExtracted = 0;
 
   for (const page of pages) {
     const bodyText = readPageBody(page.content_hash);
@@ -90,8 +92,10 @@ async function main() {
       continue;
     }
 
+    const compounds = buildCompoundKeywords(candidates);
+
     if (dryRun) {
-      console.log(`[seo_page_analyze][dry-run] page_id=${page.id} candidates=${candidates.length}`);
+      console.log(`[seo_page_analyze][dry-run] page_id=${page.id} candidates=${candidates.length} compounds=${compounds.length}`);
       continue;
     }
 
@@ -124,10 +128,39 @@ async function main() {
       topicsExtracted += 1;
     }
 
+    // 複合キーワード(「地域×塾」等)。単語単体(seo_topics)とは別テーブルに保存し、
+    // seo_gap_calculate.jsはこちらを候補生成の主単位として使う。
+    for (const compound of compounds) {
+      const compoundKeywordId = seoDb.upsertCompoundKeyword(
+        {
+          compound_keyword: compound.compoundKeyword,
+          template_type: compound.templateType,
+          keyword_components: compound.components,
+          target_area: compound.components.area || null,
+          target_school: compound.components.school || null,
+          target_grade: compound.components.grade || null,
+          target_subject: compound.components.subject || null,
+        },
+        nowIso
+      );
+      seoDb.upsertPageCompoundKeyword(
+        {
+          page_id: page.id,
+          compound_keyword_id: compoundKeywordId,
+          cooccurrence_score: compound.cooccurrenceScore,
+          same_zone: compound.sameZone,
+        },
+        nowIso
+      );
+      compoundsExtracted += 1;
+    }
+
     seoDb.markPageAnalyzed(page.id, nowIso);
   }
 
-  console.log(`[seo_page_analyze] 完了: ページ${pages.length}件を解析、テーマ${topicsExtracted}件を保存しました`);
+  console.log(
+    `[seo_page_analyze] 完了: ページ${pages.length}件を解析、単語テーマ${topicsExtracted}件・複合キーワード${compoundsExtracted}件を保存しました`
+  );
 }
 
 if (require.main === module) {
