@@ -117,6 +117,39 @@ test('POST /api/seo/candidates/:id/hold: 保留(reviewing)へ遷移できる', a
   assert.equal(body.to, 'reviewing');
 });
 
+test('GET /api/growth/tasks: 未生成なら空配列', async () => {
+  const res = await fetch(`http://localhost:${PORT}/api/growth/tasks`);
+  assert.equal(res.status, 200);
+  assert.deepEqual(await res.json(), []);
+});
+
+test('GET /api/growth/tasks/:id: 存在しなければ404', async () => {
+  const res = await fetch(`http://localhost:${PORT}/api/growth/tasks/999999`);
+  assert.equal(res.status, 404);
+});
+
+test('Task承認→除外がAPI経由で行える', async () => {
+  const seoDb = require('../scripts/lib/seo_db');
+  const created = seoDb.upsertTask(
+    { task_type: 'improve_school_page', target_keyword: 'API経由Taskテスト', opportunity_score: 65, recommended_action: 'improve_school_page', reason: ['競合5社'] },
+    '2026-07-13T00:00:00.000Z'
+  );
+  require('../scripts/lib/db').closeDb();
+
+  const approveRes = await fetch(`http://localhost:${PORT}/api/growth/tasks/${created.id}/approve`, { method: 'POST' });
+  assert.equal(approveRes.status, 200);
+  assert.equal((await approveRes.json()).to, 'approved');
+
+  const detailRes = await fetch(`http://localhost:${PORT}/api/growth/tasks/${created.id}`);
+  const detail = await detailRes.json();
+  assert.equal(detail.status, 'approved');
+  assert.deepEqual(detail.reason, ['競合5社']);
+
+  const rejectRes = await fetch(`http://localhost:${PORT}/api/growth/tasks/${created.id}/reject`, { method: 'POST' });
+  assert.equal(rejectRes.status, 200);
+  assert.equal((await rejectRes.json()).to, 'rejected');
+});
+
 after(async () => {
   if (serverProcess) {
     serverProcess.kill();

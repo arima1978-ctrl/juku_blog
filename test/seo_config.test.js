@@ -22,6 +22,18 @@ test('loadJukuConfig: seo.competitor_analysisのパラメータがハードコ�
   assert.equal(seo.priority_score_weights.area_relevance, 25);
 });
 
+test('loadJukuConfig: growth_directorは既定でfalse', () => {
+  const config = loadJukuConfig();
+  assert.equal(config.features.growth_director.enabled, false);
+});
+
+test('loadJukuConfig: seo.growth_directorのパラメータがハードコードされず設定から読める', () => {
+  const config = loadJukuConfig();
+  const gd = config.seo.growth_director;
+  assert.equal(gd.opportunity_score_weights.competitor_adoption, 20);
+  assert.equal(gd.effort_minutes_by_task_type.create_article, 30);
+});
+
 test('loadSeoCompetitorsConfig: 登録済み競合はid/domain/crawl_enabledを持つ', () => {
   const config = loadSeoCompetitorsConfig();
   assert.ok(Array.isArray(config.competitors));

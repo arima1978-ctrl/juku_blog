@@ -83,6 +83,12 @@ features:
     crawl_enabled: false
     # Google Search Console API連携を行うか
     search_console_enabled: false
+  # AI Growth Director(SEO Task生成・Opportunity Score・改善提案画面)。
+  # enabled: false(既定)の間は seo_task_generate.js が即座に無処理で終了し、
+  # 既存の記事生成フロー・競合キーワード分析(candidates)には一切影響しない。
+  # 記事生成パイプライン(daily_blog.sh)・WordPress投稿へは今回一切接続しない(Sprint 1)。
+  growth_director:
+    enabled: false
 
 # 競合キーワード分析(Keyword Gap Lite)専用パラメータ。
 # 値をコード内にハードコードせず、すべてここで調整可能にする。
@@ -112,6 +118,26 @@ seo:
       search_demand: 10
       own_rank_improvement: 10
       seasonality: 5
+
+  # AI Growth Director(features.growth_director)専用パラメータ。
+  growth_director:
+    # Opportunity Score(0〜100)の内訳配点。priority_scoreとは完全に独立したスコア。
+    opportunity_score_weights:
+      competitor_adoption: 20
+      area_relevance: 20
+      search_intent: 20
+      own_coverage_gap: 20
+      data_confidence: 10
+      effort_efficiency: 10
+    # task_type別の見積り工数(分)。実際の作業時間の目安が変わった場合はここを調整する。
+    effort_minutes_by_task_type:
+      add_faq: 5
+      add_internal_links: 5
+      improve_school_page: 10
+      improve_existing_article: 15
+      create_article: 30
+      monitor: 0
+      exclude: 0
 
 wordpress:
   # an-english.com は教室ごとに同名の子カテゴリー(コラム/学校情報/教室の様子等)が

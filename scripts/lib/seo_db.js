@@ -888,6 +888,117 @@ function insertImportJob(job, nowIso) {
   return Number(result.lastInsertRowid);
 }
 
+// ---- seo_tasks (AI Growth Director) ----------------------------------------
+
+function upsertTask(task, nowIso) {
+  const conn = getDb();
+  const key = {
+    target_keyword: task.target_keyword,
+    task_type: task.task_type,
+    source_candidate_id: task.source_candidate_id ?? null,
+  };
+  const existing = conn
+    .prepare(
+      `SELECT id, status FROM seo_tasks WHERE target_keyword = :target_keyword
+        AND task_type = :task_type AND source_candidate_id IS :source_candidate_id`
+    )
+    .get(key);
+  if (existing) {
+    conn
+      .prepare(
+        `UPDATE seo_tasks SET
+          target_url = :target_url, target_post_id = :target_post_id,
+          priority_score = :priority_score, opportunity_score = :opportunity_score,
+          opportunity_breakdown = :opportunity_breakdown, estimated_effort_minutes = :estimated_effort_minutes,
+          recommended_action = :recommended_action, reason = :reason, updated_at = :updated_at
+        WHERE id = :id`
+      )
+      .run({
+        id: existing.id,
+        target_url: task.target_url || null,
+        target_post_id: task.target_post_id ?? null,
+        priority_score: task.priority_score ?? null,
+        opportunity_score: task.opportunity_score,
+        opportunity_breakdown: toJson(task.opportunity_breakdown),
+        estimated_effort_minutes: task.estimated_effort_minutes ?? null,
+        recommended_action: task.recommended_action,
+        reason: toJson(task.reason),
+        updated_at: nowIso,
+      });
+    return { id: existing.id, isNew: false, previousStatus: existing.status };
+  }
+  const result = conn
+    .prepare(
+      `INSERT INTO seo_tasks (
+        task_type, target_url, target_post_id, target_keyword, source_candidate_id,
+        priority_score, opportunity_score, opportunity_breakdown, estimated_effort_minutes,
+        recommended_action, reason, status, created_at, updated_at
+      ) VALUES (
+        :task_type, :target_url, :target_post_id, :target_keyword, :source_candidate_id,
+        :priority_score, :opportunity_score, :opportunity_breakdown, :estimated_effort_minutes,
+        :recommended_action, :reason, :status, :created_at, :updated_at
+      )`
+    )
+    .run({
+      task_type: key.task_type,
+      target_url: task.target_url || null,
+      target_post_id: task.target_post_id ?? null,
+      target_keyword: key.target_keyword,
+      source_candidate_id: key.source_candidate_id,
+      priority_score: task.priority_score ?? null,
+      opportunity_score: task.opportunity_score,
+      opportunity_breakdown: toJson(task.opportunity_breakdown),
+      estimated_effort_minutes: task.estimated_effort_minutes ?? null,
+      recommended_action: task.recommended_action,
+      reason: toJson(task.reason),
+      status: task.status || 'proposed',
+      created_at: nowIso,
+      updated_at: nowIso,
+    });
+  return { id: Number(result.lastInsertRowid), isNew: true, previousStatus: null };
+}
+
+function parseTaskJsonFields(row) {
+  return { ...row, opportunity_breakdown: fromJson(row.opportunity_breakdown), reason: fromJson(row.reason) };
+}
+
+function getTaskById(id) {
+  const conn = getDb();
+  const row = conn.prepare('SELECT * FROM seo_tasks WHERE id = ?').get(id);
+  if (!row) return null;
+  return parseTaskJsonFields(row);
+}
+
+function listTasks({ status, taskType, orderBy } = {}) {
+  const conn = getDb();
+  let query = 'SELECT * FROM seo_tasks WHERE 1=1';
+  const params = {};
+  if (status) {
+    query += ' AND status = :status';
+    params.status = status;
+  }
+  if (taskType) {
+    query += ' AND task_type = :task_type';
+    params.task_type = taskType;
+  }
+  const orderColumns = { opportunity_score: 'opportunity_score DESC', updated_at: 'updated_at DESC' };
+  query += ` ORDER BY ${orderColumns[orderBy] || 'opportunity_score DESC'}`;
+  return conn.prepare(query).all(params).map(parseTaskJsonFields);
+}
+
+// Sprint 1ではproposed/approved/rejectedのみを扱う(実行の自動化は行わない)。
+function updateTaskStatus(id, toStatus, nowIso) {
+  const conn = getDb();
+  const current = conn.prepare('SELECT status FROM seo_tasks WHERE id = ?').get(id);
+  if (!current) throw new Error(`updateTaskStatus: task id=${id} が見つかりません`);
+  conn.prepare('UPDATE seo_tasks SET status = :status, updated_at = :updated_at WHERE id = :id').run({
+    status: toStatus,
+    updated_at: nowIso,
+    id,
+  });
+  return { from: current.status, to: toStatus };
+}
+
 module.exports = {
   upsertCompetitor,
   getCompetitor,
@@ -931,4 +1042,8 @@ module.exports = {
   createAnalysisRun,
   finishAnalysisRun,
   insertImportJob,
+  upsertTask,
+  getTaskById,
+  listTasks,
+  updateTaskStatus,
 };

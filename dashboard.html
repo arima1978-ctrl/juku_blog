@@ -236,6 +236,14 @@
   .gap-strong { background: var(--green-bg); color: var(--green); }
   .score-num { font-weight: 700; }
 
+  /* Growth Director */
+  .star-rating { color: var(--yellow); font-size: 1.1rem; letter-spacing: 1px; }
+  .effort-badge {
+    display: inline-block; font-size: 0.75rem; font-weight: 600; padding: 2px 8px;
+    border-radius: 999px; background: var(--bg); color: var(--text-muted); border: 1px solid var(--border);
+  }
+  .task-type-label { font-size: 0.8rem; color: var(--text-muted); }
+
   @media (max-width: 600px) {
     .detail-meta-grid { grid-template-columns: 1fr; }
     .actions { flex-direction: column; }
@@ -258,6 +266,7 @@
       <button data-tab="episodes">エピソード素材</button>
       <button data-tab="calendar">テーマカレンダー</button>
       <button data-tab="seo">競合キーワード分析</button>
+      <button data-tab="growth">Growth Director</button>
     </div>
 
     <div id="postsTab">
@@ -336,11 +345,33 @@
       </div>
       <div class="card-list" id="seoCandidateList"></div>
     </div>
+
+    <div id="growthTab" style="display:none;">
+      <p style="color:var(--text-muted); margin: 0 0 12px;">
+        今週の改善提案(SEO Task)です。記事候補(競合キーワード分析)とは別の概念で、
+        「次に何をすべきか」という実行可能な作業単位です。承認しても自動実行はされません
+        (Sprint 1は提案の確認・承認・除外までが対象です)。
+      </p>
+      <div class="filters">
+        <select id="growthStatusFilter">
+          <option value="proposed">ステータス: 提案中</option>
+          <option value="approved">承認済み</option>
+          <option value="rejected">除外済み</option>
+          <option value="">すべて</option>
+        </select>
+      </div>
+      <div class="card-list" id="growthTaskList"></div>
+    </div>
   </div>
 
   <div id="seoCandidateDetailView" style="display:none;">
     <span class="back-link" id="seoBackLink">&larr; 候補一覧に戻る</span>
     <div class="detail-card" id="seoCandidateDetailCard"></div>
+  </div>
+
+  <div id="growthTaskDetailView" style="display:none;">
+    <span class="back-link" id="growthBackLink">&larr; 改善提案一覧に戻る</span>
+    <div class="detail-card" id="growthTaskDetailCard"></div>
   </div>
 
   <div id="detailView">
@@ -898,6 +929,95 @@ document.getElementById('seoBackLink').addEventListener('click', () => {
   document.getElementById('listView').style.display = 'block';
 });
 
+// --- AI Growth Director(SEO Task) ---
+const taskTypeLabel = {
+  create_article: '新規記事作成', improve_existing_article: '既存記事改善', improve_school_page: '校舎ページ改善',
+  add_internal_links: '内部リンク追加', add_faq: 'FAQ追加', monitor: '様子見', exclude: '除外',
+};
+
+function starRating(opportunityScore) {
+  const stars = Math.max(1, Math.min(5, Math.ceil((opportunityScore || 0) / 20)));
+  return '★'.repeat(stars) + '☆'.repeat(5 - stars);
+}
+
+async function loadGrowthTasks() {
+  const status = document.getElementById('growthStatusFilter').value;
+  const params = new URLSearchParams();
+  if (status) params.set('status', status);
+  const tasks = await fetchJson('api/growth/tasks?' + params.toString());
+
+  const list = document.getElementById('growthTaskList');
+  if (tasks.length === 0) {
+    list.innerHTML = '<div class="empty">今週の改善提案はまだありません</div>';
+    return;
+  }
+  list.innerHTML = tasks.map(t => `
+    <div class="post-card" onclick="openGrowthTaskDetail(${t.id})">
+      <div class="row1">
+        <div>
+          <div class="star-rating">${starRating(t.opportunity_score)}</div>
+          <div class="title">${escapeHtml(t.target_keyword)}</div>
+          <div class="task-type-label">${escapeHtml(taskTypeLabel[t.task_type] || t.task_type)}${t.target_url ? ` ・ <a href="${escapeHtml(t.target_url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">対象ページ</a>` : ''}</div>
+        </div>
+        <div style="text-align:right;">
+          <span class="effort-badge">工数 ${t.estimated_effort_minutes ?? '-'}分</span><br>
+          <span class="badge badge-${t.status === 'rejected' ? 'rejected' : t.status === 'approved' ? 'approved' : 'review_pending'}" style="margin-top:6px;display:inline-block;">${escapeHtml(t.status)}</span>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function openGrowthTaskDetail(id) {
+  const t = await fetchJson(`api/growth/tasks/${id}`);
+  document.getElementById('listView').style.display = 'none';
+  document.getElementById('growthTaskDetailView').style.display = 'block';
+
+  const breakdown = t.opportunity_breakdown || {};
+  const breakdownRows = Object.keys(breakdown)
+    .map(k => `<div class="fact-check-item"><span class="fc-result">${breakdown[k].points}/${breakdown[k].maxPoints}</span><span>${escapeHtml(k)}</span></div>`)
+    .join('');
+  const reasonText = (t.reason || []).map(escapeHtml).join(' / ') || '-';
+
+  document.getElementById('growthTaskDetailCard').innerHTML = `
+    <div class="star-rating" style="font-size:1.4rem;">${starRating(t.opportunity_score)}</div>
+    <span class="badge badge-${t.status === 'rejected' ? 'rejected' : t.status === 'approved' ? 'approved' : 'review_pending'}">${escapeHtml(t.status)}</span>
+    <h2 class="detail-title">${escapeHtml(t.target_keyword)}</h2>
+    <div class="detail-meta-grid">
+      <div>作業種別</div><div>${escapeHtml(taskTypeLabel[t.task_type] || t.task_type)}</div>
+      <div>Opportunity Score</div><div class="score-num">${t.opportunity_score}点</div>
+      <div>Priority Score(参考)</div><div>${t.priority_score ?? '-'}点</div>
+      <div>見積り工数</div><div>${t.estimated_effort_minutes ?? '-'}分</div>
+      <div>理由</div><div>${reasonText}</div>
+      ${t.target_url ? `<div>対象ページ</div><div><a href="${escapeHtml(t.target_url)}" target="_blank" rel="noopener">${escapeHtml(t.target_url)}</a></div>` : ''}
+    </div>
+    <div class="fact-check-box">
+      <strong>Opportunity Score内訳</strong>
+      ${breakdownRows}
+    </div>
+    <div class="actions">
+      ${t.status === 'proposed' ? `<button class="primary" onclick="approveGrowthTask(${t.id})">承認</button>` : ''}
+      ${t.status !== 'rejected' ? `<button class="danger" onclick="rejectGrowthTask(${t.id})">除外</button>` : ''}
+    </div>
+  `;
+}
+
+async function approveGrowthTask(id) {
+  await fetchJson(`api/growth/tasks/${id}/approve`, { method: 'POST' });
+  openGrowthTaskDetail(id);
+}
+
+async function rejectGrowthTask(id) {
+  await fetchJson(`api/growth/tasks/${id}/reject`, { method: 'POST' });
+  openGrowthTaskDetail(id);
+}
+
+document.getElementById('growthStatusFilter').addEventListener('change', loadGrowthTasks);
+document.getElementById('growthBackLink').addEventListener('click', () => {
+  document.getElementById('growthTaskDetailView').style.display = 'none';
+  document.getElementById('listView').style.display = 'block';
+});
+
 // --- タブ切り替え ---
 document.querySelectorAll('.tabbar button').forEach(btn => {
   btn.addEventListener('click', () => {
@@ -908,6 +1028,7 @@ document.querySelectorAll('.tabbar button').forEach(btn => {
     document.getElementById('episodesTab').style.display = tab === 'episodes' ? 'block' : 'none';
     document.getElementById('calendarTab').style.display = tab === 'calendar' ? 'block' : 'none';
     document.getElementById('seoTab').style.display = tab === 'seo' ? 'block' : 'none';
+    document.getElementById('growthTab').style.display = tab === 'growth' ? 'block' : 'none';
     if (tab === 'episodes') loadEpisodes();
     if (tab === 'calendar' && !calendarLoaded) {
       calendarLoaded = true;
@@ -917,6 +1038,7 @@ document.querySelectorAll('.tabbar button').forEach(btn => {
       loadSeoCompetitors();
       loadSeoCandidates();
     }
+    if (tab === 'growth') loadGrowthTasks();
   });
 });
 

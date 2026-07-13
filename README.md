@@ -271,6 +271,13 @@ CSV取込は [`docs/keyword_planner_csv_import.md`](./docs/keyword_planner_csv_i
 [`docs/serp_csv_import.md`](./docs/serp_csv_import.md)、既知の制限は
 [`docs/seo_troubleshooting.md`](./docs/seo_troubleshooting.md) を参照。
 
+## AI Growth Director(Sprint 1: 基盤。既定は無効)
+
+競合キーワード分析の候補から「次に何をすべきか」を判断するSEO Task(改善作業単位)を
+生成する上位機能。既定で無効(`features.growth_director.enabled: false`)。
+Sprint 1では分析・判断・改善提案の画面表示までで、自動実行(記事生成・WordPress投稿)は
+一切行わない。詳細は[`docs/growth_director.md`](./docs/growth_director.md)を参照。
+
 ### 機能ON・OFF
 
 ```yaml

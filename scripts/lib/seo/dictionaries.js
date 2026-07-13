@@ -30,6 +30,10 @@ const HIGH_INTENT_TERMS = [
 // 優先度スコアを下げる語句(求人・対象外サービス等)。
 const LOW_INTENT_TERMS = ['求人', 'アルバイト', '講師募集', '採用', '教材販売'];
 
+// URL Allocator(scripts/lib/seo/url_allocator.js)がFAQ追加を判定するための語句。
+// 料金・手続き等の業務案内的な検索は、ブログ記事より既存ページのFAQ追加で対応する方が適切なため。
+const FAQ_TERMS = ['料金', '月謝', '入塾金', 'アクセス', '送迎', '振替'];
+
 // 一般語との混同を避けるための除外語(競合塾名はconfig/seo_competitors.yamlの
 // nameを別途動的に追加すること。ここには入れない)。
 const GENERIC_EXCLUSION_TERMS = ['プライバシーポリシー', '利用規約', '会社概要', '講師紹介'];
@@ -59,6 +63,7 @@ module.exports = {
   EXAM_TERMS,
   HIGH_INTENT_TERMS,
   LOW_INTENT_TERMS,
+  FAQ_TERMS,
   GENERIC_EXCLUSION_TERMS,
   buildAreaDictionary,
 };

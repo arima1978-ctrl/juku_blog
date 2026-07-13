@@ -396,3 +396,31 @@ CREATE TABLE IF NOT EXISTS seo_page_compound_keywords (
   UNIQUE (page_id, compound_keyword_id)
 );
 CREATE INDEX IF NOT EXISTS idx_seo_page_compound_keywords_compound_keyword_id ON seo_page_compound_keywords(compound_keyword_id);
+
+-- AI Growth Director(features.growth_director)専用テーブル。
+-- seo_keyword_candidates(キーワードギャップの発見)とは別の概念で、
+-- 「次に何をすべきか」という実行可能な改善作業単位(Task)を保持する。
+-- Sprint 1では提案(proposed)・承認(approved)・除外(rejected)のみを扱い、
+-- 実行(in_progress/done)の自動化は行わない。
+CREATE TABLE IF NOT EXISTS seo_tasks (
+  id                        INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_type                 TEXT NOT NULL,   -- create_article/improve_existing_article/improve_school_page/add_internal_links/add_faq/monitor/exclude
+  target_url                TEXT,            -- 対象URL(既存記事・校舎ページ等。新規作成なら NULL)
+  target_post_id            INTEGER,         -- 対象postsレコード(あれば)
+  target_keyword            TEXT NOT NULL,   -- 対象キーワード(複合キーワード文字列)
+  source_candidate_id       INTEGER,         -- 由来のseo_keyword_candidates.id
+  priority_score            INTEGER,         -- 元候補のpriority_score(参考値としてコピー)
+  opportunity_score         INTEGER NOT NULL,-- 0-100。priority_scoreとは独立
+  opportunity_breakdown     TEXT,            -- JSON(内訳)
+  estimated_effort_minutes  INTEGER,
+  recommended_action        TEXT NOT NULL,   -- URL Allocatorが決定したtask_typeと同義
+  reason                    TEXT,            -- JSON配列(表示用の理由サマリー)
+  status                    TEXT NOT NULL DEFAULT 'proposed', -- proposed/approved/rejected
+  created_at                TEXT NOT NULL,
+  updated_at                TEXT NOT NULL,
+  FOREIGN KEY (source_candidate_id) REFERENCES seo_keyword_candidates(id),
+  FOREIGN KEY (target_post_id) REFERENCES posts(id),
+  UNIQUE (target_keyword, task_type, source_candidate_id)
+);
+CREATE INDEX IF NOT EXISTS idx_seo_tasks_status ON seo_tasks(status);
+CREATE INDEX IF NOT EXISTS idx_seo_tasks_opportunity_score ON seo_tasks(opportunity_score);

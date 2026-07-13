@@ -321,6 +321,35 @@ app.post('/api/seo/candidates/:id/queue', (req, res) => {
   }
 });
 
+// --- AI Growth Director(SEO Task) ---
+// features.growth_director.enabled の値に関わらず、既に生成済みのTaskの確認/承認/除外は
+// できるようにする(競合キーワード候補と同じ方針)。
+
+app.get('/api/growth/tasks', (req, res) => {
+  const { status, taskType, orderBy } = req.query;
+  res.json(seoDb.listTasks({ status, taskType, orderBy }));
+});
+
+app.get('/api/growth/tasks/:id', (req, res) => {
+  const task = seoDb.getTaskById(Number(req.params.id));
+  if (!task) return res.status(404).json({ error: 'not_found' });
+  res.json(task);
+});
+
+app.post('/api/growth/tasks/:id/approve', (req, res) => {
+  const id = Number(req.params.id);
+  if (!seoDb.getTaskById(id)) return res.status(404).json({ error: 'not_found' });
+  const result = seoDb.updateTaskStatus(id, 'approved', new Date().toISOString());
+  res.json({ ok: true, ...result });
+});
+
+app.post('/api/growth/tasks/:id/reject', (req, res) => {
+  const id = Number(req.params.id);
+  if (!seoDb.getTaskById(id)) return res.status(404).json({ error: 'not_found' });
+  const result = seoDb.updateTaskStatus(id, 'rejected', new Date().toISOString());
+  res.json({ ok: true, ...result });
+});
+
 app.listen(PORT, () => {
   console.log(`[api-server] juku-blog dashboard: http://localhost:${PORT}`);
 });
