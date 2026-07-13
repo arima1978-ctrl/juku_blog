@@ -100,6 +100,7 @@ cta_type: "trial_lesson"
 eyecatch: null
 exam_target_year: null
 exam_facts_used: []
+seo_candidate_id: null
 ---
 
 (本文。frontmatterの直後から書き始める)
@@ -116,6 +117,7 @@ exam_facts_used: []
 - `episode_used_text`/`parent_qa_used_text`: `data/plans/YYYY-MM-DD.json` の `episode_used`/`parent_qa_used` をそのまま転記する(ダッシュボードで「実際にどの素材を使ったか」を人間が確認できるようにするため)。使わなかった場合はnullのままにする
 - `cta_type`: `data/plans/YYYY-MM-DD.json` の `cta_type` をそのまま転記する(赤羽がCTAの整合性を確認する際に使う)
 - `exam_target_year`/`exam_facts_used`: `data/plans/YYYY-MM-DD.json` の同名フィールドをそのまま転記する(**新しい事実を作らない・自分で判断して追加しない**)。使わなかった場合はnull/空配列のままにする
+- `seo_candidate_id`: `data/plans/YYYY-MM-DD.json` の同名フィールドをそのまま転記する。値の有無に関わらず、記事内容・文体への影響は無い(智谷側の企画材料の出所を示すだけの値)
 
 # 実行手順
 

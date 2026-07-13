@@ -12,6 +12,8 @@ const matter = require('gray-matter');
 const { marked } = require('marked');
 const { insertPost, updatePostBySlug, getPostBySlug } = require('./lib/db');
 const { ROOT } = require('./lib/config');
+const seoDb = require('./lib/seo_db');
+const { logError } = require('./log_error');
 
 // パイプライン内部のdraft frontmatter status → DB(posts.sqlite)のstatus対応表。
 // 中間状態(written/edited/revision_needed)のドラフトは同期対象外(パイプライン継続中のため)。
@@ -97,16 +99,38 @@ function main() {
     exam_validation_warnings: toJsonTextOrNull(fm.exam_fact_check && fm.exam_fact_check.warnings),
   };
 
+  let postId;
   if (existing) {
     updatePostBySlug(fm.slug, fields);
+    postId = existing.id;
     console.log(`[sync_draft_to_db] 更新しました: id=${existing.id} slug=${fm.slug} status=${fields.status}`);
   } else {
-    const id = insertPost({
+    postId = insertPost({
       created_at: new Date().toISOString(),
       slug: fm.slug,
       ...fields,
     });
-    console.log(`[sync_draft_to_db] 新規登録しました: id=${id} slug=${fm.slug} status=${fields.status}`);
+    console.log(`[sync_draft_to_db] 新規登録しました: id=${postId} slug=${fm.slug} status=${fields.status}`);
+  }
+
+  // 競合キーワード分析(Keyword Gap Lite): 智谷がdata/seo_candidates/の候補を採用した場合、
+  // 企画(seo_candidate_id)がdraftのfrontmatterまで転記されている。実際に記事が
+  // review_pendingとして登録できた(=review_pending到達)タイミングで、その候補を
+  // approved→article_createdへ遷移させ、投稿と紐付ける(同じ候補の二重使用を防ぐ)。
+  // 候補IDが不正/既に遷移済み等で失敗しても、記事のDB同期自体は成立させる(非致命)。
+  if (fm.seo_candidate_id && dbStatus === 'review_pending') {
+    try {
+      const nowIso = new Date().toISOString();
+      seoDb.updateCandidateStatus(fm.seo_candidate_id, { toStatus: 'article_created', reason: '記事生成完了', actor: 'system' }, nowIso);
+      seoDb.upsertCandidateExistingArticle(
+        { candidate_id: fm.seo_candidate_id, post_id: postId, similarity_score: null, match_reason: 'generated_from_candidate' },
+        nowIso
+      );
+      console.log(`[sync_draft_to_db] 競合キーワード候補(candidate_id=${fm.seo_candidate_id})を article_created に更新しました`);
+    } catch (err) {
+      logError('sync_draft_to_db_seo_candidate', `candidate_id=${fm.seo_candidate_id}: ${err.message}`);
+      console.error(`[sync_draft_to_db] seo_candidate_idの更新に失敗しましたが記事の同期は継続しました: ${err.message}`);
+    }
   }
 
   console.log('[sync_draft_to_db] 完了。data/recent_titles.json 等の更新は scripts/refresh_indexes.js を別途実行してください。');

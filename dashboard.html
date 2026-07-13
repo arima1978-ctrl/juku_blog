@@ -223,6 +223,19 @@
   .tabbar button { border-radius: 999px; }
   .tabbar button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
 
+  /* 競合キーワード分析 */
+  .seo-competitor-row {
+    display: flex; justify-content: space-between; gap: 10px; align-items: center;
+    padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 0.88rem;
+  }
+  .seo-competitor-row:last-child { border-bottom: none; }
+  .gap-badge { display: inline-block; font-size: 0.72rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
+  .gap-missing, .gap-content_gap { background: var(--red-bg); color: var(--red); }
+  .gap-untapped, .gap-weak { background: var(--yellow-bg); color: var(--yellow); }
+  .gap-shared { background: #eef2ff; color: var(--accent); }
+  .gap-strong { background: var(--green-bg); color: var(--green); }
+  .score-num { font-weight: 700; }
+
   @media (max-width: 600px) {
     .detail-meta-grid { grid-template-columns: 1fr; }
     .actions { flex-direction: column; }
@@ -244,6 +257,7 @@
       <button data-tab="posts" class="active">記事一覧</button>
       <button data-tab="episodes">エピソード素材</button>
       <button data-tab="calendar">テーマカレンダー</button>
+      <button data-tab="seo">競合キーワード分析</button>
     </div>
 
     <div id="postsTab">
@@ -286,6 +300,47 @@
       </p>
       <div id="calendarList"></div>
     </div>
+
+    <div id="seoTab" style="display:none;">
+      <div class="fact-check-box">
+        <strong>競合塾</strong>
+        <div id="seoCompetitorList" style="margin-top:8px;">読み込み中...</div>
+      </div>
+
+      <div class="filters" style="margin-top:16px;">
+        <select id="seoStatusFilter">
+          <option value="">ステータス: すべて</option>
+          <option value="discovered">discovered</option>
+          <option value="reviewing">reviewing</option>
+          <option value="approved">approved</option>
+          <option value="queued">queued</option>
+          <option value="article_created">article_created</option>
+          <option value="rejected">rejected</option>
+          <option value="monitoring">monitoring</option>
+          <option value="archived">archived</option>
+        </select>
+        <select id="seoGapTypeFilter">
+          <option value="">gap_type: すべて</option>
+          <option value="missing">missing</option>
+          <option value="weak">weak</option>
+          <option value="untapped">untapped</option>
+          <option value="shared">shared</option>
+          <option value="strong">strong</option>
+          <option value="content_gap">content_gap</option>
+        </select>
+        <select id="seoOrderByFilter">
+          <option value="priority_score">並び替え: 優先度順</option>
+          <option value="updated_at">並び替え: 更新日順</option>
+          <option value="search_demand">並び替え: 検索需要順</option>
+        </select>
+      </div>
+      <div class="card-list" id="seoCandidateList"></div>
+    </div>
+  </div>
+
+  <div id="seoCandidateDetailView" style="display:none;">
+    <span class="back-link" id="seoBackLink">&larr; 候補一覧に戻る</span>
+    <div class="detail-card" id="seoCandidateDetailCard"></div>
   </div>
 
   <div id="detailView">
@@ -657,6 +712,163 @@ async function loadThemeCalendar() {
   document.getElementById('calendarList').innerHTML = html || '<p>データがありません</p>';
 }
 
+// --- 競合キーワード分析 ---
+const gapTypeLabel = { missing: '不足', weak: '弱い', untapped: '未開拓', shared: '共通', strong: '優位', content_gap: 'テーマ不足' };
+const recommendedActionLabel = {
+  create_article: '新規記事作成', improve_existing_article: '既存記事改善', improve_school_page: '校舎ページ改善',
+  add_internal_links: '内部リンク追加', update_for_current_year: '年度更新', merge_articles: '記事統合',
+  monitor: 'monitor(様子見)', exclude: '除外',
+};
+
+async function loadSeoCompetitors() {
+  const el = document.getElementById('seoCompetitorList');
+  const competitors = await fetchJson('api/seo/competitors');
+  if (competitors.length === 0) {
+    el.innerHTML = '<span style="color:var(--text-muted);">登録されている競合塾はありません(config/seo_competitors.yamlで登録できます)</span>';
+    return;
+  }
+  el.innerHTML = competitors.map(c => `
+    <div class="seo-competitor-row">
+      <div>
+        <strong>${escapeHtml(c.name)}</strong>
+        <span style="color:var(--text-muted);"> ${escapeHtml(c.domain)}${c.competitor_type ? ` ・ ${escapeHtml(c.competitor_type)}` : ''}</span>
+      </div>
+      <div style="color:var(--text-muted);">
+        ${c.crawl_enabled ? 'クロール有効' : 'クロール無効'}
+        ${c.last_success_at ? ` ・ 最終成功: ${escapeHtml(c.last_success_at.slice(0,16).replace('T',' '))}` : ' ・ 未取得'}
+        ${c.last_error_message ? ` <span style="color:var(--red);" title="${escapeHtml(c.last_error_message)}">⚠️エラーあり</span>` : ''}
+      </div>
+    </div>
+  `).join('');
+}
+
+async function loadSeoCandidates() {
+  const status = document.getElementById('seoStatusFilter').value;
+  const gapType = document.getElementById('seoGapTypeFilter').value;
+  const orderBy = document.getElementById('seoOrderByFilter').value;
+  const params = new URLSearchParams();
+  if (status) params.set('status', status);
+  if (gapType) params.set('gapType', gapType);
+  if (orderBy) params.set('orderBy', orderBy);
+  const candidates = await fetchJson('api/seo/candidates?' + params.toString());
+
+  const list = document.getElementById('seoCandidateList');
+  if (candidates.length === 0) {
+    list.innerHTML = '<div class="empty">該当する候補がありません</div>';
+    return;
+  }
+  list.innerHTML = candidates.map(c => `
+    <div class="post-card" onclick="openSeoCandidateDetail(${c.id})">
+      <div class="row1">
+        <div>
+          <div class="title">${escapeHtml(c.normalized_keyword)}</div>
+          <div class="meta">
+            競合数:${c.competitor_count ?? '-'} ・ 検索需要:${c.search_demand ?? '不明'} ・ 自社順位:${c.own_avg_position != null ? Math.round(c.own_avg_position) : '-'}
+            ・ 推奨:${escapeHtml(recommendedActionLabel[c.recommended_action] || c.recommended_action || '-')}
+          </div>
+        </div>
+        <div style="text-align:right;">
+          <div class="score-num">${c.priority_score}点</div>
+          <span class="gap-badge gap-${escapeHtml(c.gap_type)}">${escapeHtml(gapTypeLabel[c.gap_type] || c.gap_type)}</span>
+          <span class="badge badge-${c.status === 'rejected' ? 'rejected' : (c.status === 'approved' || c.status === 'queued' || c.status === 'article_created') ? 'approved' : 'review_pending'}">${escapeHtml(c.status)}</span>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function openSeoCandidateDetail(id) {
+  const c = await fetchJson(`api/seo/candidates/${id}`);
+  document.getElementById('listView').style.display = 'none';
+  document.getElementById('seoCandidateDetailView').style.display = 'block';
+
+  const breakdown = c.score_breakdown || {};
+  const breakdownRows = Object.keys(breakdown)
+    .filter(k => k !== 'gap_reasons')
+    .map(k => `<div class="fact-check-item"><span class="fc-result">${breakdown[k].points}/${breakdown[k].maxPoints}</span><span>${escapeHtml(k)}</span></div>`)
+    .join('');
+
+  const evidenceRows = (c.evidence || []).map(e => `
+    <div class="fact-check-item">
+      <span class="fc-result">${escapeHtml(e.evidence_type)}</span>
+      <span>${e.detail && e.detail.url ? `<a href="${escapeHtml(e.detail.url)}" target="_blank" rel="noopener">${escapeHtml(e.detail.title || e.detail.url)}</a>` : '-'}${e.confidence != null ? ` (confidence: ${e.confidence})` : ''}</span>
+    </div>
+  `).join('') || '<div class="fact-check-item"><span></span><span>根拠データがありません</span></div>';
+
+  const existingRows = (c.existingArticles || []).map(a => `
+    <div class="fact-check-item">
+      <span class="fc-result">既存記事</span>
+      <span>${escapeHtml(a.post_title)}(status: ${escapeHtml(a.post_status)})${a.similarity_score != null ? ` ・ 類似度:${a.similarity_score}` : ''}</span>
+    </div>
+  `).join('');
+
+  const historyRows = (c.statusHistory || []).map(h => `
+    <div class="fact-check-item"><span></span><span>${escapeHtml(h.created_at)}: ${escapeHtml(h.from_status || '-')} → ${escapeHtml(h.to_status)}${h.reason ? `(${escapeHtml(h.reason)})` : ''} by ${escapeHtml(h.actor)}</span></div>
+  `).join('');
+
+  document.getElementById('seoCandidateDetailCard').innerHTML = `
+    <span class="gap-badge gap-${escapeHtml(c.gap_type)}">${escapeHtml(gapTypeLabel[c.gap_type] || c.gap_type)}</span>
+    <span class="badge badge-${c.status === 'rejected' ? 'rejected' : 'approved'}">${escapeHtml(c.status)}</span>
+    <h2 class="detail-title">${escapeHtml(c.normalized_keyword)}</h2>
+    <div class="detail-meta-grid">
+      <div>元キーワード</div><div>${escapeHtml(c.raw_keyword || '-')}</div>
+      <div>優先度スコア</div><div class="score-num">${c.priority_score}点</div>
+      <div>推奨アクション</div><div>${escapeHtml(recommendedActionLabel[c.recommended_action] || c.recommended_action || '-')}</div>
+      <div>競合数</div><div>${c.competitor_count ?? '-'}</div>
+      <div>検索需要(月間)</div><div>${c.search_demand ?? '不明(検索数0とは区別)'}</div>
+      <div>自社平均順位</div><div>${c.own_avg_position != null ? Math.round(c.own_avg_position * 10) / 10 : '実績なし'}</div>
+    </div>
+    <div class="fact-check-box">
+      <strong>スコア内訳</strong>
+      ${breakdownRows}
+    </div>
+    <div class="fact-check-box">
+      <strong>抽出根拠(競合ページ)</strong>
+      ${evidenceRows}
+    </div>
+    ${existingRows ? `<div class="fact-check-box"><strong>関連する既存記事(カニバリゼーション注意)</strong>${existingRows}</div>` : ''}
+    ${historyRows ? `<div class="fact-check-box"><strong>操作履歴</strong>${historyRows}</div>` : ''}
+    <div class="actions">
+      ${c.status === 'discovered' || c.status === 'reviewing' ? `<button class="primary" onclick="approveSeoCandidate(${c.id})">承認</button>` : ''}
+      ${c.status === 'approved' ? `<button class="primary" onclick="queueSeoCandidate(${c.id})">記事生成キューへ</button>` : ''}
+      ${c.status !== 'rejected' ? `<button class="danger" onclick="rejectSeoCandidate(${c.id})">除外</button>` : ''}
+    </div>
+  `;
+}
+
+async function approveSeoCandidate(id) {
+  const reason = prompt('承認理由(任意)') || '';
+  await fetchJson(`api/seo/candidates/${id}/approve`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reason }),
+  });
+  openSeoCandidateDetail(id);
+}
+
+async function rejectSeoCandidate(id) {
+  const reason = prompt('除外理由(任意)') || '';
+  await fetchJson(`api/seo/candidates/${id}/reject`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reason }),
+  });
+  openSeoCandidateDetail(id);
+}
+
+async function queueSeoCandidate(id) {
+  try {
+    await fetchJson(`api/seo/candidates/${id}/queue`, { method: 'POST' });
+    openSeoCandidateDetail(id);
+  } catch (err) {
+    alert(`記事生成キューへの投入に失敗しました: ${err.message}`);
+  }
+}
+
+document.getElementById('seoStatusFilter').addEventListener('change', loadSeoCandidates);
+document.getElementById('seoGapTypeFilter').addEventListener('change', loadSeoCandidates);
+document.getElementById('seoOrderByFilter').addEventListener('change', loadSeoCandidates);
+document.getElementById('seoBackLink').addEventListener('click', () => {
+  document.getElementById('seoCandidateDetailView').style.display = 'none';
+  document.getElementById('listView').style.display = 'block';
+});
+
 // --- タブ切り替え ---
 document.querySelectorAll('.tabbar button').forEach(btn => {
   btn.addEventListener('click', () => {
@@ -666,10 +878,15 @@ document.querySelectorAll('.tabbar button').forEach(btn => {
     document.getElementById('postsTab').style.display = tab === 'posts' ? 'block' : 'none';
     document.getElementById('episodesTab').style.display = tab === 'episodes' ? 'block' : 'none';
     document.getElementById('calendarTab').style.display = tab === 'calendar' ? 'block' : 'none';
+    document.getElementById('seoTab').style.display = tab === 'seo' ? 'block' : 'none';
     if (tab === 'episodes') loadEpisodes();
     if (tab === 'calendar' && !calendarLoaded) {
       calendarLoaded = true;
       loadThemeCalendar();
+    }
+    if (tab === 'seo') {
+      loadSeoCompetitors();
+      loadSeoCandidates();
     }
   });
 });

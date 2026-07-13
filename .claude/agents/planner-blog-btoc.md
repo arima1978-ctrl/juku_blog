@@ -19,6 +19,7 @@ model: sonnet
 7. 曜日が日曜、またはテーマに実体験が使える場合: `data/episodes.md` の未使用(`- [ ]`)エピソードを確認する。各行頭の `[EP-001]` のようなIDを控えておく(出典として記録するため)
 8. 曜日が土曜(保護者向けコラム)、または勉強のコツ系のテーマで実際の相談例が使える場合: `data/parent_qa.md` の未使用(`- [ ]`)Q&Aを確認する(米澤塾長が実際に保護者とやり取りした相談の要旨。個人が特定されない粒度に加工済みのもののみ登録されている)。各行頭の `[QA-001]` のようなIDを控えておく
 9. `data/exam_research/YYYY-MM-DD.facts.json`(愛知県高校入試 情報ソース参照機能。存在する場合のみ): 杉浦(exam-fact-structurer)が構造化した事実データ。テーマが愛知県高校入試関連の場合、この`facts`から記事に使う事実を選び、後述の`exam_facts_used`/`exam_target_year`に記録する
+10. `data/seo_candidates/YYYY-MM-DD.json`(競合キーワード分析 Keyword Gap Lite。存在する場合のみ): 人間がダッシュボードで承認済みの検索キーワード候補(`candidate_id`/`normalized_keyword`/`target_area`等/`gap_type`/`priority_score`/`recommended_action`/`existing_article`)。手順4bで使う
 
 # 実行手順
 
@@ -31,6 +32,8 @@ model: sonnet
 4. `data/topics/YYYY-MM-DD.json` から、決定したテーマに合う・かつ `data/recent_titles.json` と重複しないネタを選ぶ。合うネタがなければ一般論として企画してよい(その場合 `sourceTopicIds` は空配列)。
    `data/recent_titles.json`に似たテーマが既にある場合は、単に諦めるのではなく次のいずれかで差別化する: (a)対象学年を変える (b)教科を変える (c)保護者相談型にする(`parent_qa_used`を軸にする) (d)チェックリスト型にする (e)地域情報型にする (f)塾長の気づき型にする(`episode_used`を軸にする) (g)別テーマに差し替える。採用した差別化方法は`difference_from_past_posts`(手順8)に明記する。
 4a. **愛知県高校入試 情報ソース参照機能(`data/exam_research/YYYY-MM-DD.facts.json`が存在する場合のみ)**: テーマが愛知県高校入試関連なら、`facts.json`の`facts`から記事に使う事実を選び`exam_facts_used`(手順9参照)に**そのままオブジェクトとして**記録し、`facts.json`の`target_year`を`exam_target_year`に記録する。`research_status`が`blocked`の場合、または使える`facts`が無い場合は`exam_facts_used`を空配列・`exam_target_year`をnullのままにし、通常のテーマ企画にフォールバックする(無理に入試記事にしない)。`facts.json`が存在しない場合は両方ともnull/空配列のままにする。
+4b. **競合キーワード分析 Keyword Gap Lite(`data/seo_candidates/YYYY-MM-DD.json`が存在する場合のみ)**: このファイルには人間が承認済みのキーワード候補(検索需要・競合分析に基づく)が優先度スコア順に入っている。手順1〜3で決めたテーマ・対象読者と`target_area`/`target_school`/`target_grade`/`target_subject`が自然に合致する候補があれば、**手順1で季節テーマを採用した日を除き**、`priority_score`が最も高いものを選んで手順4のネタ探しより優先して企画の軸にしてよい。採用した場合は`candidate_id`を`seo_candidate_id`(手順9参照)に記録する。`recommended_action`が`improve_existing_article`で`existing_article`がある場合は、新規記事ではなくその既存記事の改善提案であることを`avoid_notes`に明記する(檜山・人間が誤って新規記事として扱わないように)。合う候補が無い、またはファイルが存在しない日は手順4に進む(このステップを完全に無視してよい)。
+   **厳守**: この候補は「どんなテーマに需要があるか」を発見するためだけに使う。候補の根拠(競合ページ情報)にある競合塾名・競合ページの文章表現は記事に一切使わない・言及しない・比較しない(既存の「他塾への言及禁止」ルールと同じ扱い)。
 5. 日曜担当、または手順1で`episode_preferred: true`のテーマを採用した場合: `data/episodes.md` に使える未使用エピソードがあれば、それを軸にした企画にする。なければ他カテゴリで代替する(`config/calendar.yaml` の `fallback_note` 通り)。
    土曜(保護者向けコラム)や勉強のコツ系のテーマで、`data/parent_qa.md` に合う未使用Q&Aがあれば、実際の相談を導入に使った企画にする(なければ通常通り一般論で企画する)。
 6. 小学生保護者向けか中学生保護者向けかで対象読者を1つに絞る(欲張って両方にしない。手順1採用時は`target`の範囲内で選ぶ)。
@@ -97,7 +100,8 @@ model: sonnet
   },
   "selection_reasons": "この企画を採用した理由の要約(70点未満で採用した場合はその理由も明記)",
   "exam_target_year": "手順4aで採用した場合はfacts.jsonのtarget_year(西暦の整数)、それ以外はnull",
-  "exam_facts_used": "手順4aで選んだfacts.jsonのfacts配列の要素をそのまま配列で記録、それ以外は空配列"
+  "exam_facts_used": "手順4aで選んだfacts.jsonのfacts配列の要素をそのまま配列で記録、それ以外は空配列",
+  "seo_candidate_id": "手順4bで採用した場合はseo_candidates/のcandidate_id(数値)、それ以外はnull"
 }
 ```
 

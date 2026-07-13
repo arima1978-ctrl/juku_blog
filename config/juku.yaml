@@ -71,6 +71,47 @@ features:
   # 既存の記事生成フローには一切影響しない。
   aichi_exam_research:
     enabled: false
+  # 競合キーワード分析(Keyword Gap Lite, config/seo_competitors.yaml)。
+  # enabled: false(既定)の間は seo_*.js が即座に無処理で終了し、
+  # 既存の記事生成フロー・DB・ダッシュボード・WordPress投稿には一切影響しない。
+  competitor_keyword_analysis:
+    enabled: false
+    # true でも、候補は表示されるだけで智谷(planner-blog-btoc)の企画には自動採用されない。
+    # 人間がダッシュボードで承認(approved)した候補のみ企画候補として使われる。
+    use_for_topic_selection: false
+    # 競合サイトの実クロールを行うか(false のままなら手動登録データ・CSV取込のみで運用可能)
+    crawl_enabled: false
+    # Google Search Console API連携を行うか
+    search_console_enabled: false
+
+# 競合キーワード分析(Keyword Gap Lite)専用パラメータ。
+# 値をコード内にハードコードせず、すべてここで調整可能にする。
+seo:
+  competitor_analysis:
+    max_pages_per_site: 100
+    request_interval_ms: 3000
+    request_timeout_ms: 15000
+    max_retries: 2
+    minimum_priority_score: 70
+    data_retention_days: 365
+    user_agent: "JukuBlogSEOResearchBot/1.0 (+https://an-english.com/school/obata/)"
+    # HTML抽出時のキーワード重み(title/見出し/本文のどこに出現したかで重みづけ)
+    extraction_weights:
+      title: 5
+      h1: 5
+      h2: 3
+      h3: 2
+      meta_description: 2
+      body: 1
+    # 優先度スコア(0〜100)の内訳配点
+    priority_score_weights:
+      area_relevance: 25
+      inquiry_intent: 25
+      competitor_adoption: 15
+      competitor_rank: 10
+      search_demand: 10
+      own_rank_improvement: 10
+      seasonality: 5
 
 wordpress:
   # an-english.com は教室ごとに同名の子カテゴリー(コラム/学校情報/教室の様子等)が

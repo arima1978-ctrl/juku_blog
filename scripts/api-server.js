@@ -33,6 +33,7 @@ const { logError } = require('./log_error');
 const { computeNextScheduleSlot, isWithinPublishWindow, checkStreak } = require('./lib/schedule');
 const { safeJsonParse } = require('./lib/json_field');
 const { projectThemeCalendar } = require('./lib/theme_calendar');
+const seoDb = require('./lib/seo_db');
 
 const PORT = process.env.PORT || 3013;
 const DASHBOARD_URL = process.env.DASHBOARD_URL || `http://localhost:${PORT}`;
@@ -239,6 +240,65 @@ app.post('/api/episodes', (req, res) => {
   if (!text) return res.status(400).json({ error: 'text is required' });
   appendEpisode(text);
   res.json({ ok: true });
+});
+
+// --- 競合キーワード分析(Keyword Gap Lite) ---
+// features.competitor_keyword_analysis.enabled の値に関わらず、既に保存されている
+// 候補・競合の確認/承認/除外はできるようにする(分析を止めても過去の候補は確認できる)。
+
+app.get('/api/seo/competitors', (req, res) => {
+  res.json(seoDb.listCompetitors());
+});
+
+app.get('/api/seo/candidates', (req, res) => {
+  const { status, gapType, targetArea, minScore, orderBy } = req.query;
+  const candidates = seoDb.listKeywordCandidates({
+    status,
+    gapType,
+    targetArea,
+    minPriorityScore: minScore ? Number(minScore) : undefined,
+    orderBy,
+  });
+  res.json(candidates);
+});
+
+app.get('/api/seo/candidates/:id', (req, res) => {
+  const id = Number(req.params.id);
+  const candidate = seoDb.getKeywordCandidateById(id);
+  if (!candidate) return res.status(404).json({ error: 'not_found' });
+  res.json({
+    ...candidate,
+    evidence: seoDb.listCandidateEvidence(id),
+    existingArticles: seoDb.listCandidateExistingArticles(id),
+    statusHistory: seoDb.listCandidateStatusHistory(id),
+  });
+});
+
+app.post('/api/seo/candidates/:id/approve', (req, res) => {
+  const id = Number(req.params.id);
+  if (!seoDb.getKeywordCandidateById(id)) return res.status(404).json({ error: 'not_found' });
+  const reason = (req.body && req.body.reason) || null;
+  const result = seoDb.updateCandidateStatus(id, { toStatus: 'approved', reason, actor: 'dashboard' }, new Date().toISOString());
+  res.json({ ok: true, ...result });
+});
+
+app.post('/api/seo/candidates/:id/reject', (req, res) => {
+  const id = Number(req.params.id);
+  if (!seoDb.getKeywordCandidateById(id)) return res.status(404).json({ error: 'not_found' });
+  const reason = (req.body && req.body.reason) || null;
+  const result = seoDb.updateCandidateStatus(id, { toStatus: 'rejected', reason, actor: 'dashboard' }, new Date().toISOString());
+  res.json({ ok: true, ...result });
+});
+
+app.post('/api/seo/candidates/:id/queue', (req, res) => {
+  const id = Number(req.params.id);
+  if (!seoDb.getKeywordCandidateById(id)) return res.status(404).json({ error: 'not_found' });
+  try {
+    const result = seoDb.updateCandidateStatus(id, { toStatus: 'queued', actor: 'dashboard' }, new Date().toISOString());
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    res.status(400).json({ error: 'invalid_transition', message: err.message });
+  }
 });
 
 app.listen(PORT, () => {
