@@ -1,0 +1,28 @@
+# 自社の校舎ページ(固定ページ)レジストリ。AI Growth Director(features.growth_director)が
+# URL Allocatorで「既に校舎ページがある地域」を判定するために使う唯一の正データ。
+#
+# 重要な制約:
+# - 競合設定(config/seo_competitors.yaml)とは完全に分離する(混同・共用しないこと)。
+# - ここに登録された情報以外(ページ本文・タイトル・見出し等)は一切取得・解析しない
+#   (Sprint 2時点では「URLと対象地域の対応」を宣言するだけ)。
+# - urlは https:// のみ許可する。
+#
+# フィールド:
+#   id            : 一意な識別子(重複禁止)
+#   name          : 表示名(ダッシュボード表示用)
+#   url           : 校舎ページの実URL(https必須)
+#   page_type     : ページ種別(現時点では "school_page" のみ使用)
+#   target_areas  : このページが対応する地域名の配列(1件以上必須。表記揺れは
+#                   school_page_registry.jsが既存のnormalizeKeyword()で吸収する)
+#   enabled       : false にすると一覧・マッチング対象から除外される(既定true)
+
+school_pages:
+  - id: obata
+    name: "小幡教室"
+    url: "https://an-english.com/school/obata/"
+    page_type: "school_page"
+    target_areas:
+      - "小幡"
+      - "守山区"
+      - "瓢箪山"
+    enabled: true

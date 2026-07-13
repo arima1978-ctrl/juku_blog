@@ -28,6 +28,12 @@ function loadSeoCompetitorsConfig() {
   return loadYaml('config/seo_competitors.yaml');
 }
 
+// 自社の校舎ページ(固定ページ)レジストリ。競合設定(loadSeoCompetitorsConfig)とは
+// 完全に分離されたファイル。詳細はscripts/lib/seo/school_page_registry.js参照。
+function loadSchoolPagesConfig() {
+  return loadYaml('config/school_pages.yaml');
+}
+
 module.exports = {
   ROOT,
   loadYaml,
@@ -35,4 +41,5 @@ module.exports = {
   loadCalendarConfig,
   loadExamSourcesConfig,
   loadSeoCompetitorsConfig,
+  loadSchoolPagesConfig,
 };

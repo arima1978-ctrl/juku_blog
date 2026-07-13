@@ -14,6 +14,7 @@ const { loadJukuConfig } = require('./lib/config');
 const { getPostById } = require('./lib/db');
 const seoDb = require('./lib/seo_db');
 const { allocateUrl } = require('./lib/seo/url_allocator');
+const { findSchoolPageByArea } = require('./lib/seo/school_page_registry');
 const { isLowIntentKeyword } = require('./lib/seo/priority_scorer');
 const {
   computeOpportunityScore,
@@ -34,6 +35,70 @@ function resolveTargetUrl(existingPostId) {
   if (!existingPostId) return null;
   const post = getPostById(existingPostId);
   return post ? post.wp_link || null : null;
+}
+
+// 1候補分のTaskペイロードを組み立てる(DB書き込みは行わない)。school_page_registry.js
+// への依存を注入可能にすることで、実ファイル(config/school_pages.yaml)や
+// フィーチャーフラグを操作せずにユニットテストできるようにする。
+function buildTaskForCandidate(candidate, { effortMinutesByTaskType, opportunityWeights, totalCompetitorsConsidered, findSchoolPage = findSchoolPageByArea }) {
+  const isLowIntent = isLowIntentKeyword(candidate.normalized_keyword);
+  const relatedPostId = findRelatedPostId(candidate);
+  const schoolPage = findSchoolPage(candidate.target_area);
+
+  const allocation = allocateUrl({
+    normalizedKeyword: candidate.normalized_keyword,
+    templateType: candidate.template_type,
+    gapType: candidate.gap_type,
+    isLowIntent,
+    existingPostId: candidate.existing_post_id,
+    relatedPostId,
+    existingSchoolPageUrl: schoolPage ? schoolPage.url : null,
+    existingSchoolPageId: schoolPage ? schoolPage.id : null,
+    existingSchoolPageName: schoolPage ? schoolPage.name : null,
+  });
+
+  const estimatedEffortMinutes = effortMinutesByTaskType[allocation.taskType] ?? null;
+  const areaRelevanceRatio =
+    candidate.score_breakdown && candidate.score_breakdown.area_relevance
+      ? candidate.score_breakdown.area_relevance.ratio
+      : 0;
+
+  const { score: opportunityScore, breakdown: opportunityBreakdown } = computeOpportunityScore(
+    {
+      competitorAdoption: competitorAdoptionRatio(candidate.competitor_count, totalCompetitorsConsidered),
+      areaRelevance: areaRelevanceRatio,
+      searchIntent: searchIntentRatio(candidate.search_intent),
+      ownCoverageGap: ownCoverageGapRatio(candidate.gap_type),
+      dataConfidence: (candidate.data_confidence ?? 0) / 100,
+      effortEfficiency: effortEfficiencyRatio(estimatedEffortMinutes),
+    },
+    opportunityWeights
+  );
+
+  const reason = [
+    ...allocation.reasons,
+    candidate.competitor_count != null ? `競合${candidate.competitor_count}社` : null,
+  ].filter(Boolean);
+
+  // 校舎ページ一致(allocation.targetUrl)を優先し、無ければ既存記事のURLを解決する。
+  const targetUrl = allocation.targetUrl || resolveTargetUrl(candidate.existing_post_id);
+
+  return {
+    task_type: allocation.taskType,
+    target_url: targetUrl,
+    target_post_id: candidate.existing_post_id || null,
+    target_page_type: allocation.targetUrl ? 'school_page' : null,
+    target_page_id: allocation.targetPageId || null,
+    target_page_name: allocation.targetPageName || null,
+    target_keyword: candidate.normalized_keyword,
+    source_candidate_id: candidate.id,
+    priority_score: candidate.priority_score,
+    opportunity_score: opportunityScore,
+    opportunity_breakdown: opportunityBreakdown,
+    estimated_effort_minutes: estimatedEffortMinutes,
+    recommended_action: allocation.taskType,
+    reason,
+  };
 }
 
 async function main() {
@@ -62,65 +127,20 @@ async function main() {
 
   for (const candidate of candidates) {
     try {
-      const isLowIntent = isLowIntentKeyword(candidate.normalized_keyword);
-      const relatedPostId = findRelatedPostId(candidate);
-
-      const allocation = allocateUrl({
-        normalizedKeyword: candidate.normalized_keyword,
-        templateType: candidate.template_type,
-        gapType: candidate.gap_type,
-        isLowIntent,
-        existingPostId: candidate.existing_post_id,
-        relatedPostId,
+      const taskPayload = buildTaskForCandidate(candidate, {
+        effortMinutesByTaskType,
+        opportunityWeights,
+        totalCompetitorsConsidered,
       });
-
-      const estimatedEffortMinutes = effortMinutesByTaskType[allocation.taskType] ?? null;
-      const areaRelevanceRatio =
-        candidate.score_breakdown && candidate.score_breakdown.area_relevance
-          ? candidate.score_breakdown.area_relevance.ratio
-          : 0;
-
-      const { score: opportunityScore, breakdown: opportunityBreakdown } = computeOpportunityScore(
-        {
-          competitorAdoption: competitorAdoptionRatio(candidate.competitor_count, totalCompetitorsConsidered),
-          areaRelevance: areaRelevanceRatio,
-          searchIntent: searchIntentRatio(candidate.search_intent),
-          ownCoverageGap: ownCoverageGapRatio(candidate.gap_type),
-          dataConfidence: (candidate.data_confidence ?? 0) / 100,
-          effortEfficiency: effortEfficiencyRatio(estimatedEffortMinutes),
-        },
-        opportunityWeights
-      );
-
-      const reason = [
-        ...allocation.reasons,
-        candidate.competitor_count != null ? `競合${candidate.competitor_count}社` : null,
-      ].filter(Boolean);
 
       if (dryRun) {
         console.log(
-          `[seo_task_generate][dry-run] ${candidate.normalized_keyword}: task=${allocation.taskType} opportunity=${opportunityScore}`
+          `[seo_task_generate][dry-run] ${candidate.normalized_keyword}: task=${taskPayload.task_type} opportunity=${taskPayload.opportunity_score}`
         );
         continue;
       }
 
-      const targetUrl = resolveTargetUrl(candidate.existing_post_id);
-      const result = seoDb.upsertTask(
-        {
-          task_type: allocation.taskType,
-          target_url: targetUrl,
-          target_post_id: candidate.existing_post_id || null,
-          target_keyword: candidate.normalized_keyword,
-          source_candidate_id: candidate.id,
-          priority_score: candidate.priority_score,
-          opportunity_score: opportunityScore,
-          opportunity_breakdown: opportunityBreakdown,
-          estimated_effort_minutes: estimatedEffortMinutes,
-          recommended_action: allocation.taskType,
-          reason,
-        },
-        nowIso
-      );
+      const result = seoDb.upsertTask(taskPayload, nowIso);
 
       if (result.isNew) stats.tasks_created += 1;
       else stats.tasks_updated += 1;
@@ -141,4 +161,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { main };
+module.exports = { main, buildTaskForCandidate };

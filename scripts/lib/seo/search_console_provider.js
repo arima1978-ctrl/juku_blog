@@ -71,12 +71,15 @@ class GoogleSearchConsoleProvider extends SearchConsoleProvider {
 
 // Search Console APIの1行(keys配列は指定したdimensions順)を、
 // seo_db.upsertGscQueryRowが期待する形へ変換する。
+// dimensionsに'date'を含めた場合はAPIレスポンス自身の日付(行ごとの実際の日付)を使う。
+// 含めない場合のみ、呼び出し元が渡すdate(後方互換のフォールバック)を使う。
 function toGscQueryRow(row, { siteProperty, date, dimensions, searchType }) {
   const dimIndex = (name) => dimensions.indexOf(name);
   const keys = row.keys || [];
+  const rowDate = dimIndex('date') >= 0 ? keys[dimIndex('date')] : date;
   return {
     site_property: siteProperty,
-    date,
+    date: rowDate,
     query: dimIndex('query') >= 0 ? keys[dimIndex('query')] : '',
     page: dimIndex('page') >= 0 ? keys[dimIndex('page')] : '',
     device: dimIndex('device') >= 0 ? keys[dimIndex('device')] : '',

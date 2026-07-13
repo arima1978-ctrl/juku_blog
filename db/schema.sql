@@ -407,6 +407,9 @@ CREATE TABLE IF NOT EXISTS seo_tasks (
   task_type                 TEXT NOT NULL,   -- create_article/improve_existing_article/improve_school_page/add_internal_links/add_faq/monitor/exclude
   target_url                TEXT,            -- 対象URL(既存記事・校舎ページ等。新規作成なら NULL)
   target_post_id            INTEGER,         -- 対象postsレコード(あれば)
+  target_page_type          TEXT,            -- config/school_pages.yaml由来。現状"school_page"のみ使用(該当なしはNULL)
+  target_page_id            TEXT,            -- config/school_pages.yamlのid(あれば)
+  target_page_name          TEXT,            -- 表示用の校舎ページ名(あれば)
   target_keyword            TEXT NOT NULL,   -- 対象キーワード(複合キーワード文字列)
   source_candidate_id       INTEGER,         -- 由来のseo_keyword_candidates.id
   priority_score            INTEGER,         -- 元候補のpriority_score(参考値としてコピー)

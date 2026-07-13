@@ -56,6 +56,28 @@ async function fetchAllRows(provider, params) {
   return allRows;
 }
 
+// providerを注入可能にすることで、実ネットワーク接続無しに取得〜DB反映まで検証できる
+// (seo_competitor_crawl.jsのcrawlCompetitor()と同じ設計方針)。
+async function syncGscData({ provider, siteProperty, start, end, dryRun }) {
+  const dimensions = ['date', 'query', 'page', 'device', 'country'];
+  const entries = await fetchAllRows(provider, { siteUrl: siteProperty, startDate: start, endDate: end, dimensions });
+
+  if (dryRun) {
+    console.log(`[seo_gsc_sync][dry-run] 期間${start}〜${end}: ${entries.length}行取得(DB未反映)`);
+    return { entries: entries.length, upserted: 0 };
+  }
+
+  const nowIso = new Date().toISOString();
+  entries.forEach(({ row, dimensions: dims }) => {
+    // dateはAPIレスポンス自身の行ごとの日付を使う(toGscQueryRowがdimensionsの'date'から抽出する)。
+    // 取得期間の終端日を全行へ一律に設定する処理は行わない。
+    seoDb.upsertGscQueryRow(toGscQueryRow(row, { siteProperty, dimensions: dims }), nowIso);
+  });
+
+  console.log(`[seo_gsc_sync] 完了: 期間${start}〜${end} ${entries.length}行を反映しました(0行は正常な結果として扱います)`);
+  return { entries: entries.length, upserted: entries.length };
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const config = loadJukuConfig();
@@ -76,20 +98,7 @@ async function main() {
 
   try {
     const provider = new GoogleSearchConsoleProvider();
-    const dimensions = ['query', 'page', 'device', 'country'];
-    const entries = await fetchAllRows(provider, { siteUrl: siteProperty, startDate: start, endDate: end, dimensions });
-
-    if (args.dryRun) {
-      console.log(`[seo_gsc_sync][dry-run] 期間${start}〜${end}: ${entries.length}行取得(DB未反映)`);
-      return;
-    }
-
-    const nowIso = new Date().toISOString();
-    entries.forEach(({ row, dimensions: dims }) => {
-      seoDb.upsertGscQueryRow(toGscQueryRow(row, { siteProperty, date: end, dimensions: dims }), nowIso);
-    });
-
-    console.log(`[seo_gsc_sync] 完了: 期間${start}〜${end} ${entries.length}行を反映しました(0行は正常な結果として扱います)`);
+    await syncGscData({ provider, siteProperty, start, end, dryRun: args.dryRun });
   } catch (err) {
     // 認証情報自体はerr.messageに含まれないはずだが、念のためメッセージのみ記録する
     logError('seo_gsc_sync', err.message);
@@ -101,4 +110,4 @@ if (require.main === module) {
   main();
 }
 
-module.exports = { main, defaultDateRange };
+module.exports = { main, defaultDateRange, syncGscData };

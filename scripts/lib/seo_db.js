@@ -908,6 +908,7 @@ function upsertTask(task, nowIso) {
       .prepare(
         `UPDATE seo_tasks SET
           target_url = :target_url, target_post_id = :target_post_id,
+          target_page_type = :target_page_type, target_page_id = :target_page_id, target_page_name = :target_page_name,
           priority_score = :priority_score, opportunity_score = :opportunity_score,
           opportunity_breakdown = :opportunity_breakdown, estimated_effort_minutes = :estimated_effort_minutes,
           recommended_action = :recommended_action, reason = :reason, updated_at = :updated_at
@@ -917,6 +918,9 @@ function upsertTask(task, nowIso) {
         id: existing.id,
         target_url: task.target_url || null,
         target_post_id: task.target_post_id ?? null,
+        target_page_type: task.target_page_type || null,
+        target_page_id: task.target_page_id || null,
+        target_page_name: task.target_page_name || null,
         priority_score: task.priority_score ?? null,
         opportunity_score: task.opportunity_score,
         opportunity_breakdown: toJson(task.opportunity_breakdown),
@@ -930,11 +934,13 @@ function upsertTask(task, nowIso) {
   const result = conn
     .prepare(
       `INSERT INTO seo_tasks (
-        task_type, target_url, target_post_id, target_keyword, source_candidate_id,
+        task_type, target_url, target_post_id, target_page_type, target_page_id, target_page_name,
+        target_keyword, source_candidate_id,
         priority_score, opportunity_score, opportunity_breakdown, estimated_effort_minutes,
         recommended_action, reason, status, created_at, updated_at
       ) VALUES (
-        :task_type, :target_url, :target_post_id, :target_keyword, :source_candidate_id,
+        :task_type, :target_url, :target_post_id, :target_page_type, :target_page_id, :target_page_name,
+        :target_keyword, :source_candidate_id,
         :priority_score, :opportunity_score, :opportunity_breakdown, :estimated_effort_minutes,
         :recommended_action, :reason, :status, :created_at, :updated_at
       )`
@@ -943,6 +949,9 @@ function upsertTask(task, nowIso) {
       task_type: key.task_type,
       target_url: task.target_url || null,
       target_post_id: task.target_post_id ?? null,
+      target_page_type: task.target_page_type || null,
+      target_page_id: task.target_page_id || null,
+      target_page_name: task.target_page_name || null,
       target_keyword: key.target_keyword,
       source_candidate_id: key.source_candidate_id,
       priority_score: task.priority_score ?? null,

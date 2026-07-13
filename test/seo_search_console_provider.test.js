@@ -74,3 +74,24 @@ test('toGscQueryRow: clicks/impressions等が無ければnullを許容する', (
   assert.equal(result.clicks, null);
   assert.equal(result.impressions, null);
 });
+
+test('toGscQueryRow: dimensionsに"date"を含む場合、行ごとの実際の日付を使う(一律のendDateではない)', () => {
+  const rowDay1 = toGscQueryRow(
+    { keys: ['2026-07-01', '守山区 塾'], clicks: 1, impressions: 10, ctr: 0.1, position: 5 },
+    { siteProperty: 'https://an-english.com/', dimensions: ['date', 'query'] }
+  );
+  const rowDay2 = toGscQueryRow(
+    { keys: ['2026-07-03', '守山区 塾'], clicks: 2, impressions: 20, ctr: 0.1, position: 4 },
+    { siteProperty: 'https://an-english.com/', dimensions: ['date', 'query'] }
+  );
+  assert.equal(rowDay1.date, '2026-07-01');
+  assert.equal(rowDay2.date, '2026-07-03');
+});
+
+test('toGscQueryRow: dimensionsに"date"が無い場合のみ、呼び出し元が渡すdateへフォールバックする(後方互換)', () => {
+  const result = toGscQueryRow(
+    { keys: ['守山区 塾'], clicks: 1, impressions: 10 },
+    { siteProperty: 'https://an-english.com/', date: '2026-07-07', dimensions: ['query'] }
+  );
+  assert.equal(result.date, '2026-07-07');
+});
