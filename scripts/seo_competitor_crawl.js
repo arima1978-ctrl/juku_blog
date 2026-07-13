@@ -18,6 +18,7 @@ const { extractFromHtml } = require('./lib/seo/html_extract');
 const { resolveCanonicalUrl } = require('./lib/seo/url_normalize');
 const { parseSitemapXml } = require('./lib/seo/sitemap_parser');
 const { buildCrawlQueue } = require('./lib/seo/crawl_frontier');
+const { decodeHtmlBuffer } = require('./lib/seo/charset');
 const { logError } = require('./log_error');
 
 const PAGES_DIR = path.join(ROOT, 'data', 'seo', 'pages');
@@ -67,10 +68,17 @@ async function crawlCompetitor(competitor, seoConfig, dryRun) {
 
   const stats = { pages_fetched: 0, pages_new: 0, pages_updated: 0, pages_unchanged: 0, pages_skipped: 0, robots_disallowed_count: 0, error_count: 0 };
 
+  // start_urlがトップページ("/")の場合のみsitemap.xmlの自動探索を行う。特定の支店・
+  // 校舎ページ等、深い階層のURLがstart_urlに指定されている場合は、サイト全体の
+  // sitemap(大手チェーンだと数百〜数千URL)を辿ると対象ページがmax_pagesの予算内に
+  // 収まらないことがあるため、明示的な意図(この特定ページ配下だけを見たい)を優先し、
+  // sitemap自動探索をスキップしてstart_urlからの内部リンク探索のみ行う。
+  const startUrlIsRoot = competitor.start_url ? new URL(competitor.start_url).pathname === '/' : false;
+
   let sitemapLocs = [];
   if (competitor.sitemap_url) {
     sitemapLocs = await fetchSitemapLocs(competitor.sitemap_url, fetchOptions);
-  } else if (competitor.start_url) {
+  } else if (competitor.start_url && startUrlIsRoot) {
     sitemapLocs = await fetchSitemapLocs(new URL('/sitemap.xml', `https://${competitor.domain}/`).toString(), fetchOptions);
   }
 
@@ -78,7 +86,7 @@ async function crawlCompetitor(competitor, seoConfig, dryRun) {
   if (sitemapLocs.length === 0 && competitor.start_url) {
     const startResult = await fetchExternalUrl(competitor.start_url, fetchOptions);
     if (startResult.ok && startResult.contentType.includes('html')) {
-      const extracted = extractFromHtml(startResult.body.toString('utf8'), competitor.start_url);
+      const extracted = extractFromHtml(decodeHtmlBuffer(startResult.body, startResult.contentType), competitor.start_url);
       discoveredLinks = extracted.links;
     }
   }
@@ -108,7 +116,7 @@ async function crawlCompetitor(competitor, seoConfig, dryRun) {
       continue;
     }
 
-    const html = result.body.toString('utf8');
+    const html = decodeHtmlBuffer(result.body, result.contentType);
     const extracted = extractFromHtml(html, url);
     const canonicalUrl = resolveCanonicalUrl(result.finalUrl || url, extracted.canonicalUrl);
     const hash = contentHashOf(extracted.bodyText);
