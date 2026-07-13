@@ -989,8 +989,11 @@ async function openGrowthTaskDetail(id) {
       <div>Priority Score(参考)</div><div>${t.priority_score ?? '-'}点</div>
       <div>見積り工数</div><div>${t.estimated_effort_minutes ?? '-'}分</div>
       <div>理由</div><div>${reasonText}</div>
-      ${t.target_url ? `<div>対象ページ</div><div><a href="${escapeHtml(t.target_url)}" target="_blank" rel="noopener">${escapeHtml(t.target_url)}</a></div>` : ''}
+      ${t.target_area ? `<div>対象地域</div><div>${escapeHtml(t.target_area)}</div>` : ''}
+      ${t.target_page_name ? `<div>対象ページ名</div><div>${escapeHtml(t.target_page_name)}</div>` : ''}
+      ${t.target_url ? `<div>対象ページURL</div><div><a href="${escapeHtml(t.target_url)}" target="_blank" rel="noopener">${escapeHtml(t.target_url)}</a></div>` : ''}
     </div>
+    ${t.task_type === 'improve_school_page' ? '<div class="empty" style="margin-top:8px;">※ 校舎ページ本文はまだ解析していません(本文未解析。タイトル・見出し等の詳細分析は今後の対応です)</div>' : ''}
     <div class="fact-check-box">
       <strong>Opportunity Score内訳</strong>
       ${breakdownRows}

@@ -333,7 +333,10 @@ app.get('/api/growth/tasks', (req, res) => {
 app.get('/api/growth/tasks/:id', (req, res) => {
   const task = seoDb.getTaskById(Number(req.params.id));
   if (!task) return res.status(404).json({ error: 'not_found' });
-  res.json(task);
+  // target_areaはseo_tasks自体には持たせず、由来の候補からその都度参照する
+  // (新規カラムを増やさないための最小限の対応)。
+  const candidate = task.source_candidate_id ? seoDb.getKeywordCandidateById(task.source_candidate_id) : null;
+  res.json({ ...task, target_area: candidate ? candidate.target_area : null });
 });
 
 app.post('/api/growth/tasks/:id/approve', (req, res) => {

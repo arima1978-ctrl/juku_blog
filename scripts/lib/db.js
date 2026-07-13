@@ -73,6 +73,11 @@ function getDb() {
   ensureColumn(db, 'seo_keyword_candidates', 'existing_post_id', 'INTEGER'); // 最有力の既存記事(FK posts.id)
   ensureColumn(db, 'seo_keyword_candidates', 'approved_action', 'TEXT'); // 人間が承認時に確定した最終アクション
   ensureColumn(db, 'seo_keyword_candidates', 'cannibalization_warning', 'TEXT'); // JSON、該当時のみ
+  // AI Growth Director Sprint 2: 自社校舎ページ(config/school_pages.yaml)との対応で追加。
+  // 校舎ページTask以外(通常記事等)はいずれもNULLのまま。
+  ensureColumn(db, 'seo_tasks', 'target_page_type', 'TEXT'); // 現状"school_page"のみ使用
+  ensureColumn(db, 'seo_tasks', 'target_page_id', 'TEXT'); // config/school_pages.yamlのid
+  ensureColumn(db, 'seo_tasks', 'target_page_name', 'TEXT'); // 表示用の校舎ページ名
   return db;
 }
 

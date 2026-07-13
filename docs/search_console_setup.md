@@ -47,3 +47,27 @@ node scripts/seo_gsc_sync.js --dry-run
   直近3日分を取得することでこれを吸収する。
 - API失敗時は`logs/errors.json`に記録されるだけで、記事生成・競合分析全体は止まらない。
 - データ遅延・0件は正常な結果として扱われる(異常扱いにしない)。
+- 初回導入時や長期間の実績を反映させたい場合は`--start=YYYY-MM-DD --end=YYYY-MM-DD`で
+  任意期間(例: 90日分)を指定してbackfillできる。
+
+## 旧形式データ(日付集計バグ)について
+
+Sprint 2以前の`seo_gsc_sync.js`は、Search Console APIの`dimensions`に`date`を含めておらず、
+取得期間の**終端日を全行へ一律に**保存していた(例: 直近3日分を同期すると、実際には3日分の
+実績が「終端日1日分」として`seo_gsc_queries`に積み上がる)。この状態で日をまたいで繰り返し
+同期すると、`UNIQUE (site_property, date, query, page, device, country, search_type)`制約が
+異なる実日付を区別できず、実績が二重・多重に積み上がる可能性があった。
+
+Sprint 2で`dimensions`に`date`を追加し、APIレスポンス自身の行ごとの日付をそのまま保存する
+よう修正済み(`scripts/lib/seo/search_console_provider.js`の`toGscQueryRow`、
+`scripts/seo_gsc_sync.js`)。この修正により、以降の同期は日ごとに正しく別行として保存され、
+重複期間の再同期もUNIQUE制約による正しいupsert(上書き)になる。
+
+- 修正前に同期したデータが既にある場合、そのデータの`date`列は「実際にその実績があった日」
+  ではなく「同期を実行した時点の期間終端日」になっている可能性がある(不正確だが、
+  DB上は無害に残るだけで、修正後の同期データと混在しても壊れることはない)。
+- 正確な日別データに揃えたい場合は、`node scripts/seo_gsc_reset.js --confirm`で
+  `seo_gsc_queries`テーブルのみを削除してから(`posts`・他のSEOテーブルには一切触れない)、
+  `node scripts/seo_gsc_sync.js --start=... --end=...`で再同期すること。
+- ローカル検証データの移行は必須ではない(実運用で本格的にGSC連携を有効化する前に
+  実施すれば十分)。

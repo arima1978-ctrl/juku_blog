@@ -150,6 +150,37 @@ test('Task承認→除外がAPI経由で行える', async () => {
   assert.equal((await rejectRes.json()).to, 'rejected');
 });
 
+test('GET /api/growth/tasks/:id: 校舎ページTaskはtarget_page_*と、由来候補のtarget_areaを返す', async () => {
+  const seoDb = require('../scripts/lib/seo_db');
+  const nowIso = '2026-07-13T00:00:00.000Z';
+  const candidate = seoDb.upsertKeywordCandidate(
+    { normalized_keyword: '小幡 塾 校舎ページAPIテスト', target_area: '小幡', gap_type: 'untapped', priority_score: 70 },
+    nowIso
+  );
+  const created = seoDb.upsertTask(
+    {
+      task_type: 'improve_school_page',
+      target_keyword: '小幡 塾 校舎ページAPIテスト',
+      source_candidate_id: candidate.id,
+      opportunity_score: 72,
+      recommended_action: 'improve_school_page',
+      target_url: 'https://an-english.com/school/obata/',
+      target_page_type: 'school_page',
+      target_page_id: 'obata',
+      target_page_name: '小幡教室',
+    },
+    nowIso
+  );
+  require('../scripts/lib/db').closeDb();
+
+  const detailRes = await fetch(`http://localhost:${PORT}/api/growth/tasks/${created.id}`);
+  const detail = await detailRes.json();
+  assert.equal(detail.target_area, '小幡');
+  assert.equal(detail.target_page_type, 'school_page');
+  assert.equal(detail.target_page_id, 'obata');
+  assert.equal(detail.target_page_name, '小幡教室');
+});
+
 after(async () => {
   if (serverProcess) {
     serverProcess.kill();
