@@ -1,0 +1,142 @@
+# 競合キーワード分析(Keyword Gap Lite)の競合塾レジストリ。
+# features.competitor_keyword_analysis.crawl_enabled が有効な場合のみ使用される。
+#
+# scripts/seo_competitor_crawl.js がこのファイルを読み、登録済みドメインのみを
+# SSRF対策・robots.txt尊重・レート制限つきで取得する(未登録ドメインは取得しない)。
+# コード変更なしで追加・削除・無効化ができるよう、すべてここに集約する。
+#
+# 各フィールド:
+#   id: 一意なID
+#   name: 競合塾名(記事本文へは出さない。ダッシュボード上の根拠表示にのみ使う)
+#   domain: 許可ドメイン判定に使うホスト名
+#   start_url: 内部リンク探索の起点URL(sitemap_url が無い場合のフォールバック)
+#   sitemap_url: sitemap.xml / sitemap index のURL(あれば最優先で使う)
+#   competitor_type: local/major_chain/exam_specialist/subject_specialist/information_media/other
+#   target_areas: 対象地域(自社エリアとの関連性スコアに使う)
+#   target_schools: 対象校区(学校名)
+#   target_grades: 対象学年
+#   target_subjects: 対象教科
+#   crawl_enabled: falseにすると取得対象から除外(削除せず一時停止する場合に使う)
+#   crawl_interval_days: 何日おきに再取得するか
+#   max_pages: このサイトから取得する最大ページ数(config/juku.yaml の
+#     seo.competitor_analysis.max_pages_per_site が既定値、ここで上書き可能)
+#
+# 初期状態では競合未登録(空配列)。安全のため、実際に登録・確認するまで
+# crawl_enabled: true の競合は追加しない運用とする。
+
+competitors:
+  - id: plabo
+    name: "個別指導塾PLABO"
+    domain: "pbstudy.jp"
+    sitemap_url: "https://pbstudy.jp/sitemap.xml"
+    # 2026-07-13確認: 名古屋圏だけでなく福岡・札幌・熊本等にも校舎を持つ多拠点チェーン
+    competitor_type: major_chain
+    target_areas: ["守山区", "小幡"]
+    crawl_enabled: true
+    crawl_interval_days: 7
+    max_pages: 40
+
+  - id: morikobe
+    name: "守山個別塾 モリコベ！"
+    domain: "www.morikobe.com"
+    start_url: "https://www.morikobe.com/"
+    # sitemap.xmlの記載無し(2026-07-13確認)。単一教室のためstart_urlからの内部リンク探索で足りる
+    competitor_type: local
+    target_areas: ["守山区", "小幡"]
+    crawl_enabled: true
+    crawl_interval_days: 7
+    max_pages: 20
+
+  - id: meishinken
+    name: "名進研"
+    domain: "www.meishinken.co.jp"
+    # 2026-07-13確認: 名古屋・愛知・岐阜に15校舎以上を展開する中学受験特化チェーン。
+    # sitemap.xml(sitemapindex)は全校舎・全カテゴリを含み小幡校に絞れないため、
+    # あえてsitemap_urlを設定せず小幡校ページ起点の内部リンク探索のみ行う
+    # (start_urlが深い階層のためsitemap自動探索もスキップされる)。
+    start_url: "https://www.meishinken.co.jp/school/obata"
+    competitor_type: exam_specialist
+    target_areas: ["守山区", "小幡"]
+    crawl_enabled: true
+    crawl_interval_days: 7
+    max_pages: 30
+
+  - id: showin_juku
+    name: "松陰塾"
+    domain: "showin-juku.jp"
+    # 2026-07-13確認: 全国フランチャイズ(sitemap.xmlのurlsetに約560件、全国校舎ページ中心)。
+    # 小幡喜多山校ページ起点の内部リンク探索のみ行う
+    start_url: "https://showin-juku.jp/obata-kitayama/"
+    competitor_type: major_chain
+    target_areas: ["守山区", "小幡"]
+    crawl_enabled: true
+    crawl_interval_days: 7
+    max_pages: 20
+
+  - id: itto
+    name: "ITTO個別指導学院"
+    domain: "www.itto.jp"
+    # 2026-07-13確認: 全国フランチャイズ(sitemap.xmlのurlsetに約1000-1500件、全国校舎ページ中心)
+    start_url: "https://www.itto.jp/schools/toukai/nagoya/obata.html"
+    competitor_type: major_chain
+    target_areas: ["守山区", "小幡"]
+    crawl_enabled: true
+    crawl_interval_days: 7
+    max_pages: 20
+
+  - id: sunrise
+    name: "進学塾サンライズ"
+    domain: "www.ne-holdings.com"
+    # 2026-07-13確認: 本山・神丘・滝ノ水・植田・長久手・日進・東郷等に展開する名古屋東部の地域チェーン
+    start_url: "https://www.ne-holdings.com/sunrise/about_us/obata/"
+    competitor_type: local
+    target_areas: ["守山区", "小幡"]
+    crawl_enabled: true
+    crawl_interval_days: 7
+    max_pages: 30
+
+  - id: kojonan_kobetsu
+    name: "城南コベッツ"
+    domain: "www.covez.jp"
+    # 2026-07-13確認: 城南進学研究社グループの全国フランチャイズ(sitemap indexあり)。
+    # 守山瓢箪山教室ページ起点の内部リンク探索のみ行う
+    start_url: "https://www.covez.jp/school/tokai/aichi/nagoya/moriyama/moriyamahyotanyama/"
+    competitor_type: major_chain
+    target_areas: ["守山区", "小幡", "瓢箪山"]
+    crawl_enabled: true
+    crawl_interval_days: 7
+    max_pages: 20
+
+  # 以下3件は個別の塾ではなく、複数塾を掲載する情報ポータル・ランキングサイト
+  # (competitor_type: information_media)。ポータル/ランキングサイトは独自の利用規約で
+  # スクレイピングを制限している可能性が高く、個別塾の公式サイトとは性質が異なるため、
+  # クロールするかどうかの判断が下りるまで crawl_enabled: false で登録のみ保留する。
+  - id: jyukunavi
+    name: "塾ナビ"
+    domain: "www.jyukunavi.jp"
+    start_url: "https://www.jyukunavi.jp/rank/s3001210.html"
+    competitor_type: information_media
+    target_areas: ["守山区", "小幡"]
+    crawl_enabled: false
+    crawl_interval_days: 7
+    max_pages: 15
+
+  - id: ameba_jukusagashi
+    name: "Ameba塾探し"
+    domain: "juku.ameba.jp"
+    start_url: "https://juku.ameba.jp/ranking/aichi/ct-aichi-nagoyashi-moriyamaku/st-3001210/"
+    competitor_type: information_media
+    target_areas: ["守山区", "小幡"]
+    crawl_enabled: false
+    crawl_interval_days: 7
+    max_pages: 15
+
+  - id: bestjuku
+    name: "塾選"
+    domain: "bestjuku.com"
+    start_url: "https://bestjuku.com/ranking/aichi/addr-4_09_013/station-3001209/"
+    competitor_type: information_media
+    target_areas: ["守山区", "小幡", "瓢箪山"]
+    crawl_enabled: false
+    crawl_interval_days: 7
+    max_pages: 15

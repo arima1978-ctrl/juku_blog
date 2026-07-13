@@ -10,3 +10,7 @@ data/rejected_notes.json
 logs/*.log
 logs/errors.json
 .env
+
+# 競合キーワード分析(Keyword Gap Lite)
+data/seo/
+data/seo_candidates/*.json

@@ -24,4 +24,15 @@ function loadExamSourcesConfig() {
   return loadYaml('config/aichi_exam_sources.yaml');
 }
 
-module.exports = { ROOT, loadYaml, loadJukuConfig, loadCalendarConfig, loadExamSourcesConfig };
+function loadSeoCompetitorsConfig() {
+  return loadYaml('config/seo_competitors.yaml');
+}
+
+module.exports = {
+  ROOT,
+  loadYaml,
+  loadJukuConfig,
+  loadCalendarConfig,
+  loadExamSourcesConfig,
+  loadSeoCompetitorsConfig,
+};

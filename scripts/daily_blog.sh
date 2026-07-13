@@ -58,6 +58,14 @@ if [ -f "$RAW_EXAM_PATH" ]; then
     "対象ファイル ${RAW_EXAM_PATH} を構造化して data/exam_research/${TODAY}.facts.json に保存して" "exam-fact-structurer" || exit 1
 fi
 
+# --- 1.6. 競合キーワード分析(features.competitor_keyword_analysis.use_for_topic_selection有効時のみ) ---
+# 決定的スクリプト(LLM不使用)。人間が承認済みの候補をdata/seo_candidates/${TODAY}.jsonへ出力する
+# だけで、featureが無効・候補0件の場合はファイル自体を作らない(智谷は無い日を完全に無視する)。
+if ! node scripts/seo_topic_candidates_export.js "$TODAY" >> "$LOG" 2>&1; then
+  log "!!! seo_topic_candidates_export.js が失敗しました(競合キーワード候補の提示をスキップして続行します)"
+  node scripts/log_error.js "seo_topic_candidates_export" "node scripts/seo_topic_candidates_export.js ${TODAY} が失敗"
+fi
+
 # --- 2. 智谷: 企画 ---
 run_agent planner-blog-btoc "Read,Write" \
   "今日の記事企画をして" "planner-blog-btoc" || exit 1

@@ -62,6 +62,17 @@ function getDb() {
   ensureColumn(db, 'posts', 'exam_target_year', 'INTEGER');
   ensureColumn(db, 'posts', 'exam_validation_status', 'TEXT'); // passed/warning/blocked、対象外ならNULL
   ensureColumn(db, 'posts', 'exam_validation_warnings', 'TEXT'); // JSON配列文字列
+  // 競合キーワード分析: 複合キーワード対応(features.competitor_keyword_analysis)で追加。
+  // 単語単体だった候補を「地域×塾」等の複合キーワードへ変換する機能拡張に伴うカラム。
+  ensureColumn(db, 'seo_keyword_candidates', 'keyword_components', 'TEXT'); // JSON: {area,school,grade,subject,teaching_style,service,exam}
+  ensureColumn(db, 'seo_keyword_candidates', 'template_type', 'TEXT');
+  ensureColumn(db, 'seo_keyword_candidates', 'cooccurrence_score', 'REAL');
+  ensureColumn(db, 'seo_keyword_candidates', 'search_intent', 'TEXT');
+  ensureColumn(db, 'seo_keyword_candidates', 'content_type', 'TEXT'); // blog_article/school_page
+  ensureColumn(db, 'seo_keyword_candidates', 'data_confidence', 'INTEGER'); // priority_scoreとは独立した0-100点
+  ensureColumn(db, 'seo_keyword_candidates', 'existing_post_id', 'INTEGER'); // 最有力の既存記事(FK posts.id)
+  ensureColumn(db, 'seo_keyword_candidates', 'approved_action', 'TEXT'); // 人間が承認時に確定した最終アクション
+  ensureColumn(db, 'seo_keyword_candidates', 'cannibalization_warning', 'TEXT'); // JSON、該当時のみ
   return db;
 }
 
