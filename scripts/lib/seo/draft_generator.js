@@ -1,30 +1,62 @@
 'use strict';
 
-// AI改善ドラフト生成の「準備段階」。SEO Task・候補・GSC実績からPromptを組み立てるだけの
-// 決定的処理であり、LLM API・外部サイト・WordPressへは一切接続しない。
+// AI改善ドラフト生成の「準備段階」。SEO Task・候補・GSC実績・(登録済み校舎ページのみ)
+// ページ本文からPromptを組み立てる決定的処理。LLM API・WordPressへは一切接続しない。
 // DBへの書き込みも行わない(呼び出し元のCLIも含め、今回はプレビュー表示のみ)。
 
+const { loadJukuConfig } = require('../config');
 const { buildPrompt } = require('./draft_prompt_template');
+const { fetchPageContext } = require('./page_context_provider');
+const { listEnabledSchoolPages, getSchoolPageByUrl } = require('./school_page_registry');
 
-// ページ本文取得は今回のSprintでは実装しない。常に「未取得」固定のスケルトンを返す
-// (将来、本文取得を実装する際にこの関数の中身だけを差し替える想定)。
-function buildPageContext(task) {
+function notFetchedContext(task) {
   return {
+    status: 'not_fetched',
     url: task.target_url,
     title: null,
     headings: [],
     bodyExcerpt: null,
     fetchedAt: null,
     contentHash: null,
-    status: 'not_fetched',
   };
+}
+
+// task.target_urlが登録済み校舎ページ(config/school_pages.yaml)と一致する場合のみ実際に
+// 取得する。一致しなければ外部通信せず従来通りnot_fetchedを返す。
+// 依存はすべて注入可能(テスト時に実ネットワーク接続を避けるため)。
+async function buildPageContext(
+  task,
+  {
+    fetchPage = fetchPageContext,
+    getSchoolPage = getSchoolPageByUrl,
+    listSchoolPages = listEnabledSchoolPages,
+    loadConfig = loadJukuConfig,
+  } = {}
+) {
+  if (!task.target_url) return notFetchedContext(task);
+
+  const schoolPage = getSchoolPage(task.target_url);
+  if (!schoolPage) return notFetchedContext(task);
+
+  const seoConfig = loadConfig().seo.competitor_analysis;
+  // 許可リストはconfig/school_pages.yaml由来のみで作る(競合サイトの許可リストとは分離)。
+  const allowedBaseUrls = listSchoolPages().map((p) => p.url);
+
+  return fetchPage(task.target_url, {
+    allowedBaseUrls,
+    userAgent: seoConfig.user_agent,
+    timeoutMs: seoConfig.request_timeout_ms,
+    intervalMs: seoConfig.request_interval_ms,
+    maxRetries: seoConfig.max_retries,
+  });
 }
 
 // task: seo_tasksの1行(getTaskById相当、reasonは配列にparse済み)
 // candidate: seo_keyword_candidatesの1行(source_candidate_idが無ければnull)
 // gscMetrics: seoDb.getGscAggregateForKeywordの戻り値(無ければnull)
-function buildDraftPreview({ task, candidate, gscMetrics }) {
-  const pageContext = buildPageContext(task);
+// pageContextDeps: buildPageContextへ渡す依存注入(テスト用)
+async function buildDraftPreview({ task, candidate, gscMetrics }, { pageContextDeps } = {}) {
+  const pageContext = await buildPageContext(task, pageContextDeps);
 
   const { prompt, mode, promptVersion } = buildPrompt({
     targetUrl: task.target_url,
