@@ -54,10 +54,10 @@ function allocateUrl(input) {
     return { taskType: 'add_faq', targetUrl: null, targetPageId: null, targetPageName: null, reasons: ['faq_term_detected'] };
   }
 
-  if (gapType === 'strong') {
-    return { taskType: 'monitor', targetUrl: null, targetPageId: null, targetPageName: null, reasons: ['own_already_strong'] };
-  }
-
+  // 校舎ページ対応テンプレートは、gap_type(優先度)より前に判定する。
+  // 「どのページ・施策で対応すべきか」(URL Allocatorの責務)と「どの程度優先すべきか」
+  // (gap_type/Opportunity Scoreの責務)を分離するため、順位が良い(gap_type=strong)ことを
+  // 理由に対象ページの割当自体をmonitorへ変更しない(2026-07-14 設計変更)。
   if (SCHOOL_PAGE_ELIGIBLE_TEMPLATES.has(templateType)) {
     if (existingSchoolPageUrl) {
       return {
@@ -77,6 +77,10 @@ function allocateUrl(input) {
       targetPageName: null,
       reasons: ['school_page_template', 'no_registered_school_page_or_landing_page'],
     };
+  }
+
+  if (gapType === 'strong') {
+    return { taskType: 'monitor', targetUrl: null, targetPageId: null, targetPageName: null, reasons: ['own_already_strong'] };
   }
 
   if (existingPostId) {
