@@ -46,14 +46,47 @@ test('shared: 自社・競合ともに扱っており明確な優劣signalが無
   assert.equal(result.gapType, 'shared');
 });
 
-test('strong: 自社が競合より上位かつ10位以内', () => {
-  const result = classifyKeywordGap({ competitorCount: 2, ownHasArticle: true, ownAvgPosition: 3, competitorBestPosition: 7 });
+test('strong: 自社が競合より上位かつ10位以内(表示回数が十分)', () => {
+  const result = classifyKeywordGap({
+    competitorCount: 2,
+    ownHasArticle: true,
+    ownAvgPosition: 3,
+    ownImpressions: 100,
+    competitorBestPosition: 7,
+  });
   assert.equal(result.gapType, 'strong');
 });
 
-test('strong: 競合データが無いが自社が10位以内で十分な実績', () => {
-  const result = classifyKeywordGap({ competitorCount: 0, ownHasArticle: true, ownAvgPosition: 4 });
+test('strong: 競合データが無いが自社が10位以内で十分な実績(表示回数が十分)', () => {
+  const result = classifyKeywordGap({ competitorCount: 0, ownHasArticle: true, ownAvgPosition: 4, ownImpressions: 100 });
   assert.equal(result.gapType, 'strong');
+});
+
+// STRONG_MIN_IMPRESSIONS(表示回数の下限)の境界値テスト。10位以内という順位だけでは
+// 統計的に無意味な少数実績までstrongにしないことを確認する(2026-07-14追加)。
+test('strong: average_position=10、impressions=100はstrong', () => {
+  const result = classifyKeywordGap({ competitorCount: 0, ownHasArticle: true, ownAvgPosition: 10, ownImpressions: 100 });
+  assert.equal(result.gapType, 'strong');
+});
+
+test('strong: average_position=10、impressions=30(閾値ちょうど)はstrong', () => {
+  const result = classifyKeywordGap({ competitorCount: 0, ownHasArticle: true, ownAvgPosition: 10, ownImpressions: 30 });
+  assert.equal(result.gapType, 'strong');
+});
+
+test('shared: average_position=10、impressions=29(閾値未満)はstrongにならずshared', () => {
+  const result = classifyKeywordGap({ competitorCount: 0, ownHasArticle: true, ownAvgPosition: 10, ownImpressions: 29 });
+  assert.equal(result.gapType, 'shared');
+});
+
+test('shared: average_position=5(好順位)でもimpressions=1(母数不足)はstrongにならずshared', () => {
+  const result = classifyKeywordGap({ competitorCount: 0, ownHasArticle: true, ownAvgPosition: 5, ownImpressions: 1 });
+  assert.equal(result.gapType, 'shared');
+});
+
+test('shared: average_position=11、impressions=100でも10位以内ではないためstrongにならない', () => {
+  const result = classifyKeywordGap({ competitorCount: 0, ownHasArticle: true, ownAvgPosition: 11, ownImpressions: 100 });
+  assert.notEqual(result.gapType, 'strong');
 });
 
 test('content_gap: テーマ単位で複数競合が扱い自社に該当記事が無い', () => {
