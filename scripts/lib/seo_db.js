@@ -4,6 +4,7 @@
 // db.jsを肥大化させないよう分離するが、接続自体はdb.jsのgetDb()を共有する
 // (posts.sqliteに相乗りし、posts/seo_*テーブル間のJOINを可能にするため)。
 const { getDb } = require('./db');
+const { normalizeKeyword } = require('./seo/normalizer');
 
 function toJson(value) {
   return value === undefined || value === null ? null : JSON.stringify(value);
@@ -441,17 +442,55 @@ function listGscQueriesForKeyword(query) {
   return conn.prepare('SELECT * FROM seo_gsc_queries WHERE query = ? ORDER BY date DESC').all(query);
 }
 
-// カニバリゼーション検知(scripts/lib/seo/cannibalization.js)用: 同一クエリの
-// ページ別・日付別GSC実績を{page, impressions}の配列で返す。
-function getGscPagesForQuery(query) {
+function listDistinctGscQueries() {
   const conn = getDb();
-  return conn.prepare('SELECT page, impressions FROM seo_gsc_queries WHERE query = ?').all(query);
+  return conn.prepare('SELECT DISTINCT query FROM seo_gsc_queries').all().map((r) => r.query);
+}
+
+// candidateQueryに対し、raw完全一致のGSC queryに加え、normalizeKeyword()適用後が
+// candidateQueryと同一になる他のGSC query(表記揺れ)も全て「一致」として扱う
+// (Query Variant Matching Phase1)。token集合一致・部分一致・fuzzy一致は行わない
+// (既存のnormalizeKeywordルールで同一と判定されるものだけを統合する)。
+// 戻り値: { matchedQueries: string[], matchType: 'exact'|'normalized_exact'|null }
+//   matchType: raw完全一致行(candidateQuery自身)が含まれていればexact、
+//   含まれず表記揺れ経由のみで一致した場合はnormalized_exact、一致が無ければnull。
+function resolveMatchingGscQueries(candidateQuery) {
+  const candidateNormalized = normalizeKeyword(candidateQuery).normalized;
+  const distinctQueries = listDistinctGscQueries();
+  const matchedQueries = distinctQueries.filter((raw) => normalizeKeyword(raw).normalized === candidateNormalized);
+  if (matchedQueries.length === 0) return { matchedQueries: [], matchType: null };
+  const hasExact = matchedQueries.includes(candidateQuery);
+  return { matchedQueries, matchType: hasExact ? 'exact' : 'normalized_exact' };
+}
+
+// カニバリゼーション検知(scripts/lib/seo/cannibalization.js)用: 同一クエリ(表記揺れ含む)の
+// ページ別実績を{page, impressions}の配列で返す(同一pageは合算し重複させない)。
+function getGscPagesForQuery(query) {
+  const { matchedQueries } = resolveMatchingGscQueries(query);
+  if (matchedQueries.length === 0) return [];
+  const conn = getDb();
+  const placeholders = matchedQueries.map(() => '?').join(',');
+  const rows = conn.prepare(`SELECT page, impressions FROM seo_gsc_queries WHERE query IN (${placeholders})`).all(...matchedQueries);
+  const impressionsByPage = new Map();
+  rows.forEach((r) => {
+    if (!r.page) return;
+    impressionsByPage.set(r.page, (impressionsByPage.get(r.page) || 0) + (r.impressions || 0));
+  });
+  return Array.from(impressionsByPage.entries()).map(([page, impressions]) => ({ page, impressions }));
 }
 
 // 表示回数で重み付けした平均順位・CTRを返す(表示回数0のクエリを平均で埋もれさせないため)。
 // データが無ければnull(呼び出し側はnullを「実績データ無し」として扱う。0とは区別する)。
+// Query Variant Matching Phase1: raw完全一致に加え、normalizeKeyword()後が同一の
+// GSC queryの実績も合算する(同一GSC行を二重集計しない。token集合一致・部分一致は行わない)。
+// 既存の戻り値フィールド(impressions/clicks/avgPosition/ctr)は維持し、match_type/
+// matched_queriesを追加フィールドとしてのみ増やす(既存呼び出し元への後方互換を維持)。
 function getGscAggregateForKeyword(query) {
-  const rows = listGscQueriesForKeyword(query);
+  const { matchedQueries, matchType } = resolveMatchingGscQueries(query);
+  if (matchedQueries.length === 0) return null;
+  const conn = getDb();
+  const placeholders = matchedQueries.map(() => '?').join(',');
+  const rows = conn.prepare(`SELECT * FROM seo_gsc_queries WHERE query IN (${placeholders})`).all(...matchedQueries);
   if (rows.length === 0) return null;
   const impressions = rows.reduce((sum, r) => sum + (r.impressions || 0), 0);
   const clicks = rows.reduce((sum, r) => sum + (r.clicks || 0), 0);
@@ -462,6 +501,8 @@ function getGscAggregateForKeyword(query) {
     clicks,
     avgPosition: weightDenom > 0 ? weightedPosition / weightDenom : null,
     ctr: impressions > 0 ? clicks / impressions : null,
+    match_type: matchType,
+    matched_queries: matchedQueries,
   };
 }
 

@@ -7,6 +7,9 @@
 const LOW_CTR_THRESHOLD = 0.02; // 表示回数はあるがクリック率2%未満は「弱い」signalとして扱う
 const WEAK_POSITION_THRESHOLD = 11; // 11位以下(2ページ目以降)は弱いsignal
 const STRONG_POSITION_THRESHOLD = 10; // 10位以内なら強いsignalの候補
+// 10位以内でも表示回数が少なすぎる(例: 1日1件のみ)場合は統計的に無意味なため、
+// strongと判定するには最低限の表示回数を要求する(2026-07-14 追加)。
+const STRONG_MIN_IMPRESSIONS = 30;
 
 // input:
 //   competitorCount: このキーワード/テーマを扱っている競合数
@@ -68,10 +71,13 @@ function classifyKeywordGap(input) {
     return { gapType: 'weak', reasons };
   }
 
+  const hasEnoughImpressionsForStrong = ownImpressions != null && ownImpressions >= STRONG_MIN_IMPRESSIONS;
+
   if (competitorCount > 0) {
     const ownIsStrong =
       ownAvgPosition != null &&
       ownAvgPosition <= STRONG_POSITION_THRESHOLD &&
+      hasEnoughImpressionsForStrong &&
       (competitorBestPosition == null || ownAvgPosition < competitorBestPosition);
     if (ownIsStrong) {
       return { gapType: 'strong', reasons: ['own_top10_and_not_behind_competitor'] };
@@ -81,10 +87,10 @@ function classifyKeywordGap(input) {
 
   // 競合データが無い(competitorCount=0)まま自社のみ存在感がある場合。
   // 順位データが無ければ推測でstrongにしない(データ不足時はshared=中立に倒す)。
-  if (ownAvgPosition != null && ownAvgPosition <= STRONG_POSITION_THRESHOLD) {
+  if (ownAvgPosition != null && ownAvgPosition <= STRONG_POSITION_THRESHOLD && hasEnoughImpressionsForStrong) {
     return { gapType: 'strong', reasons: ['own_top10_no_competitor_data'] };
   }
   return { gapType: 'shared', reasons: ['own_present_no_competitor_evidence'] };
 }
 
-module.exports = { classifyKeywordGap, LOW_CTR_THRESHOLD, WEAK_POSITION_THRESHOLD, STRONG_POSITION_THRESHOLD };
+module.exports = { classifyKeywordGap, LOW_CTR_THRESHOLD, WEAK_POSITION_THRESHOLD, STRONG_POSITION_THRESHOLD, STRONG_MIN_IMPRESSIONS };
