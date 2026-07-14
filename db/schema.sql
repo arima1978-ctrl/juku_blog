@@ -427,3 +427,45 @@ CREATE TABLE IF NOT EXISTS seo_tasks (
 );
 CREATE INDEX IF NOT EXISTS idx_seo_tasks_status ON seo_tasks(status);
 CREATE INDEX IF NOT EXISTS idx_seo_tasks_opportunity_score ON seo_tasks(opportunity_score);
+
+-- Sprint 3.4: AI Growth Director専用テーブル。seo_tasks(キーワード単位の分析結果)とは
+-- 別概念の「ページ単位の改善計画」を保持する。scripts/lib/seo/page_task_grouper.js
+-- (Primary/Supporting/Excluded分類)+scripts/lib/seo/supporting_task_fact_checker.js
+-- (ページ本文による事実確認)の結果を、DB保存可能な形にまとめたもの。
+-- 保存してもseo_tasks側のstatusは一切変更しない(Task自体は削除・書き換えしない)。
+-- 統合Draftの生成・保存(seo_task_drafts相当)は未実装(将来Sprint)。
+CREATE TABLE IF NOT EXISTS seo_page_plans (
+  id                        INTEGER PRIMARY KEY AUTOINCREMENT,
+
+  group_key                 TEXT NOT NULL,   -- target_page_type + ":" + target_page_id と同一(表示・監査用)
+  target_page_type          TEXT NOT NULL,
+  target_page_id            TEXT NOT NULL,
+  target_page_name          TEXT,
+  target_url                TEXT,            -- 参考値(表示用。target_url不一致検出時はNULLの場合あり)
+
+  primary_task_id           INTEGER NOT NULL,
+  primary_keyword           TEXT NOT NULL,
+
+  supporting_task_ids       TEXT NOT NULL DEFAULT '[]', -- JSON配列(例: [64])
+  supporting_keywords       TEXT NOT NULL DEFAULT '[]', -- JSON配列(例: ["守山区 個別指導"])
+
+  excluded_tasks            TEXT NOT NULL DEFAULT '[]', -- JSON配列({taskId,targetKeyword,reason,duplicateOf?,factStatus?,factEvidence?})
+
+  combined_search_intents   TEXT NOT NULL DEFAULT '[]', -- JSON配列(Primary+Supportingのsearch_intent一覧)
+
+  selection_breakdown       TEXT,            -- JSON(Primary選定根拠。searchIntentPriority/dataConfidence/gscImpressions/gapTypePriority/opportunityScore/taskId)
+  fact_check_summary        TEXT,            -- JSON({verified:[],unverified:[],conflicting:[]})。GSC実績は含めない
+  warnings                  TEXT NOT NULL DEFAULT '[]', -- JSON配列
+
+  source_content_hash       TEXT,            -- pageContext.contentHash(本文全文は保存しない。未取得ならNULL)
+  prompt_version            TEXT,            -- 将来Draft生成時に使うPromptVersionの参考記録(今回は未使用のためNULL)
+
+  status                    TEXT NOT NULL DEFAULT 'proposed', -- proposed/reviewing/approved/rejected(Task statusとは完全に別軸)
+
+  created_at                TEXT NOT NULL,
+  updated_at                TEXT NOT NULL,
+
+  UNIQUE (target_page_type, target_page_id),
+  FOREIGN KEY (primary_task_id) REFERENCES seo_tasks(id)
+);
+CREATE INDEX IF NOT EXISTS idx_seo_page_plans_status ON seo_page_plans(status);
