@@ -30,7 +30,8 @@ function parseArgs(argv) {
 
 // Feature Flagチェックを含まない中核処理(テスト容易性のため分離)。
 // Task未存在時はErrorを投げる(呼び出し元CLIがcatchしてプロセスを異常終了させる)。
-function resolveDraftPreview(taskId) {
+// 登録済み校舎ページの本文取得を伴うためasync。
+async function resolveDraftPreview(taskId) {
   const task = seoDb.getTaskById(taskId);
   if (!task) {
     throw new Error(`task id=${taskId} が見つかりません`);
@@ -59,7 +60,7 @@ function formatText(preview) {
   ].join('\n');
 }
 
-function main() {
+async function main() {
   const args = parseArgs(process.argv.slice(2));
   const config = loadJukuConfig();
   const feature = config.features && config.features.growth_director;
@@ -76,7 +77,7 @@ function main() {
 
   let preview;
   try {
-    preview = resolveDraftPreview(args.taskId);
+    preview = await resolveDraftPreview(args.taskId);
   } catch (err) {
     console.error(`[seo_draft_preview] ${err.message}`);
     process.exit(1);
@@ -95,7 +96,10 @@ function main() {
 }
 
 if (require.main === module) {
-  main();
+  main().catch((err) => {
+    console.error(`[seo_draft_preview] 予期しないエラー: ${err.message}`);
+    process.exit(1);
+  });
 }
 
 module.exports = { main, formatText, resolveDraftPreview };
