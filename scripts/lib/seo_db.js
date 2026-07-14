@@ -5,6 +5,7 @@
 // (posts.sqliteに相乗りし、posts/seo_*テーブル間のJOINを可能にするため)。
 const { getDb } = require('./db');
 const { normalizeKeyword } = require('./seo/normalizer');
+const { validatePagePlanShape, ALLOWED_PAGE_PLAN_STATUSES } = require('./seo/page_plan_builder');
 
 function toJson(value) {
   return value === undefined || value === null ? null : JSON.stringify(value);
@@ -1049,6 +1050,173 @@ function updateTaskStatus(id, toStatus, nowIso) {
   return { from: current.status, to: toStatus };
 }
 
+// ---- seo_page_plans (Sprint 3.4) -----------------------------------------
+// seo_tasks(キーワード単位)とは別概念の「ページ単位の改善計画」。
+// このテーブルへの保存はTask statusを一切変更しない(seo_tasksは削除・書き換えしない)。
+
+// approved/reviewingは人間の判断が既に入っている(または入る過程にある)ため、
+// 再生成CLIが内容を勝手に上書きしないようロックする。rejectedは内容を更新して構わないが、
+// statusカラム自体は自動でproposedへ戻さない(UPDATE文でstatusを触らないことで担保する)。
+const PAGE_PLAN_LOCKED_STATUSES = new Set(['approved', 'reviewing']);
+
+function parsePagePlanJsonFields(row) {
+  return {
+    ...row,
+    supporting_task_ids: fromJson(row.supporting_task_ids) || [],
+    supporting_keywords: fromJson(row.supporting_keywords) || [],
+    excluded_tasks: fromJson(row.excluded_tasks) || [],
+    combined_search_intents: fromJson(row.combined_search_intents) || [],
+    selection_breakdown: fromJson(row.selection_breakdown),
+    fact_check_summary: fromJson(row.fact_check_summary),
+    warnings: fromJson(row.warnings) || [],
+  };
+}
+
+function getSeoPagePlanById(id) {
+  const conn = getDb();
+  const row = conn.prepare('SELECT * FROM seo_page_plans WHERE id = ?').get(id);
+  if (!row) return null;
+  return parsePagePlanJsonFields(row);
+}
+
+function getSeoPagePlanByPage(targetPageType, targetPageId) {
+  const conn = getDb();
+  const row = conn
+    .prepare('SELECT * FROM seo_page_plans WHERE target_page_type = ? AND target_page_id = ?')
+    .get(targetPageType, targetPageId);
+  if (!row) return null;
+  return parsePagePlanJsonFields(row);
+}
+
+function listSeoPagePlans({ status } = {}) {
+  const conn = getDb();
+  let query = 'SELECT * FROM seo_page_plans WHERE 1=1';
+  const params = {};
+  if (status) {
+    query += ' AND status = :status';
+    params.status = status;
+  }
+  query += ' ORDER BY updated_at DESC';
+  return conn.prepare(query).all(params).map(parsePagePlanJsonFields);
+}
+
+// plan: scripts/lib/seo/page_plan_builder.jsのbuildPagePlan()が返す形(camelCase)。
+// UNIQUE(target_page_type, target_page_id)でupsertする。
+// 既存Planがapproved/reviewingの場合は内容を更新せず、{locked:true}を返す(例外は投げない。
+// 呼び出し側が"plan_locked_status"として扱えるようにするため)。--forceは今回未実装。
+function upsertSeoPagePlan(plan, nowIso) {
+  const shapeCheck = validatePagePlanShape(plan);
+  if (!shapeCheck.valid) {
+    throw new Error(`upsertSeoPagePlan: 不正なPage Planです - ${shapeCheck.errors.join(' / ')}`);
+  }
+
+  const conn = getDb();
+  const primaryTaskRow = conn.prepare('SELECT id FROM seo_tasks WHERE id = ?').get(plan.primaryTaskId);
+  if (!primaryTaskRow) {
+    throw new Error(`upsertSeoPagePlan: primary_task_id=${plan.primaryTaskId} に該当するseo_tasksが存在しません`);
+  }
+
+  const existing = conn
+    .prepare('SELECT id, status FROM seo_page_plans WHERE target_page_type = ? AND target_page_id = ?')
+    .get(plan.targetPageType, plan.targetPageId);
+
+  if (existing && PAGE_PLAN_LOCKED_STATUSES.has(existing.status)) {
+    return { id: existing.id, isNew: false, locked: true, lockedStatus: existing.status };
+  }
+
+  const row = {
+    group_key: plan.groupKey,
+    target_page_type: plan.targetPageType,
+    target_page_id: plan.targetPageId,
+    target_page_name: plan.targetPageName || null,
+    target_url: plan.targetUrl || null,
+    primary_task_id: plan.primaryTaskId,
+    primary_keyword: plan.primaryKeyword,
+    supporting_task_ids: toJson(plan.supportingTaskIds || []),
+    supporting_keywords: toJson(plan.supportingKeywords || []),
+    excluded_tasks: toJson(plan.excludedTasks || []),
+    combined_search_intents: toJson(plan.combinedSearchIntents || []),
+    selection_breakdown: toJson(plan.selectionBreakdown || null),
+    fact_check_summary: toJson(plan.factCheckSummary || null),
+    warnings: toJson(plan.warnings || []),
+    source_content_hash: plan.sourceContentHash || null,
+    prompt_version: plan.promptVersion || null,
+  };
+
+  if (existing) {
+    // statusカラムはここで一切触れない(rejectedはrejectedのまま、proposedはproposedのまま維持)。
+    conn
+      .prepare(
+        `UPDATE seo_page_plans SET
+          group_key = :group_key, target_page_name = :target_page_name, target_url = :target_url,
+          primary_task_id = :primary_task_id, primary_keyword = :primary_keyword,
+          supporting_task_ids = :supporting_task_ids, supporting_keywords = :supporting_keywords,
+          excluded_tasks = :excluded_tasks, combined_search_intents = :combined_search_intents,
+          selection_breakdown = :selection_breakdown, fact_check_summary = :fact_check_summary,
+          warnings = :warnings, source_content_hash = :source_content_hash, prompt_version = :prompt_version,
+          updated_at = :updated_at
+        WHERE id = :id`
+      )
+      .run({
+        group_key: row.group_key,
+        target_page_name: row.target_page_name,
+        target_url: row.target_url,
+        primary_task_id: row.primary_task_id,
+        primary_keyword: row.primary_keyword,
+        supporting_task_ids: row.supporting_task_ids,
+        supporting_keywords: row.supporting_keywords,
+        excluded_tasks: row.excluded_tasks,
+        combined_search_intents: row.combined_search_intents,
+        selection_breakdown: row.selection_breakdown,
+        fact_check_summary: row.fact_check_summary,
+        warnings: row.warnings,
+        source_content_hash: row.source_content_hash,
+        prompt_version: row.prompt_version,
+        id: existing.id,
+        updated_at: nowIso,
+      });
+    return { id: existing.id, isNew: false, locked: false, previousStatus: existing.status };
+  }
+
+  const result = conn
+    .prepare(
+      `INSERT INTO seo_page_plans (
+        group_key, target_page_type, target_page_id, target_page_name, target_url,
+        primary_task_id, primary_keyword, supporting_task_ids, supporting_keywords,
+        excluded_tasks, combined_search_intents, selection_breakdown, fact_check_summary,
+        warnings, source_content_hash, prompt_version, status, created_at, updated_at
+      ) VALUES (
+        :group_key, :target_page_type, :target_page_id, :target_page_name, :target_url,
+        :primary_task_id, :primary_keyword, :supporting_task_ids, :supporting_keywords,
+        :excluded_tasks, :combined_search_intents, :selection_breakdown, :fact_check_summary,
+        :warnings, :source_content_hash, :prompt_version, :status, :created_at, :updated_at
+      )`
+    )
+    .run({ ...row, status: plan.status || 'proposed', created_at: nowIso, updated_at: nowIso });
+  return { id: Number(result.lastInsertRowid), isNew: true, locked: false, previousStatus: null };
+}
+
+function updateSeoPagePlanStatus(id, toStatus, nowIso) {
+  if (!ALLOWED_PAGE_PLAN_STATUSES.has(toStatus)) {
+    throw new Error(`updateSeoPagePlanStatus: 不正なstatusです: ${toStatus}`);
+  }
+  const conn = getDb();
+  const current = conn.prepare('SELECT status FROM seo_page_plans WHERE id = ?').get(id);
+  if (!current) throw new Error(`updateSeoPagePlanStatus: page plan id=${id} が見つかりません`);
+  conn.prepare('UPDATE seo_page_plans SET status = :status, updated_at = :updated_at WHERE id = :id').run({
+    status: toStatus,
+    updated_at: nowIso,
+    id,
+  });
+  return { from: current.status, to: toStatus };
+}
+
+function deleteSeoPagePlan(id) {
+  const conn = getDb();
+  const result = conn.prepare('DELETE FROM seo_page_plans WHERE id = ?').run(id);
+  return { deleted: result.changes > 0 };
+}
+
 module.exports = {
   upsertCompetitor,
   getCompetitor,
@@ -1096,4 +1264,11 @@ module.exports = {
   getTaskById,
   listTasks,
   updateTaskStatus,
+  getSeoPagePlanById,
+  getSeoPagePlanByPage,
+  listSeoPagePlans,
+  upsertSeoPagePlan,
+  updateSeoPagePlanStatus,
+  deleteSeoPagePlan,
+  PAGE_PLAN_LOCKED_STATUSES,
 };

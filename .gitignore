@@ -14,3 +14,9 @@ logs/errors.json
 # 競合キーワード分析(Keyword Gap Lite)
 data/seo/
 data/seo_candidates/*.json
+
+# AI Growth Director Draft生成(Sprint 3.2 Phase A、Prompt/LLM応答/検証結果)
+data/seo_drafts/
+
+# 手動生成レポート・エクスポート類(Sprint 2.5以降、CSV/JSONの人間向け出力。DB非連携)
+data/reports/
