@@ -1787,6 +1787,58 @@ function transitionWeeklyRecommendationStatus({ batchDate, expectedCurrentStatus
   return { batchDate, from: current.status, to: nextStatus };
 }
 
+// Sprint 4.1: 自律パブリッシュバッチ(scripts/seo_publisher.js)用。
+// statusが'approved'の週次バンドルのうち、batch_date降順で最新の1件を取得する。
+function getLatestApprovedWeeklyRecommendation() {
+  const conn = getDb();
+  const row = conn
+    .prepare("SELECT * FROM seo_weekly_recommendations WHERE status = 'approved' ORDER BY batch_date DESC LIMIT 1")
+    .get();
+  return row ? parseWeeklyRecommendationJsonFields(row) : null;
+}
+
+// items(JSON配列)内の該当taskIdの要素へ、WordPress投稿結果を安全に書き戻す。
+// 既にwpPostIdが設定済みの場合は何もせず{skipped:true}を返す(二重投稿防止の
+// 最終防衛ライン。呼び出し側がWordPress API呼び出し前にもチェックする想定だが、
+// 実際にDBへ書き込む直前にもう一度この関数内で確認することで、万一チェックと
+// 書き込みの間に別プロセスが同じタスクを処理していた場合の二重記録を防ぐ)。
+function markWeeklyRecommendationItemPublished(batchDate, taskId, { wpPostId, draftStatus }, nowIso) {
+  const conn = getDb();
+  conn.exec('BEGIN');
+  try {
+    const row = conn.prepare('SELECT id, items FROM seo_weekly_recommendations WHERE batch_date = ?').get(batchDate);
+    if (!row) {
+      throw Object.assign(new Error(`markWeeklyRecommendationItemPublished: batch_date=${batchDate} が見つかりません`), {
+        code: 'not_found',
+      });
+    }
+
+    const items = fromJson(row.items) || [];
+    const index = items.findIndex((item) => item.taskId === taskId);
+    if (index === -1) {
+      throw Object.assign(new Error(`markWeeklyRecommendationItemPublished: taskId=${taskId} がitems内に見つかりません`), {
+        code: 'task_not_in_bundle',
+      });
+    }
+
+    if (items[index].wpPostId) {
+      conn.exec('COMMIT');
+      return { skipped: true, reason: 'already_published', wpPostId: items[index].wpPostId };
+    }
+
+    items[index] = { ...items[index], wpPostId, draftStatus };
+    conn
+      .prepare('UPDATE seo_weekly_recommendations SET items = :items, updated_at = :updated_at WHERE id = :id')
+      .run({ items: toJson(items), updated_at: nowIso, id: row.id });
+
+    conn.exec('COMMIT');
+    return { skipped: false, wpPostId, draftStatus };
+  } catch (err) {
+    conn.exec('ROLLBACK');
+    throw err;
+  }
+}
+
 module.exports = {
   upsertCompetitor,
   getCompetitor,
@@ -1852,8 +1904,10 @@ module.exports = {
   insertSeoPageDraft,
   getWeeklyRecommendation,
   getLatestWeeklyRecommendation,
+  getLatestApprovedWeeklyRecommendation,
   upsertWeeklyRecommendation,
   transitionWeeklyRecommendationStatus,
+  markWeeklyRecommendationItemPublished,
   WEEKLY_RECOMMENDATION_LOCKED_STATUSES,
   WEEKLY_RECOMMENDATION_ALLOWED_TRANSITIONS,
 };

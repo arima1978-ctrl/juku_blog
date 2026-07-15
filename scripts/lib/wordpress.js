@@ -134,6 +134,32 @@ async function publishPost(post, { date } = {}) {
   return { wpPostId: created.id, link: created.link, date: created.date };
 }
 
+// Sprint 4.1: AI Growth Director(SEO Task)のcreate_article原稿を、確認前提の
+// 下書き(status:'draft')としてWordPressへ投稿する。publishPost()とは異なり、
+// 承認済み記事(data/posts.sqliteのposts行)ではなくseo_tasks/seo_weekly_recommendations
+// 由来の原稿を扱うため、引数の形も{title, bodyHtml, metaDescription}に絞っている
+// (slug/keywords/予約投稿日時は現時点では扱わない。人間がWordPress管理画面で
+// 下書きを確認してから公開する運用を前提とする)。
+async function createDraftPost({ title, bodyHtml, metaDescription } = {}) {
+  const config = getWpConfig();
+  const jukuConfig = loadJukuConfig();
+  const wpConf = jukuConfig.wordpress || {};
+  const categoryId = wpConf.category_id;
+
+  await assertWordPressTargetIsValid(config, wpConf);
+
+  const body = {
+    title,
+    content: bodyHtml,
+    excerpt: metaDescription || '',
+    status: 'draft',
+  };
+  if (categoryId) body.categories = [categoryId];
+
+  const created = await wpRequest(config, 'POST', 'posts', body);
+  return { wpPostId: created.id, link: created.link, status: created.status };
+}
+
 // WordPress上の実際のstatus(future/publish/draft/pending/trash等)を取得する。
 // 予約投稿(status:future)は認証なしでは見えないため認証付きで取得する。
 // 記事が見つからない(削除された)場合は例外を投げず { status: 'not_found' } を返す。
@@ -181,4 +207,4 @@ async function resolveTagCandidates(keywordsCsv) {
   return results;
 }
 
-module.exports = { publishPost, fetchPostStatus, checkWordPressTargetDryRun, resolveTagCandidates };
+module.exports = { publishPost, createDraftPost, fetchPostStatus, checkWordPressTargetDryRun, resolveTagCandidates };
