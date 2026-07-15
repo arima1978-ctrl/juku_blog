@@ -12,7 +12,13 @@ function loadYaml(relPath) {
   return yaml.load(raw);
 }
 
+// テスト時のみ、JUKU_BLOG_CONFIG_PATH で本番設定(config/juku.yaml)と別の一時ファイルを
+// 指定できるようにする(JUKU_BLOG_DB_PATHと同じ方針。Feature Flag有効時の挙動を
+// 結合テストで検証する際、共有ファイルである本番configを書き換えずに済むようにするため)。
 function loadJukuConfig() {
+  if (process.env.JUKU_BLOG_CONFIG_PATH) {
+    return yaml.load(fs.readFileSync(process.env.JUKU_BLOG_CONFIG_PATH, 'utf8'));
+  }
   return loadYaml('config/juku.yaml');
 }
 

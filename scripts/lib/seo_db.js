@@ -6,6 +6,7 @@
 const { getDb } = require('./db');
 const { normalizeKeyword } = require('./seo/normalizer');
 const { validatePagePlanShape, ALLOWED_PAGE_PLAN_STATUSES } = require('./seo/page_plan_builder');
+const { validatePagePlanTransition, ALLOWED_REVIEW_SOURCES } = require('./seo/page_plan_review');
 
 function toJson(value) {
   return value === undefined || value === null ? null : JSON.stringify(value);
@@ -1217,6 +1218,109 @@ function deleteSeoPagePlan(id) {
   return { deleted: result.changes > 0 };
 }
 
+// ---- seo_page_plan_reviews (Sprint 3.5: Page Plan人間レビュー) -----------
+// updateSeoPagePlanStatus()は既存の単純なstatus更新(内部・テスト用、履歴を残さない)。
+// 正式な人間レビューによるstatus変更は必ずtransitionSeoPagePlanStatus()を使うこと
+// (状態遷移バリデーション+履歴INSERTを同一トランザクションで行う)。
+
+function parsePagePlanReviewJsonFields(row) {
+  return { ...row, metadata: fromJson(row.metadata) || {} };
+}
+
+function listSeoPagePlanReviews(pagePlanId) {
+  const conn = getDb();
+  return conn
+    .prepare('SELECT * FROM seo_page_plan_reviews WHERE page_plan_id = ? ORDER BY id ASC')
+    .all(pagePlanId)
+    .map(parsePagePlanReviewJsonFields);
+}
+
+function getLatestSeoPagePlanReview(pagePlanId) {
+  const conn = getDb();
+  const row = conn
+    .prepare('SELECT * FROM seo_page_plan_reviews WHERE page_plan_id = ? ORDER BY id DESC LIMIT 1')
+    .get(pagePlanId);
+  return row ? parsePagePlanReviewJsonFields(row) : null;
+}
+
+// Page Planのstatusを人間レビュー操作として変更し、同一トランザクションで
+// seo_page_plan_reviewsへ履歴を1行追加する。
+//   - expectedCurrentStatusとDB上の現在statusが異なる場合はpage_plan_status_conflictエラー
+//     (err.code='page_plan_status_conflict')
+//   - 状態遷移・actor/reasonのバリデーション(page_plan_review.js)に失敗した場合は
+//     invalid_transitionエラー(err.code='invalid_transition')
+//   - 対象Page Planが存在しない場合はnot_foundエラー(err.code='not_found')
+//   - 上記いずれの場合もDBは一切変更されない(ROLLBACK)
+// seo_tasksへは一切書き込まない(Task statusはこの関数の対象外)。
+function transitionSeoPagePlanStatus({ pagePlanId, expectedCurrentStatus, nextStatus, actor, reason, source }, nowIso) {
+  if (!ALLOWED_REVIEW_SOURCES.has(source)) {
+    throw new Error(`transitionSeoPagePlanStatus: 不正なsourceです: ${source}`);
+  }
+
+  const conn = getDb();
+  conn.exec('BEGIN');
+  let current;
+  try {
+    current = conn.prepare('SELECT id, status FROM seo_page_plans WHERE id = ?').get(pagePlanId);
+    if (!current) {
+      throw Object.assign(new Error(`transitionSeoPagePlanStatus: page plan id=${pagePlanId} が見つかりません`), {
+        code: 'not_found',
+      });
+    }
+    if (current.status !== expectedCurrentStatus) {
+      throw Object.assign(new Error('page_plan_status_conflict'), {
+        code: 'page_plan_status_conflict',
+        actualStatus: current.status,
+      });
+    }
+
+    const validation = validatePagePlanTransition({ currentStatus: current.status, nextStatus, actor, reason });
+    if (!validation.valid) {
+      throw Object.assign(new Error(`transitionSeoPagePlanStatus: 不正な状態遷移です - ${validation.errors.join(' / ')}`), {
+        code: 'invalid_transition',
+        errors: validation.errors,
+      });
+    }
+
+    conn.prepare('UPDATE seo_page_plans SET status = :status, updated_at = :updated_at WHERE id = :id').run({
+      status: nextStatus,
+      updated_at: nowIso,
+      id: pagePlanId,
+    });
+
+    conn
+      .prepare(
+        `INSERT INTO seo_page_plan_reviews (
+          page_plan_id, from_status, to_status, actor, reason, source, metadata, created_at
+        ) VALUES (
+          :page_plan_id, :from_status, :to_status, :actor, :reason, :source, :metadata, :created_at
+        )`
+      )
+      .run({
+        page_plan_id: pagePlanId,
+        from_status: current.status,
+        to_status: nextStatus,
+        actor,
+        reason: reason || null,
+        source,
+        metadata: toJson({}),
+        created_at: nowIso,
+      });
+
+    conn.exec('COMMIT');
+  } catch (err) {
+    conn.exec('ROLLBACK');
+    throw err;
+  }
+
+  return {
+    pagePlanId,
+    from: current.status,
+    to: nextStatus,
+    review: getLatestSeoPagePlanReview(pagePlanId),
+  };
+}
+
 module.exports = {
   upsertCompetitor,
   getCompetitor,
@@ -1271,4 +1375,7 @@ module.exports = {
   updateSeoPagePlanStatus,
   deleteSeoPagePlan,
   PAGE_PLAN_LOCKED_STATUSES,
+  listSeoPagePlanReviews,
+  getLatestSeoPagePlanReview,
+  transitionSeoPagePlanStatus,
 };
