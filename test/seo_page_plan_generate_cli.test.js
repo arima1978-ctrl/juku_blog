@@ -11,18 +11,34 @@ const { test, after } = require('node:test');
 const assert = require('node:assert/strict');
 const { execFileSync } = require('node:child_process');
 const fs = require('node:fs');
+const yaml = require('js-yaml');
 const { ROOT } = require('../scripts/lib/config');
 const { closeDb, getDb } = require('../scripts/lib/db');
 const seoDb = require('../scripts/lib/seo_db');
 const { resolvePagePlans, parseArgs, formatText } = require('../scripts/seo_page_plan_generate');
 
+// growth_director.enabled=false(既定)時の挙動を検証するテストは、実configの現在値
+// (本番アクティベーション後はtrue)に依存せず安定して再現するため、一時configを使う。
+function writeDisabledGrowthDirectorConfig(tmpConfigPath) {
+  const config = yaml.load(fs.readFileSync(path.join(ROOT, 'config', 'juku.yaml'), 'utf8'));
+  config.features.growth_director.enabled = false;
+  fs.writeFileSync(tmpConfigPath, yaml.dump(config), 'utf8');
+  return tmpConfigPath;
+}
+
+const TMP_DISABLED_CONFIG = path.join(os.tmpdir(), `juku_blog_page_plan_generate_disabled_config_${process.pid}.yaml`);
+writeDisabledGrowthDirectorConfig(TMP_DISABLED_CONFIG);
+const disabledEnv = { ...process.env, JUKU_BLOG_CONFIG_PATH: TMP_DISABLED_CONFIG };
+
 after(() => {
   closeDb();
-  try {
-    fs.unlinkSync(process.env.JUKU_BLOG_DB_PATH);
-  } catch {
-    // 既に無ければ無視
-  }
+  [process.env.JUKU_BLOG_DB_PATH, TMP_DISABLED_CONFIG].forEach((f) => {
+    try {
+      fs.unlinkSync(f);
+    } catch {
+      // 既に無ければ無視
+    }
+  });
 });
 
 const nowIso = '2026-07-15T00:00:00.000Z';
@@ -65,6 +81,7 @@ test('CLI: growth_director.enabled=false(既定)なら無処理で終了する',
   const output = execFileSync('node', [path.join(ROOT, 'scripts', 'seo_page_plan_generate.js'), '--dry-run', '--format=json'], {
     cwd: ROOT,
     encoding: 'utf8',
+    env: disabledEnv,
   });
   assert.match(output, /無処理で終了/);
 });
