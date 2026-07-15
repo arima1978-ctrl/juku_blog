@@ -34,6 +34,8 @@ const { computeNextScheduleSlot, isWithinPublishWindow, checkStreak } = require(
 const { safeJsonParse } = require('./lib/json_field');
 const { projectThemeCalendar } = require('./lib/theme_calendar');
 const seoDb = require('./lib/seo_db');
+const { requireLocalhost } = require('./lib/require_localhost');
+const { mondayOfWeek } = require('./seo_weekly_director');
 
 const PORT = process.env.PORT || 3013;
 const DASHBOARD_URL = process.env.DASHBOARD_URL || `http://localhost:${PORT}`;
@@ -435,6 +437,93 @@ app.get('/api/seo/page-plans/:id', (req, res) => {
     supportingTasks,
     reviewHistory: seoDb.listSeoPagePlanReviews(plan.id),
   });
+});
+
+// --- AI Weekly Director(週次推薦、Sprint 4.0) ---
+// Page Plan同様、features.growth_director.enabledがfalseの間は404を返す
+// (新規の監査対象データのため、既定で無効化されている間は一切露出させない)。
+// 状態変更(承認)はrequireLocalhostで保護する(このAPIサーバーには認証機構が無いため、
+// 自動投稿ジョブに繋がりうる操作をループバックアドレス以外から受け付けない)。
+
+const SEO_DRAFTS_DIR = path.resolve(ROOT, 'data', 'seo_drafts');
+
+// draftPromptPathはDB内部生成値(ユーザー入力ではない)だが、念のためdata/seo_drafts/
+// 配下であることを検証してから読み込む(パストラバーサル対策の多層防御)。
+function readDraftPrompt(draftPromptPath) {
+  if (!draftPromptPath) return null;
+  const resolved = path.resolve(ROOT, draftPromptPath);
+  if (resolved !== SEO_DRAFTS_DIR && !resolved.startsWith(SEO_DRAFTS_DIR + path.sep)) return null;
+  if (!fs.existsSync(resolved)) return null;
+  try {
+    const parsed = JSON.parse(fs.readFileSync(resolved, 'utf8'));
+    return {
+      promptVersion: parsed.prompt_version ?? null,
+      promptMode: parsed.prompt_mode ?? null,
+      gapType: parsed.gap_type ?? null,
+      text: parsed.prompt ?? null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function toWeeklyRecommendationItemDetail(item) {
+  return {
+    ...item,
+    task: seoDb.getTaskById(item.taskId) || null,
+    draftPrompt: readDraftPrompt(item.draftPromptPath),
+  };
+}
+
+app.get('/api/seo/weekly-recommendation', (req, res) => {
+  if (!requireGrowthDirectorEnabled(res)) return;
+
+  const currentWeekMonday = mondayOfWeek(new Date());
+  const requestedBatchDate = req.query.batch_date || currentWeekMonday;
+
+  let rec = seoDb.getWeeklyRecommendation(requestedBatchDate);
+  if (!rec) rec = seoDb.getLatestWeeklyRecommendation();
+  if (!rec) return res.status(404).json({ error: 'not_found' });
+
+  res.json({
+    batchDate: rec.batch_date,
+    isLatest: rec.batch_date === currentWeekMonday,
+    status: rec.status,
+    curationTier: rec.curation_tier,
+    totalExpectedCv: rec.total_expected_cv,
+    totalEffortMinutes: rec.total_effort_minutes,
+    taskTypeBreakdown: rec.task_type_breakdown,
+    createdAt: rec.created_at,
+    updatedAt: rec.updated_at,
+    items: rec.items.map(toWeeklyRecommendationItemDetail),
+  });
+});
+
+app.post('/api/seo/weekly-recommendation/:batchDate/approve', requireLocalhost, (req, res) => {
+  if (!requireGrowthDirectorEnabled(res)) return;
+
+  const { batchDate } = req.params;
+  const expectedCurrentStatus = req.body && req.body.expectedCurrentStatus;
+  if (!expectedCurrentStatus) {
+    return res.status(400).json({ error: 'expected_current_status_required' });
+  }
+
+  try {
+    const result = seoDb.transitionWeeklyRecommendationStatus(
+      { batchDate, expectedCurrentStatus, nextStatus: 'approved' },
+      new Date().toISOString()
+    );
+    res.json({ ok: true, batchDate: result.batchDate, status: result.to });
+  } catch (err) {
+    if (err.code === 'not_found') return res.status(404).json({ error: 'not_found' });
+    if (err.code === 'status_conflict') {
+      return res.status(409).json({ error: 'status_conflict', actualStatus: err.actualStatus });
+    }
+    if (err.code === 'invalid_transition') {
+      return res.status(400).json({ error: 'invalid_transition', message: err.message });
+    }
+    throw err;
+  }
 });
 
 app.listen(PORT, () => {
