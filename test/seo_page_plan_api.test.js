@@ -17,12 +17,20 @@ const { ROOT } = require('../scripts/lib/config');
 
 const TMP_DB = path.join(os.tmpdir(), `juku_blog_page_plan_api_test_${process.pid}.sqlite`);
 const TMP_CONFIG_ENABLED = path.join(os.tmpdir(), `juku_blog_page_plan_api_config_enabled_${process.pid}.yaml`);
-const PORT_DISABLED = 34214; // Feature Flag OFF(既定config)検証用
+const TMP_CONFIG_DISABLED = path.join(os.tmpdir(), `juku_blog_page_plan_api_config_disabled_${process.pid}.yaml`);
+const PORT_DISABLED = 34214; // Feature Flag OFF(一時config注入)検証用
 const PORT_ENABLED = 34215; // Feature Flag ON(一時config注入)検証用
 
 fs.writeFileSync(
   TMP_CONFIG_ENABLED,
   `features:\n  growth_director:\n    enabled: true\n`,
+  'utf8'
+);
+// 実configの現在値(本番アクティベーション後はtrue)に依存せず、Feature Flag OFF時の
+// 挙動を安定して検証するため、専用の一時configを注入する。
+fs.writeFileSync(
+  TMP_CONFIG_DISABLED,
+  `features:\n  growth_director:\n    enabled: false\n`,
   'utf8'
 );
 
@@ -50,7 +58,7 @@ const nowIso = '2026-07-16T00:00:00.000Z';
 test('setup: api-server.jsをFeature Flag OFF(既定config)・一時DB・専用ポートで起動する', async () => {
   disabledServerProcess = spawn('node', [path.join(ROOT, 'scripts', 'api-server.js')], {
     cwd: ROOT,
-    env: { ...process.env, JUKU_BLOG_DB_PATH: TMP_DB, PORT: String(PORT_DISABLED) },
+    env: { ...process.env, JUKU_BLOG_DB_PATH: TMP_DB, JUKU_BLOG_CONFIG_PATH: TMP_CONFIG_DISABLED, PORT: String(PORT_DISABLED) },
     stdio: 'ignore',
   });
   await waitForServerReady(PORT_DISABLED, '/api/seo/competitors');
@@ -219,6 +227,11 @@ after(async () => {
   }
   try {
     fs.unlinkSync(TMP_CONFIG_ENABLED);
+  } catch {
+    // 既に無ければ無視
+  }
+  try {
+    fs.unlinkSync(TMP_CONFIG_DISABLED);
   } catch {
     // 既に無ければ無視
   }

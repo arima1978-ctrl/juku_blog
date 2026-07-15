@@ -14,25 +14,40 @@ const TMP_DB = path.join(os.tmpdir(), `juku_blog_seo_task_cli_test_${process.pid
 process.env.JUKU_BLOG_DB_PATH = TMP_DB;
 
 const { execFileSync } = require('node:child_process');
+const yaml = require('js-yaml');
 const { ROOT } = require('../scripts/lib/config');
 const { closeDb } = require('../scripts/lib/db');
 const seoDb = require('../scripts/lib/seo_db');
 
+// growth_director.enabled=false(既定)時の挙動を検証するテストは、実configの現在値
+// (本番アクティベーション後はtrue)に依存せず安定して再現するため、一時configを使う。
+function writeDisabledGrowthDirectorConfig(tmpConfigPath) {
+  const config = yaml.load(fs.readFileSync(path.join(ROOT, 'config', 'juku.yaml'), 'utf8'));
+  config.features.growth_director.enabled = false;
+  fs.writeFileSync(tmpConfigPath, yaml.dump(config), 'utf8');
+  return tmpConfigPath;
+}
+
+const TMP_DISABLED_CONFIG = path.join(os.tmpdir(), `juku_blog_seo_task_cli_disabled_config_${process.pid}.yaml`);
+writeDisabledGrowthDirectorConfig(TMP_DISABLED_CONFIG);
+
 after(() => {
   closeDb();
-  try {
-    fs.unlinkSync(TMP_DB);
-  } catch {
-    // 既に無ければ無視
-  }
+  [TMP_DB, TMP_DISABLED_CONFIG].forEach((f) => {
+    try {
+      fs.unlinkSync(f);
+    } catch {
+      // 既に無ければ無視
+    }
+  });
 });
 
-function run(script, args = []) {
-  return execFileSync('node', [path.join(ROOT, 'scripts', script), ...args], { cwd: ROOT, encoding: 'utf8', env: process.env });
+function run(script, args = [], env = process.env) {
+  return execFileSync('node', [path.join(ROOT, 'scripts', script), ...args], { cwd: ROOT, encoding: 'utf8', env });
 }
 
 test('seo_task_generate.js: growth_director.enabled=false(既定)なら無処理で終了する', () => {
-  const output = run('seo_task_generate.js', ['--dry-run']);
+  const output = run('seo_task_generate.js', ['--dry-run'], { ...process.env, JUKU_BLOG_CONFIG_PATH: TMP_DISABLED_CONFIG });
   assert.match(output, /無処理で終了/);
 });
 
