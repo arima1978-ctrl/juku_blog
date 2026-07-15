@@ -36,6 +36,7 @@ const { projectThemeCalendar } = require('./lib/theme_calendar');
 const seoDb = require('./lib/seo_db');
 const { requireLocalhost } = require('./lib/require_localhost');
 const { mondayOfWeek } = require('./seo_weekly_director');
+const { resultFilePathFor } = require('./seo_publisher');
 
 const PORT = process.env.PORT || 3013;
 const DASHBOARD_URL = process.env.DASHBOARD_URL || `http://localhost:${PORT}`;
@@ -467,11 +468,35 @@ function readDraftPrompt(draftPromptPath) {
   }
 }
 
+// draftPromptPathの拡張子を.result.jsonへ置き換えた規約パス(scripts/seo_publisher.js
+// のresultFilePathForと同じ規約)が実在すれば、Claude Code subagent等が既に生成した
+// 完成原稿(タイトル・本文HTML・メタディスクリプション)をダッシュボードで先読みできる
+// ようにする。パストラバーサル対策はreadDraftPromptと同じくdata/seo_drafts/配下限定。
+function readDraftResult(draftPromptPath) {
+  const resultPath = resultFilePathFor(draftPromptPath);
+  if (!resultPath) return null;
+  const resolved = path.resolve(ROOT, resultPath);
+  if (resolved !== SEO_DRAFTS_DIR && !resolved.startsWith(SEO_DRAFTS_DIR + path.sep)) return null;
+  if (!fs.existsSync(resolved)) return null;
+  try {
+    const parsed = JSON.parse(fs.readFileSync(resolved, 'utf8'));
+    if (parsed.can_generate !== true) return null;
+    return {
+      title: parsed.title ?? null,
+      bodyHtml: parsed.body_html ?? null,
+      metaDescription: parsed.meta_description ?? null,
+    };
+  } catch {
+    return null;
+  }
+}
+
 function toWeeklyRecommendationItemDetail(item) {
   return {
     ...item,
     task: seoDb.getTaskById(item.taskId) || null,
     draftPrompt: readDraftPrompt(item.draftPromptPath),
+    draftResult: readDraftResult(item.draftPromptPath),
   };
 }
 
