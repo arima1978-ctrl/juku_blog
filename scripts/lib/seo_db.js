@@ -955,7 +955,11 @@ function upsertTask(task, nowIso) {
           target_page_type = :target_page_type, target_page_id = :target_page_id, target_page_name = :target_page_name,
           priority_score = :priority_score, opportunity_score = :opportunity_score,
           opportunity_breakdown = :opportunity_breakdown, estimated_effort_minutes = :estimated_effort_minutes,
-          recommended_action = :recommended_action, reason = :reason, updated_at = :updated_at
+          recommended_action = :recommended_action, reason = :reason,
+          difficulty_score = :difficulty_score, difficulty_breakdown = :difficulty_breakdown,
+          expected_impact_clicks = :expected_impact_clicks, expected_impact_cv = :expected_impact_cv,
+          roi_priority_score = :roi_priority_score, roi_score_computed_at = :roi_score_computed_at,
+          updated_at = :updated_at
         WHERE id = :id`
       )
       .run({
@@ -971,6 +975,12 @@ function upsertTask(task, nowIso) {
         estimated_effort_minutes: task.estimated_effort_minutes ?? null,
         recommended_action: task.recommended_action,
         reason: toJson(task.reason),
+        difficulty_score: task.difficulty_score ?? null,
+        difficulty_breakdown: toJson(task.difficulty_breakdown),
+        expected_impact_clicks: task.expected_impact_clicks ?? null,
+        expected_impact_cv: task.expected_impact_cv ?? null,
+        roi_priority_score: task.roi_priority_score ?? null,
+        roi_score_computed_at: task.roi_score_computed_at ?? null,
         updated_at: nowIso,
       });
     return { id: existing.id, isNew: false, previousStatus: existing.status };
@@ -981,12 +991,18 @@ function upsertTask(task, nowIso) {
         task_type, target_url, target_post_id, target_page_type, target_page_id, target_page_name,
         target_keyword, source_candidate_id,
         priority_score, opportunity_score, opportunity_breakdown, estimated_effort_minutes,
-        recommended_action, reason, status, created_at, updated_at
+        recommended_action, reason, status,
+        difficulty_score, difficulty_breakdown, expected_impact_clicks, expected_impact_cv,
+        roi_priority_score, roi_score_computed_at,
+        created_at, updated_at
       ) VALUES (
         :task_type, :target_url, :target_post_id, :target_page_type, :target_page_id, :target_page_name,
         :target_keyword, :source_candidate_id,
         :priority_score, :opportunity_score, :opportunity_breakdown, :estimated_effort_minutes,
-        :recommended_action, :reason, :status, :created_at, :updated_at
+        :recommended_action, :reason, :status,
+        :difficulty_score, :difficulty_breakdown, :expected_impact_clicks, :expected_impact_cv,
+        :roi_priority_score, :roi_score_computed_at,
+        :created_at, :updated_at
       )`
     )
     .run({
@@ -1005,6 +1021,12 @@ function upsertTask(task, nowIso) {
       recommended_action: task.recommended_action,
       reason: toJson(task.reason),
       status: task.status || 'proposed',
+      difficulty_score: task.difficulty_score ?? null,
+      difficulty_breakdown: toJson(task.difficulty_breakdown),
+      expected_impact_clicks: task.expected_impact_clicks ?? null,
+      expected_impact_cv: task.expected_impact_cv ?? null,
+      roi_priority_score: task.roi_priority_score ?? null,
+      roi_score_computed_at: task.roi_score_computed_at ?? null,
       created_at: nowIso,
       updated_at: nowIso,
     });
@@ -1012,7 +1034,12 @@ function upsertTask(task, nowIso) {
 }
 
 function parseTaskJsonFields(row) {
-  return { ...row, opportunity_breakdown: fromJson(row.opportunity_breakdown), reason: fromJson(row.reason) };
+  return {
+    ...row,
+    opportunity_breakdown: fromJson(row.opportunity_breakdown),
+    reason: fromJson(row.reason),
+    difficulty_breakdown: fromJson(row.difficulty_breakdown),
+  };
 }
 
 function getTaskById(id) {
