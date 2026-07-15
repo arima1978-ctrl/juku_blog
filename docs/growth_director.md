@@ -228,6 +228,79 @@ search_intentの組み合わせは決定的マッピング(`INTENT_COMPATIBILITY
 - Dashboard表示・承認/編集/却下UI
 - WordPress固定ページ・記事への反映
 
+## Page Plan人間レビューフロー(Sprint 3.5)
+
+Page Planは保存されただけでは「まだ確認されていない改善計画」に過ぎない。人間が内容を確認し、
+承認/却下するための状態遷移・監査履歴を`scripts/lib/seo/page_plan_review.js`
+(決定的な遷移バリデーション、LLM不使用)+`scripts/lib/seo_db.js`の
+`transitionSeoPagePlanStatus()`(status更新+履歴INSERTを同一トランザクションで実行)で提供する。
+
+### 許可される状態遷移
+
+```
+proposed  → reviewing / rejected
+reviewing → approved / rejected / proposed
+approved  → (終端。以後の遷移は一切許可しない)
+rejected  → (V1では終端として扱う。rejected→proposedの明示的な再開操作は未実装)
+```
+
+`proposed→approved`のような直接遷移、および`approved`/`rejected`からのあらゆる遷移は拒否する。
+`rejected`の再検討は、今回は既存のPage Plan再生成(内容更新・statusは`rejected`のまま維持)の
+延長として扱い、「reopen」に相当する専用操作は実装していない(将来Sprintで、理由・actor必須の
+明示的な再開操作として別途設計する)。
+
+`→ rejected`および`reviewing → proposed`の遷移はreason必須(却下・差し戻しの理由を必ず残す)。
+`proposed → reviewing`・`reviewing → approved`はreason任意。actorは常に必須(上限100文字)。
+reasonの上限は1000文字。actor/reasonはHTMLタグ・Markdownコードフェンスを含められない
+(将来Dashboard表示時のXSS対策は`escapeHtml()`等での出力時エスケープが前提。APIはJSONを返すのみで
+HTMLへの変換は行わない)。
+
+### 既存のupsertロックとの整合
+
+`upsertSeoPagePlan`(Page Plan再生成CLI/内部処理)は、既存Planが`approved`/`reviewing`の間は
+内容を上書きしない(Sprint 3.4で導入済み)。人間レビューの状態遷移(`proposed→reviewing`)後は
+再生成による内容の勝手な書き換えが起きなくなり、`reviewing→approved`後も同様に恒久的に保護される。
+`rejected`は内容更新を許可したままだが、status自体を自動で`proposed`へ戻すことはない
+(却下判断そのものは維持し、再レビューには別途明示的な操作が必要という設計を統一している)。
+
+### 同時実行の競合防止(expected status)
+
+`transitionSeoPagePlanStatus({ pagePlanId, expectedCurrentStatus, nextStatus, actor, reason, source })`
+は、DB上の現在statusが`expectedCurrentStatus`と異なる場合、更新せず`page_plan_status_conflict`
+エラーを投げる(楽観的ロックと同様の考え方)。status更新とレビュー履歴(`seo_page_plan_reviews`)
+のINSERTは1つのトランザクション(`BEGIN`/`COMMIT`/`ROLLBACK`)で行われ、片方だけが反映される
+状態にはならない。
+
+### レビュー履歴(`seo_page_plan_reviews`)
+
+`page_plan_id`・変更前後のstatus・actor・reason・`source`(`cli`/`api`/`dashboard`/`system`、
+アプリ層で許可値を検証)・`metadata`(JSON、個人情報・秘密情報は保存しない)・`created_at`を
+1行ずつ追加していく監査ログ。上書き・削除はしない。
+
+### CLI・API
+
+- CLI(`scripts/seo_page_plan_review.js`)は既定でdry-run。`--save`明示時のみDBへ反映する
+  (`--dry-run`と`--save`の同時指定はエラー)。
+- 読み取り専用API(`GET /api/seo/page-plans`・`GET /api/seo/page-plans/:id`)を追加した。
+  **status変更API(POST)は今回実装していない**: このAPIサーバーには認証機構が無く、
+  `app.listen()`もhost制限をしていないため(全インターフェースで待ち受ける)、監査履歴を伴う
+  人間レビューの承認/却下を認証なしHTTPエンドポイントとして公開するのは安全性の観点から
+  採用しなかった。status変更は当面CLIのみに限定する。読み取りAPIは
+  `features.growth_director.enabled`がfalseの間、404(`feature_disabled`)を返す
+  (既存の候補/Task一覧APIはフラグに関わらず閲覧可能な方針だが、Page Plan APIは今回新規の
+  監査対象機能のため、既定で無効化されている間は一切露出させない設計とした)。
+
+### Task statusとの関係(維持)
+
+Page Plan・レビュー履歴のいずれの操作も、`seo_tasks`のstatusを一切変更しない
+(Sprint 3.4からの方針を維持)。
+
+### 未実装(Sprint 3.5時点)
+
+- `rejected→proposed`の明示的な再開(reopen)操作
+- Dashboardでのレビュー操作画面
+- status変更API(認証機構が無いため、CLIのみに限定)
+
 ## 今回実装しなかったもの(Sprint 2時点)
 
 - `seo_school_pages`のようなDBテーブル(校舎ページはconfig/school_pages.yamlのみで管理)

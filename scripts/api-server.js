@@ -353,6 +353,90 @@ app.post('/api/growth/tasks/:id/reject', (req, res) => {
   res.json({ ok: true, ...result });
 });
 
+// --- AI Growth Director(Page Plan、Sprint 3.5) ---
+// 読み取りのみを提供する(status変更はscripts/seo_page_plan_review.js CLI経由のみ)。
+// 理由: このAPIサーバーには認証機構が無く、app.listen()もhost制限をしていないため、
+// 監査履歴を伴う人間レビューの状態変更(承認/却下)を認証なしHTTPエンドポイントとして
+// 公開するのは安全性の観点から採用しない。読み取り専用エンドポイントに限定し、
+// 既存のfeatures.growth_director.enabledがfalseの間は404を返す
+// (候補/Task一覧はフラグに関わらず閲覧可能な既存方針とは異なり、Page Planは
+// 今回新規の監査対象機能のため、既定で無効化されている間は一切露出させない)。
+function requireGrowthDirectorEnabled(res) {
+  const config = loadJukuConfig();
+  const feature = config.features && config.features.growth_director;
+  if (!feature || !feature.enabled) {
+    res.status(404).json({ error: 'feature_disabled' });
+    return false;
+  }
+  return true;
+}
+
+function toPagePlanSummary(plan) {
+  return {
+    id: plan.id,
+    groupKey: plan.group_key,
+    targetPageType: plan.target_page_type,
+    targetPageId: plan.target_page_id,
+    targetPageName: plan.target_page_name,
+    targetUrl: plan.target_url,
+    primaryTaskId: plan.primary_task_id,
+    primaryKeyword: plan.primary_keyword,
+    supportingTaskIds: plan.supporting_task_ids,
+    supportingKeywords: plan.supporting_keywords,
+    status: plan.status,
+    warnings: plan.warnings,
+    createdAt: plan.created_at,
+    updatedAt: plan.updated_at,
+  };
+}
+
+app.get('/api/seo/page-plans', (req, res) => {
+  if (!requireGrowthDirectorEnabled(res)) return;
+  const { status, page_type: pageType, page_id: pageId } = req.query;
+  let plans = seoDb.listSeoPagePlans({ status });
+  if (pageType) plans = plans.filter((p) => p.target_page_type === pageType);
+  if (pageId) plans = plans.filter((p) => p.target_page_id === pageId);
+  res.json(plans.map(toPagePlanSummary));
+});
+
+app.get('/api/seo/page-plans/:id', (req, res) => {
+  if (!requireGrowthDirectorEnabled(res)) return;
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid_id' });
+
+  const plan = seoDb.getSeoPagePlanById(id);
+  if (!plan) return res.status(404).json({ error: 'not_found' });
+
+  const primaryTask = seoDb.getTaskById(plan.primary_task_id);
+  const supportingTasks = (plan.supporting_task_ids || []).map((taskId) => seoDb.getTaskById(taskId)).filter(Boolean);
+
+  res.json({
+    id: plan.id,
+    groupKey: plan.group_key,
+    targetPageType: plan.target_page_type,
+    targetPageId: plan.target_page_id,
+    targetPageName: plan.target_page_name,
+    targetUrl: plan.target_url,
+    primaryTaskId: plan.primary_task_id,
+    primaryKeyword: plan.primary_keyword,
+    supportingTaskIds: plan.supporting_task_ids,
+    supportingKeywords: plan.supporting_keywords,
+    excludedTasks: plan.excluded_tasks,
+    combinedSearchIntents: plan.combined_search_intents,
+    selectionBreakdown: plan.selection_breakdown,
+    factCheckSummary: plan.fact_check_summary,
+    warnings: plan.warnings,
+    sourceContentHash: plan.source_content_hash,
+    promptVersion: plan.prompt_version,
+    status: plan.status,
+    createdAt: plan.created_at,
+    updatedAt: plan.updated_at,
+    primaryTask,
+    supportingTasks,
+    reviewHistory: seoDb.listSeoPagePlanReviews(plan.id),
+  });
+});
+
 app.listen(PORT, () => {
   console.log(`[api-server] juku-blog dashboard: http://localhost:${PORT}`);
 });

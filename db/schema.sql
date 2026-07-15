@@ -469,3 +469,26 @@ CREATE TABLE IF NOT EXISTS seo_page_plans (
   FOREIGN KEY (primary_task_id) REFERENCES seo_tasks(id)
 );
 CREATE INDEX IF NOT EXISTS idx_seo_page_plans_status ON seo_page_plans(status);
+
+-- Sprint 3.5: Page Planの人間レビュー履歴(監査ログ)。status変更のたびに1行追加し、
+-- 過去の変更履歴は上書き・削除しない(seo_page_plans.status自体は現在値のみを保持する)。
+-- 許可されるstatus遷移・source値はアプリ層(scripts/lib/seo/page_plan_review.js)で検証する
+-- (このリポジトリの既存方針としてSQLのCHECK制約は使わない)。
+CREATE TABLE IF NOT EXISTS seo_page_plan_reviews (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  page_plan_id      INTEGER NOT NULL,
+
+  from_status       TEXT NOT NULL,
+  to_status         TEXT NOT NULL,
+
+  actor             TEXT NOT NULL,
+  reason            TEXT,
+
+  source            TEXT NOT NULL DEFAULT 'manual', -- cli/api/dashboard/system(アプリ層で検証)
+  metadata          TEXT NOT NULL DEFAULT '{}',      -- JSON。個人情報・秘密情報は保存しない
+
+  created_at        TEXT NOT NULL,
+
+  FOREIGN KEY (page_plan_id) REFERENCES seo_page_plans(id)
+);
+CREATE INDEX IF NOT EXISTS idx_seo_page_plan_reviews_plan_id ON seo_page_plan_reviews(page_plan_id);
