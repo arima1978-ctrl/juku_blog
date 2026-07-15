@@ -74,6 +74,16 @@ function computeApprovalPreview(post) {
 }
 
 const app = express();
+// 本番環境はNginxが同一ホスト上でリバースプロキシしているため、trust proxyを設定しないと
+// req.ipが常にNginx自身のループバックアドレスになり、requireLocalhostが実質無効化される
+// (誰が接続しても127.0.0.1と評価されてしまう)。
+// 'true'(すべてのプロキシを信頼)ではなく'loopback'を指定する: 'true'だと転送元が
+// クライアント自身から送られてきたX-Forwarded-Forの値をどこまでも遡って信頼してしまうため、
+// 悪意ある接続者が`X-Forwarded-For: 127.0.0.1`を自分で付与するだけでrequireLocalhostを
+// 偽装突破できてしまう。'loopback'は「直前のホップがループバックアドレス(=Nginx自身)である
+// 場合のみ、そのホップが付与したX-Forwarded-Forを1段だけ信頼する」設定であり、
+// このデプロイ構成(Nginx1段のみ、同一ホスト)に対して安全に一致する。
+app.set('trust proxy', 'loopback');
 app.use(express.json());
 // プロジェクトルート全体を静的配信するとconfig/scriptsのソースまで公開されてしまうため、
 // dashboard.html 単体のみを配信する(外部公開を想定したセキュリティ対応)。
