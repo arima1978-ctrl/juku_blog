@@ -9,11 +9,31 @@
 const { test, after } = require('node:test');
 const assert = require('node:assert/strict');
 const { spawn } = require('node:child_process');
+const { DatabaseSync } = require('node:sqlite');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const yaml = require('js-yaml');
 const { ROOT } = require('../scripts/lib/config');
+
+// 安全カナリア: このファイルはJUKU_BLOG_DB_PATH切り替え+require.cache操作を多用するため、
+// 万一どこかで一時DBへの切り替えが効かず実DB(data/posts.sqlite)へ書き込んでしまった場合に
+// 検知できるよう、db.js/seo_db.jsのキャッシュ機構を一切経由しない生のDatabaseSyncで
+// 実DBのseo_tasks/seo_keyword_candidates件数を直接スナップショットし、after()で不変を検証する。
+const REAL_DB_PATH = path.join(ROOT, 'data', 'posts.sqlite');
+function countRealDbRows() {
+  const raw = new DatabaseSync(REAL_DB_PATH, { readOnly: true });
+  try {
+    return {
+      seoTasks: raw.prepare('SELECT COUNT(*) c FROM seo_tasks').get().c,
+      seoKeywordCandidates: raw.prepare('SELECT COUNT(*) c FROM seo_keyword_candidates').get().c,
+      seoWeeklyRecommendations: raw.prepare('SELECT COUNT(*) c FROM seo_weekly_recommendations').get().c,
+    };
+  } finally {
+    raw.close();
+  }
+}
+const realDbSnapshotBefore = countRealDbRows();
 const { mondayOfWeek } = require('../scripts/seo_weekly_director');
 const { promptFilePath } = require('../scripts/lib/seo/weekly_draft_dispatcher');
 const { requireLocalhost, isLocalhostIp } = require('../scripts/lib/require_localhost');
@@ -87,6 +107,14 @@ after(() => {
       // 既に無ければ無視
     }
   }
+  // 安全カナリア: 後始末が終わった時点で実DBの件数がテスト開始前と一致するか検証する。
+  // 万一どこかで一時DB切り替えが効かず実DBを汚染していた場合、ここで確実に検知する。
+  const realDbSnapshotAfter = countRealDbRows();
+  assert.deepEqual(
+    realDbSnapshotAfter,
+    realDbSnapshotBefore,
+    `安全カナリア失敗: 実DB(data/posts.sqlite)の件数がテスト前後で変化しています(before=${JSON.stringify(realDbSnapshotBefore)}, after=${JSON.stringify(realDbSnapshotAfter)})`
+  );
 });
 
 // --- requireLocalhostミドルウェアの単体テスト(非ローカルホスト拒否を決定的に検証) ---
