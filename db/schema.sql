@@ -542,3 +542,25 @@ CREATE TABLE IF NOT EXISTS seo_page_drafts (
   FOREIGN KEY (page_plan_id) REFERENCES seo_page_plans(id)
 );
 CREATE INDEX IF NOT EXISTS idx_seo_page_drafts_page_plan_id ON seo_page_drafts(page_plan_id);
+
+-- Sprint 3.9: AI Weekly Director。毎週の月曜日(batch_date)ごとに、その週に着手すべき
+-- として選定されたTask(3〜5件)と、各Taskに対して事前生成したDraft Prompt(ファイル
+-- パスのみ、本文はdata/seo_drafts/配下のファイルに保存)への参照をまとめて保持する。
+-- seo_tasks本体・seo_page_plans・seo_page_draftsのいずれも変更しない(別概念として
+-- 独立したテーブルにする、既存のPage Plan/Page Draftと同じ設計方針)。
+CREATE TABLE IF NOT EXISTS seo_weekly_recommendations (
+  id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+  batch_date            TEXT NOT NULL,                      -- その週の月曜日(YYYY-MM-DD形式)
+  status                TEXT NOT NULL DEFAULT 'proposed',   -- proposed/approved/archived
+  task_ids              TEXT NOT NULL DEFAULT '[]',         -- JSON配列: [61, 64, ...]
+  items                 TEXT NOT NULL DEFAULT '[]',         -- JSON配列(タスク詳細・draftStatus・Promptファイルパス等)
+  total_expected_cv     REAL,                               -- 選定タスクの期待CV増の合計
+  total_effort_minutes  INTEGER,                            -- 選定タスクの工数(分)の合計
+  task_type_breakdown   TEXT,                               -- JSONオブジェクト: {"create_article":2,...}
+  curation_tier         TEXT,                               -- strict/relaxed_diversity/fallback_pool_used
+  curation_params       TEXT,                               -- JSON(実行時のパラメータ。budget等、監査用)
+  created_at            TEXT NOT NULL,
+  updated_at            TEXT NOT NULL,
+  UNIQUE (batch_date)
+);
+CREATE INDEX IF NOT EXISTS idx_seo_weekly_recommendations_batch_date ON seo_weekly_recommendations(batch_date);

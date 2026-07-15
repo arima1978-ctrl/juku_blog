@@ -138,6 +138,11 @@ seo:
       create_article: 30
       monitor: 0
       exclude: 0
+    # Sprint 3.9: AI Weekly Directorの週次選定パラメータ。塾長の総作業工数の上限と、
+    # 同一task_typeの最大選定件数(ソフト上限)。targetCount(3〜5件)は現状固定。
+    weekly_director:
+      effort_budget_minutes: 60
+      max_per_task_type: 2
 
 wordpress:
   # an-english.com は教室ごとに同名の子カテゴリー(コラム/学校情報/教室の様子等)が

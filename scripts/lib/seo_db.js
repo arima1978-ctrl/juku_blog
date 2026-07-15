@@ -1649,6 +1649,87 @@ function insertSeoPageDraft(draft, nowIso) {
   return { id: Number(result.lastInsertRowid), draftVersion: draft.draftVersion };
 }
 
+// ---- seo_weekly_recommendations (Sprint 3.9: AI Weekly Director) ---------
+// 週(batch_date=月曜日)ごとに1行。approved/archivedになった週次バンドルは
+// upsertSeoPagePlanのPAGE_PLAN_LOCKED_STATUSESと同じ考え方でロックし、
+// 再実行による意図しない上書きを防ぐ(status='proposed'の間のみ上書き可能)。
+
+const WEEKLY_RECOMMENDATION_LOCKED_STATUSES = new Set(['approved', 'archived']);
+
+function parseWeeklyRecommendationJsonFields(row) {
+  return {
+    ...row,
+    task_ids: fromJson(row.task_ids) || [],
+    items: fromJson(row.items) || [],
+    task_type_breakdown: fromJson(row.task_type_breakdown) || {},
+    curation_params: fromJson(row.curation_params) || {},
+  };
+}
+
+function getWeeklyRecommendation(batchDate) {
+  const conn = getDb();
+  const row = conn.prepare('SELECT * FROM seo_weekly_recommendations WHERE batch_date = ?').get(batchDate);
+  return row ? parseWeeklyRecommendationJsonFields(row) : null;
+}
+
+// rec: { batchDate, status, taskIds, items, totalExpectedCv, totalEffortMinutes,
+//        taskTypeBreakdown, curationTier, curationParams }(camelCase)。
+// 既存行がapproved/archivedの場合は上書きせず{locked:true}を返す(例外は投げない、
+// upsertSeoPagePlanと同じ設計)。1つのトランザクション内でSELECT→INSERT/UPDATEを行う。
+function upsertWeeklyRecommendation(rec, nowIso) {
+  const conn = getDb();
+  conn.exec('BEGIN');
+  try {
+    const existing = conn.prepare('SELECT id, status FROM seo_weekly_recommendations WHERE batch_date = ?').get(rec.batchDate);
+
+    if (existing && WEEKLY_RECOMMENDATION_LOCKED_STATUSES.has(existing.status)) {
+      conn.exec('COMMIT');
+      return { id: existing.id, isNew: false, locked: true, lockedStatus: existing.status };
+    }
+
+    const row = {
+      task_ids: toJson(rec.taskIds || []),
+      items: toJson(rec.items || []),
+      total_expected_cv: rec.totalExpectedCv ?? null,
+      total_effort_minutes: rec.totalEffortMinutes ?? null,
+      task_type_breakdown: toJson(rec.taskTypeBreakdown || {}),
+      curation_tier: rec.curationTier || null,
+      curation_params: toJson(rec.curationParams || {}),
+    };
+
+    if (existing) {
+      conn
+        .prepare(
+          `UPDATE seo_weekly_recommendations SET
+            task_ids = :task_ids, items = :items, total_expected_cv = :total_expected_cv,
+            total_effort_minutes = :total_effort_minutes, task_type_breakdown = :task_type_breakdown,
+            curation_tier = :curation_tier, curation_params = :curation_params, updated_at = :updated_at
+          WHERE id = :id`
+        )
+        .run({ ...row, id: existing.id, updated_at: nowIso });
+      conn.exec('COMMIT');
+      return { id: existing.id, isNew: false, locked: false };
+    }
+
+    const result = conn
+      .prepare(
+        `INSERT INTO seo_weekly_recommendations (
+          batch_date, status, task_ids, items, total_expected_cv, total_effort_minutes,
+          task_type_breakdown, curation_tier, curation_params, created_at, updated_at
+        ) VALUES (
+          :batch_date, :status, :task_ids, :items, :total_expected_cv, :total_effort_minutes,
+          :task_type_breakdown, :curation_tier, :curation_params, :created_at, :updated_at
+        )`
+      )
+      .run({ ...row, batch_date: rec.batchDate, status: rec.status || 'proposed', created_at: nowIso, updated_at: nowIso });
+    conn.exec('COMMIT');
+    return { id: Number(result.lastInsertRowid), isNew: true, locked: false };
+  } catch (err) {
+    conn.exec('ROLLBACK');
+    throw err;
+  }
+}
+
 module.exports = {
   upsertCompetitor,
   getCompetitor,
@@ -1712,4 +1793,7 @@ module.exports = {
   listSeoPageDrafts,
   getNextSeoPageDraftVersion,
   insertSeoPageDraft,
+  getWeeklyRecommendation,
+  upsertWeeklyRecommendation,
+  WEEKLY_RECOMMENDATION_LOCKED_STATUSES,
 };
