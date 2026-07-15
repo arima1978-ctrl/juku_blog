@@ -14,6 +14,7 @@ const { loadJukuConfig, ROOT } = require('./lib/config');
 const seoDb = require('./lib/seo_db');
 const { buildPageContext } = require('./lib/seo/draft_generator');
 const { buildPageDraftPrompt } = require('./lib/seo/page_draft_prompt_builder');
+const { evaluatePagePlanStaleness } = require('./lib/seo/page_plan_staleness');
 
 function parseArgs(argv) {
   const get = (prefix) => {
@@ -63,7 +64,9 @@ async function resolveDraftPreview({ planId, pageContextDeps } = {}) {
     ? await buildPageContext({ target_url: plan.target_url }, pageContextDeps)
     : { status: 'not_fetched' };
 
-  if (pageContext.status !== 'fetched') {
+  const staleness = evaluatePagePlanStaleness(plan, pageContext);
+
+  if (!staleness.determined) {
     return {
       ok: false,
       errorCode: 'page_context_not_available',
@@ -73,14 +76,14 @@ async function resolveDraftPreview({ planId, pageContextDeps } = {}) {
     };
   }
 
-  if ((plan.source_content_hash || null) !== (pageContext.contentHash || null)) {
+  if (staleness.stale) {
     return {
       ok: false,
       errorCode: 'page_plan_content_stale',
       message: 'Page Plan作成後にページ本文が変更されているため生成できません(Page Planは自動再生成しません)',
       planId,
-      pagePlanContentHash: plan.source_content_hash,
-      currentContentHash: pageContext.contentHash,
+      pagePlanContentHash: staleness.previousContentHash,
+      currentContentHash: staleness.currentContentHash,
     };
   }
 
