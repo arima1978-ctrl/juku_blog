@@ -78,6 +78,15 @@ function getDb() {
   ensureColumn(db, 'seo_tasks', 'target_page_type', 'TEXT'); // 現状"school_page"のみ使用
   ensureColumn(db, 'seo_tasks', 'target_page_id', 'TEXT'); // config/school_pages.yamlのid
   ensureColumn(db, 'seo_tasks', 'target_page_name', 'TEXT'); // 表示用の校舎ページ名
+  // AI Growth Director Sprint 3.8: Impact×DifficultyによるROI優先度スコアで追加。
+  // 既存のopportunity_score(加算式、priority_scoreとは独立)とはさらに別軸の指標。
+  // search_demand等が無くImpactが算出不能な場合はいずれもNULLのまま。
+  ensureColumn(db, 'seo_tasks', 'difficulty_score', 'INTEGER'); // 1〜100
+  ensureColumn(db, 'seo_tasks', 'difficulty_breakdown', 'TEXT'); // JSON(算出根拠)
+  ensureColumn(db, 'seo_tasks', 'expected_impact_clicks', 'REAL'); // 月間見込みクリック増加数
+  ensureColumn(db, 'seo_tasks', 'expected_impact_cv', 'REAL'); // 月間見込み問い合わせ(CV)増加数
+  ensureColumn(db, 'seo_tasks', 'roi_priority_score', 'INTEGER'); // 0〜100(バッチ内min-max正規化後)
+  ensureColumn(db, 'seo_tasks', 'roi_score_computed_at', 'TEXT'); // 計算日時(ISO8601)
   return db;
 }
 
