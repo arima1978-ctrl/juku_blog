@@ -1730,6 +1730,63 @@ function upsertWeeklyRecommendation(rec, nowIso) {
   }
 }
 
+// batch_date降順で最新の週次バンドルを1件取得する(Sprint 4.0: ダッシュボードが
+// 今週分未生成時にフォールバック表示するために使う)。
+function getLatestWeeklyRecommendation() {
+  const conn = getDb();
+  const row = conn.prepare('SELECT * FROM seo_weekly_recommendations ORDER BY batch_date DESC LIMIT 1').get();
+  return row ? parseWeeklyRecommendationJsonFields(row) : null;
+}
+
+// Sprint 4.0: 週次バンドルの状態遷移(ダッシュボードの承認ボタンから使用)。
+// transitionSeoPagePlanStatusと同じ楽観的並行性チェック(expectedCurrentStatus)を
+// トランザクション内で行うが、レビュー履歴テーブルは今回新設せず、statusカラムの
+// 直接UPDATEのみに留める(スコープ最小化)。
+const WEEKLY_RECOMMENDATION_ALLOWED_TRANSITIONS = {
+  proposed: new Set(['approved', 'rejected']),
+  approved: new Set(['archived']),
+};
+
+function transitionWeeklyRecommendationStatus({ batchDate, expectedCurrentStatus, nextStatus }, nowIso) {
+  const conn = getDb();
+  conn.exec('BEGIN');
+  let current;
+  try {
+    current = conn.prepare('SELECT id, status FROM seo_weekly_recommendations WHERE batch_date = ?').get(batchDate);
+    if (!current) {
+      throw Object.assign(new Error(`transitionWeeklyRecommendationStatus: batch_date=${batchDate} が見つかりません`), {
+        code: 'not_found',
+      });
+    }
+    if (current.status !== expectedCurrentStatus) {
+      throw Object.assign(new Error('weekly_recommendation_status_conflict'), {
+        code: 'status_conflict',
+        actualStatus: current.status,
+      });
+    }
+
+    const allowedNext = WEEKLY_RECOMMENDATION_ALLOWED_TRANSITIONS[current.status];
+    if (!allowedNext || !allowedNext.has(nextStatus)) {
+      throw Object.assign(new Error(`transitionWeeklyRecommendationStatus: 不正な状態遷移です(${current.status} → ${nextStatus})`), {
+        code: 'invalid_transition',
+      });
+    }
+
+    conn.prepare('UPDATE seo_weekly_recommendations SET status = :status, updated_at = :updated_at WHERE id = :id').run({
+      status: nextStatus,
+      updated_at: nowIso,
+      id: current.id,
+    });
+
+    conn.exec('COMMIT');
+  } catch (err) {
+    conn.exec('ROLLBACK');
+    throw err;
+  }
+
+  return { batchDate, from: current.status, to: nextStatus };
+}
+
 module.exports = {
   upsertCompetitor,
   getCompetitor,
@@ -1794,6 +1851,9 @@ module.exports = {
   getNextSeoPageDraftVersion,
   insertSeoPageDraft,
   getWeeklyRecommendation,
+  getLatestWeeklyRecommendation,
   upsertWeeklyRecommendation,
+  transitionWeeklyRecommendationStatus,
   WEEKLY_RECOMMENDATION_LOCKED_STATUSES,
+  WEEKLY_RECOMMENDATION_ALLOWED_TRANSITIONS,
 };
