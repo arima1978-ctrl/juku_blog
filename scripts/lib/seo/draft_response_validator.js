@@ -128,4 +128,11 @@ function validateDraftResponse(response, options = {}) {
   };
 }
 
-module.exports = { validateDraftResponse, SUMMARY_MAX_LENGTH, GENERATED_TEXT_MAX_LENGTH };
+module.exports = {
+  validateDraftResponse,
+  SUMMARY_MAX_LENGTH,
+  GENERATED_TEXT_MAX_LENGTH,
+  // Sprint 3.6: page_draft_response_validator.jsが同じ機械的安全チェック
+  // (HTML/コードフェンス/Opportunity Score/GSC内部指標の検出)を再利用するために公開する。
+  checkGeneratedTextSafety,
+};
