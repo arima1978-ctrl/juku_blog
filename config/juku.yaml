@@ -88,7 +88,7 @@ features:
   # 既存の記事生成フロー・競合キーワード分析(candidates)には一切影響しない。
   # 記事生成パイプライン(daily_blog.sh)・WordPress投稿へは今回一切接続しない(Sprint 1)。
   growth_director:
-    enabled: false
+    enabled: true
 
 # 競合キーワード分析(Keyword Gap Lite)専用パラメータ。
 # 値をコード内にハードコードせず、すべてここで調整可能にする。
