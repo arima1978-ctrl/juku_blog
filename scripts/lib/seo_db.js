@@ -7,7 +7,6 @@ const { getDb } = require('./db');
 const { normalizeKeyword } = require('./seo/normalizer');
 const { validatePagePlanShape, ALLOWED_PAGE_PLAN_STATUSES } = require('./seo/page_plan_builder');
 const { validatePagePlanTransition, ALLOWED_REVIEW_SOURCES } = require('./seo/page_plan_review');
-const { validatePageDraftShape } = require('./seo/page_draft_builder');
 
 function toJson(value) {
   return value === undefined || value === null ? null : JSON.stringify(value);
@@ -1322,135 +1321,6 @@ function transitionSeoPagePlanStatus({ pagePlanId, expectedCurrentStatus, nextSt
   };
 }
 
-// ---- seo_page_drafts (Sprint 3.6: approved Page Planから生成した統合Draft) ----------
-// Draftは常にINSERT(upsertしない)。1 Page Planにつき複数世代のDraftを履歴として保持する。
-// 保存してもseo_page_plans/seo_tasksのstatusは一切変更しない。
-
-function parsePageDraftJsonFields(row) {
-  return {
-    ...row,
-    covered_task_ids: fromJson(row.covered_task_ids) || [],
-    covered_keywords: fromJson(row.covered_keywords) || [],
-    excluded_task_ids: fromJson(row.excluded_task_ids) || [],
-    excluded_intents: fromJson(row.excluded_intents) || [],
-    warnings: fromJson(row.warnings) || [],
-    validation_result: fromJson(row.validation_result),
-  };
-}
-
-function getSeoPageDraftById(id) {
-  const conn = getDb();
-  const row = conn.prepare('SELECT * FROM seo_page_drafts WHERE id = ?').get(id);
-  return row ? parsePageDraftJsonFields(row) : null;
-}
-
-function getLatestSeoPageDraftByPlan(pagePlanId) {
-  const conn = getDb();
-  const row = conn
-    .prepare('SELECT * FROM seo_page_drafts WHERE page_plan_id = ? ORDER BY draft_version DESC LIMIT 1')
-    .get(pagePlanId);
-  return row ? parsePageDraftJsonFields(row) : null;
-}
-
-function listSeoPageDrafts({ pagePlanId, status } = {}) {
-  const conn = getDb();
-  let query = 'SELECT * FROM seo_page_drafts WHERE 1=1';
-  const params = {};
-  if (pagePlanId) {
-    query += ' AND page_plan_id = :page_plan_id';
-    params.page_plan_id = pagePlanId;
-  }
-  if (status) {
-    query += ' AND status = :status';
-    params.status = status;
-  }
-  query += ' ORDER BY page_plan_id ASC, draft_version ASC';
-  return conn.prepare(query).all(params).map(parsePageDraftJsonFields);
-}
-
-// Page Planごとに1から連番になる次のdraft_versionを返す(既存Draftが無ければ1)。
-// 最終的な一意性の担保はUNIQUE(page_plan_id, draft_version)制約が行う
-// (この関数はあくまで「次の番号の目安」を返すヘルパー)。
-function getNextSeoPageDraftVersion(pagePlanId) {
-  const conn = getDb();
-  const row = conn.prepare('SELECT MAX(draft_version) as maxVersion FROM seo_page_drafts WHERE page_plan_id = ?').get(pagePlanId);
-  return (row && row.maxVersion ? row.maxVersion : 0) + 1;
-}
-
-// draft: scripts/lib/seo/page_draft_builder.jsのbuildPageDraft()が返す形(camelCase)。
-// 保存直前に、DB上の現在のPage Planを再取得して以下を確認する(いずれか不一致なら保存拒否):
-//   - status === 'approved'                          不一致 → page_plan_not_approved
-//   - updated_at === draft.pagePlanUpdatedAt          不一致 → page_plan_changed_during_generation
-//   - source_content_hash === draft.sourceContentHash 不一致 → page_plan_content_stale
-// UNIQUE(page_plan_id, draft_version)により、同一version番号の重複挿入はDBレベルで拒否される。
-function insertSeoPageDraft(draft, nowIso) {
-  const shapeCheck = validatePageDraftShape(draft);
-  if (!shapeCheck.valid) {
-    throw new Error(`insertSeoPageDraft: 不正なPage Draftです - ${shapeCheck.errors.join(' / ')}`);
-  }
-
-  const conn = getDb();
-  const plan = conn.prepare('SELECT status, updated_at, source_content_hash FROM seo_page_plans WHERE id = ?').get(draft.pagePlanId);
-  if (!plan) {
-    throw Object.assign(new Error(`insertSeoPageDraft: page plan id=${draft.pagePlanId} が見つかりません`), { code: 'not_found' });
-  }
-  if (plan.status !== 'approved') {
-    throw Object.assign(new Error('page_plan_not_approved'), { code: 'page_plan_not_approved', actualStatus: plan.status });
-  }
-  if (plan.updated_at !== draft.pagePlanUpdatedAt) {
-    throw Object.assign(new Error('page_plan_changed_during_generation'), { code: 'page_plan_changed_during_generation' });
-  }
-  if ((plan.source_content_hash || null) !== (draft.sourceContentHash || null)) {
-    throw Object.assign(new Error('page_plan_content_stale'), { code: 'page_plan_content_stale' });
-  }
-
-  const result = conn
-    .prepare(
-      `INSERT INTO seo_page_drafts (
-        page_plan_id, draft_version, draft_type, summary, suggested_location, generated_text,
-        change_reason, search_intent_alignment, covered_task_ids, covered_keywords,
-        excluded_task_ids, excluded_intents, warnings, prompt_snapshot, prompt_version,
-        generator, model, source_content_hash, page_plan_updated_at, validation_result,
-        validation_status, status, edited_text, generated_at, updated_at
-      ) VALUES (
-        :page_plan_id, :draft_version, :draft_type, :summary, :suggested_location, :generated_text,
-        :change_reason, :search_intent_alignment, :covered_task_ids, :covered_keywords,
-        :excluded_task_ids, :excluded_intents, :warnings, :prompt_snapshot, :prompt_version,
-        :generator, :model, :source_content_hash, :page_plan_updated_at, :validation_result,
-        :validation_status, :status, :edited_text, :generated_at, :updated_at
-      )`
-    )
-    .run({
-      page_plan_id: draft.pagePlanId,
-      draft_version: draft.draftVersion,
-      draft_type: draft.draftType || 'page_improvement',
-      summary: draft.summary,
-      suggested_location: draft.suggestedLocation,
-      generated_text: draft.generatedText,
-      change_reason: draft.changeReason,
-      search_intent_alignment: draft.searchIntentAlignment,
-      covered_task_ids: toJson(draft.coveredTaskIds || []),
-      covered_keywords: toJson(draft.coveredKeywords || []),
-      excluded_task_ids: toJson(draft.excludedTaskIds || []),
-      excluded_intents: toJson(draft.excludedIntents || []),
-      warnings: toJson(draft.warnings || []),
-      prompt_snapshot: draft.promptSnapshot,
-      prompt_version: draft.promptVersion,
-      generator: draft.generator,
-      model: draft.model || null,
-      source_content_hash: draft.sourceContentHash || null,
-      page_plan_updated_at: draft.pagePlanUpdatedAt,
-      validation_result: toJson(draft.validationResult),
-      validation_status: draft.validationStatus,
-      status: draft.status || 'generated',
-      edited_text: draft.editedText || null,
-      generated_at: nowIso,
-      updated_at: nowIso,
-    });
-
-  return { id: Number(result.lastInsertRowid), draftVersion: draft.draftVersion };
-}
-
 module.exports = {
   upsertCompetitor,
   getCompetitor,
@@ -1508,9 +1378,4 @@ module.exports = {
   listSeoPagePlanReviews,
   getLatestSeoPagePlanReview,
   transitionSeoPagePlanStatus,
-  getSeoPageDraftById,
-  getLatestSeoPageDraftByPlan,
-  listSeoPageDrafts,
-  getNextSeoPageDraftVersion,
-  insertSeoPageDraft,
 };
