@@ -110,7 +110,8 @@ function buildPagePlan(group, pageContext) {
   };
 }
 
-const ALLOWED_PAGE_PLAN_STATUSES = new Set(['proposed', 'reviewing', 'approved', 'rejected']);
+// Sprint 3.7: staleを追加(承認後にページ本文が変わったPage Planを表す)。
+const ALLOWED_PAGE_PLAN_STATUSES = new Set(['proposed', 'reviewing', 'approved', 'rejected', 'stale']);
 const SHA256_HEX_PATTERN = /^[0-9a-f]{64}$/i;
 
 // 保存時バリデーション(DB非依存の構造チェックのみ)。

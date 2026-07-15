@@ -41,20 +41,65 @@ test('拒否: proposed → approved', () => {
   assert.ok(result.errors.some((e) => e.includes('許可されていない状態遷移')));
 });
 
-test('拒否: approvedからの全遷移(終端状態)', () => {
+test('拒否: approvedからproposed/reviewing/rejectedへの遷移(staleを除き終端状態)', () => {
   ['proposed', 'reviewing', 'rejected'].forEach((next) => {
     const result = validatePagePlanTransition({ currentStatus: 'approved', nextStatus: next, ...BASE });
     assert.equal(result.valid, false, `approved → ${next} は拒否されるべき`);
   });
-  assert.equal(ALLOWED_TRANSITIONS.approved.size, 0);
+  assert.deepEqual([...ALLOWED_TRANSITIONS.approved], ['stale']);
 });
 
-test('拒否: rejectedからの全遷移(V1では終端状態として扱う)', () => {
-  ['proposed', 'reviewing', 'approved'].forEach((next) => {
+test('拒否: rejectedからの全遷移(staleを含め終端状態)', () => {
+  ['proposed', 'reviewing', 'approved', 'stale'].forEach((next) => {
     const result = validatePagePlanTransition({ currentStatus: 'rejected', nextStatus: next, actor: 'admin', reason: '理由' });
     assert.equal(result.valid, false, `rejected → ${next} は拒否されるべき`);
   });
   assert.equal(ALLOWED_TRANSITIONS.rejected.size, 0);
+});
+
+test('許可される遷移(Sprint 3.7): proposed → stale(reason必須)', () => {
+  const result = validatePagePlanTransition({ currentStatus: 'proposed', nextStatus: 'stale', actor: 'admin', reason: '本文変更のため' });
+  assert.equal(result.valid, true);
+});
+
+test('許可される遷移(Sprint 3.7): reviewing → stale(reason必須)', () => {
+  const result = validatePagePlanTransition({ currentStatus: 'reviewing', nextStatus: 'stale', actor: 'admin', reason: '本文変更のため' });
+  assert.equal(result.valid, true);
+});
+
+test('許可される遷移(Sprint 3.7): approved → stale(reason必須)', () => {
+  const result = validatePagePlanTransition({ currentStatus: 'approved', nextStatus: 'stale', actor: 'admin', reason: '本文変更のため' });
+  assert.equal(result.valid, true);
+});
+
+test('拒否(Sprint 3.7): →staleへの遷移でreason未指定', () => {
+  const result = validatePagePlanTransition({ currentStatus: 'approved', nextStatus: 'stale', actor: 'admin' });
+  assert.equal(result.valid, false);
+  assert.ok(result.errors.some((e) => e.includes('reasonが必須')));
+});
+
+test('許可される遷移(Sprint 3.7): stale → proposed(reason必須)', () => {
+  const result = validatePagePlanTransition({ currentStatus: 'stale', nextStatus: 'proposed', actor: 'admin', reason: '再計算完了' });
+  assert.equal(result.valid, true);
+});
+
+test('拒否(Sprint 3.7): stale → proposedでreason未指定', () => {
+  const result = validatePagePlanTransition({ currentStatus: 'stale', nextStatus: 'proposed', actor: 'admin' });
+  assert.equal(result.valid, false);
+  assert.ok(result.errors.some((e) => e.includes('reasonが必須')));
+});
+
+test('拒否(Sprint 3.7): staleからreviewing/approved/rejectedへの直接遷移', () => {
+  ['reviewing', 'approved', 'rejected'].forEach((next) => {
+    const result = validatePagePlanTransition({ currentStatus: 'stale', nextStatus: next, actor: 'admin', reason: '理由' });
+    assert.equal(result.valid, false, `stale → ${next} は拒否されるべき`);
+  });
+  assert.deepEqual([...ALLOWED_TRANSITIONS.stale], ['proposed']);
+});
+
+test('拒否(Sprint 3.7): rejectedからstaleへの遷移(自動再開しない)', () => {
+  const result = validatePagePlanTransition({ currentStatus: 'rejected', nextStatus: 'stale', actor: 'admin', reason: '理由' });
+  assert.equal(result.valid, false);
 });
 
 test('拒否: 同一status間の遷移', () => {
@@ -144,10 +189,14 @@ test('不正なcurrentStatus/nextStatusを検出する', () => {
   assert.ok(result.errors.some((e) => e.includes('nextStatusが不正')));
 });
 
-test('isReasonRequired: rejectedへの遷移とreviewing→proposedのみtrue', () => {
+test('isReasonRequired: rejectedへの遷移・reviewing→proposed・→stale・stale→proposedがtrue', () => {
   assert.equal(isReasonRequired('proposed', 'rejected'), true);
   assert.equal(isReasonRequired('reviewing', 'rejected'), true);
   assert.equal(isReasonRequired('reviewing', 'proposed'), true);
+  assert.equal(isReasonRequired('proposed', 'stale'), true);
+  assert.equal(isReasonRequired('reviewing', 'stale'), true);
+  assert.equal(isReasonRequired('approved', 'stale'), true);
+  assert.equal(isReasonRequired('stale', 'proposed'), true);
   assert.equal(isReasonRequired('proposed', 'reviewing'), false);
   assert.equal(isReasonRequired('reviewing', 'approved'), false);
 });

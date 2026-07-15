@@ -1059,7 +1059,9 @@ function updateTaskStatus(id, toStatus, nowIso) {
 // approved/reviewingは人間の判断が既に入っている(または入る過程にある)ため、
 // 再生成CLIが内容を勝手に上書きしないようロックする。rejectedは内容を更新して構わないが、
 // statusカラム自体は自動でproposedへ戻さない(UPDATE文でstatusを触らないことで担保する)。
-const PAGE_PLAN_LOCKED_STATUSES = new Set(['approved', 'reviewing']);
+// Sprint 3.7: staleも通常のupsertSeoPagePlan()からはロックする。stale化したPage Planの
+// 内容更新は、専用のregenerateStaleSeoPagePlan()(stale→proposedの遷移込み)からのみ行う。
+const PAGE_PLAN_LOCKED_STATUSES = new Set(['approved', 'reviewing', 'stale']);
 
 function parsePagePlanJsonFields(row) {
   return {
@@ -1322,6 +1324,175 @@ function transitionSeoPagePlanStatus({ pagePlanId, expectedCurrentStatus, nextSt
   };
 }
 
+// Sprint 3.7: stale化したPage Planを、最新のPage Plan内容(regeneratedPlan、
+// scripts/lib/seo/stale_page_plan_regenerator.jsのregeneratePagePlanContent()相当)で
+// 更新し、status=proposedへ復帰させる。1つのトランザクションで
+//   (a) 現在status → stale への遷移 + 履歴INSERT(previousContentHash/currentContentHash/
+//       staleReasonをmetadataへ保存)
+//   (b) 同じPage Plan行の内容(Primary/Supporting/Excluded/selection_breakdown/
+//       fact_check_summary/source_content_hash等)をUPDATE
+//   (c) stale → proposed への遷移 + 履歴INSERT
+// を行う。途中で失敗した場合はすべてROLLBACKし、DBは一切変更されない。
+// 短期案(Sprint 3.7)ではPage Planのバージョン管理は行わず、同じ行を上書きする
+// (承認時点のPrimary/Supporting/Excluded等の内容はPage Plan行上には残らない。
+// status遷移履歴のみがseo_page_plan_reviewsへ残る。詳細はdocs/growth_director.md参照)。
+//   - Page Plan不存在: not_foundエラー(err.code='not_found')
+//   - expectedCurrentStatusとDB上の現在statusが異なる: page_plan_status_conflict
+//   - expectedUpdatedAtとDB上のupdated_atが異なる(再生成準備中に他の変更が入った):
+//     page_plan_changed_during_regeneration
+//   - 状態遷移・actor/reasonのバリデーションに失敗: invalid_transition
+//   - regeneratedPlanの形状が不正: 例外を投げる(呼び出し前にshape validationを行う)
+// seo_tasks/seo_keyword_candidatesへは一切書き込まない。
+function regenerateStaleSeoPagePlan(
+  { pagePlanId, expectedCurrentStatus, expectedUpdatedAt, actor, reason, staleMetadata, regeneratedPlan },
+  nowIso
+) {
+  const shapeCheck = validatePagePlanShape(regeneratedPlan);
+  if (!shapeCheck.valid) {
+    throw new Error(`regenerateStaleSeoPagePlan: 不正なPage Planです - ${shapeCheck.errors.join(' / ')}`);
+  }
+
+  const conn = getDb();
+  conn.exec('BEGIN');
+  let current;
+  try {
+    current = conn.prepare('SELECT * FROM seo_page_plans WHERE id = ?').get(pagePlanId);
+    if (!current) {
+      throw Object.assign(new Error(`regenerateStaleSeoPagePlan: page plan id=${pagePlanId} が見つかりません`), {
+        code: 'not_found',
+      });
+    }
+    if (current.status !== expectedCurrentStatus) {
+      throw Object.assign(new Error('page_plan_status_conflict'), {
+        code: 'page_plan_status_conflict',
+        actualStatus: current.status,
+      });
+    }
+    if (current.updated_at !== expectedUpdatedAt) {
+      throw Object.assign(new Error('page_plan_changed_during_regeneration'), {
+        code: 'page_plan_changed_during_regeneration',
+      });
+    }
+
+    // (a) current → stale
+    const toStaleValidation = validatePagePlanTransition({ currentStatus: current.status, nextStatus: 'stale', actor, reason });
+    if (!toStaleValidation.valid) {
+      throw Object.assign(
+        new Error(`regenerateStaleSeoPagePlan: staleへの遷移が不正です - ${toStaleValidation.errors.join(' / ')}`),
+        { code: 'invalid_transition', errors: toStaleValidation.errors }
+      );
+    }
+
+    conn.prepare('UPDATE seo_page_plans SET status = :status, updated_at = :updated_at WHERE id = :id').run({
+      status: 'stale',
+      updated_at: nowIso,
+      id: pagePlanId,
+    });
+    conn
+      .prepare(
+        `INSERT INTO seo_page_plan_reviews (
+          page_plan_id, from_status, to_status, actor, reason, source, metadata, created_at
+        ) VALUES (
+          :page_plan_id, :from_status, :to_status, :actor, :reason, :source, :metadata, :created_at
+        )`
+      )
+      .run({
+        page_plan_id: pagePlanId,
+        from_status: current.status,
+        to_status: 'stale',
+        actor,
+        reason,
+        source: 'cli',
+        metadata: toJson(staleMetadata || {}),
+        created_at: nowIso,
+      });
+
+    // (b) 内容UPDATE(このリビジョンではstatusには触れない。created_atも維持)
+    conn
+      .prepare(
+        `UPDATE seo_page_plans SET
+          group_key = :group_key, target_page_name = :target_page_name, target_url = :target_url,
+          primary_task_id = :primary_task_id, primary_keyword = :primary_keyword,
+          supporting_task_ids = :supporting_task_ids, supporting_keywords = :supporting_keywords,
+          excluded_tasks = :excluded_tasks, combined_search_intents = :combined_search_intents,
+          selection_breakdown = :selection_breakdown, fact_check_summary = :fact_check_summary,
+          warnings = :warnings, source_content_hash = :source_content_hash, prompt_version = :prompt_version,
+          updated_at = :updated_at
+        WHERE id = :id`
+      )
+      .run({
+        group_key: regeneratedPlan.groupKey,
+        target_page_name: regeneratedPlan.targetPageName || null,
+        target_url: regeneratedPlan.targetUrl || null,
+        primary_task_id: regeneratedPlan.primaryTaskId,
+        primary_keyword: regeneratedPlan.primaryKeyword,
+        supporting_task_ids: toJson(regeneratedPlan.supportingTaskIds || []),
+        supporting_keywords: toJson(regeneratedPlan.supportingKeywords || []),
+        excluded_tasks: toJson(regeneratedPlan.excludedTasks || []),
+        combined_search_intents: toJson(regeneratedPlan.combinedSearchIntents || []),
+        selection_breakdown: toJson(regeneratedPlan.selectionBreakdown || null),
+        fact_check_summary: toJson(regeneratedPlan.factCheckSummary || null),
+        warnings: toJson(regeneratedPlan.warnings || []),
+        source_content_hash: regeneratedPlan.sourceContentHash || null,
+        prompt_version: regeneratedPlan.promptVersion || null,
+        updated_at: nowIso,
+        id: pagePlanId,
+      });
+
+    // (c) stale → proposed(再レビューのため必ずproposedへ戻す。reviewing/approvedへの
+    // 直接遷移はALLOWED_TRANSITIONSで許可していない)
+    const proposedReason = '最新ページ本文により内容を再計算し、再レビューのためproposedへ復帰';
+    const toProposedValidation = validatePagePlanTransition({
+      currentStatus: 'stale',
+      nextStatus: 'proposed',
+      actor,
+      reason: proposedReason,
+    });
+    if (!toProposedValidation.valid) {
+      throw Object.assign(
+        new Error(`regenerateStaleSeoPagePlan: proposedへの復帰が不正です - ${toProposedValidation.errors.join(' / ')}`),
+        { code: 'invalid_transition', errors: toProposedValidation.errors }
+      );
+    }
+
+    conn.prepare('UPDATE seo_page_plans SET status = :status, updated_at = :updated_at WHERE id = :id').run({
+      status: 'proposed',
+      updated_at: nowIso,
+      id: pagePlanId,
+    });
+    conn
+      .prepare(
+        `INSERT INTO seo_page_plan_reviews (
+          page_plan_id, from_status, to_status, actor, reason, source, metadata, created_at
+        ) VALUES (
+          :page_plan_id, :from_status, :to_status, :actor, :reason, :source, :metadata, :created_at
+        )`
+      )
+      .run({
+        page_plan_id: pagePlanId,
+        from_status: 'stale',
+        to_status: 'proposed',
+        actor,
+        reason: proposedReason,
+        source: 'cli',
+        metadata: toJson({}),
+        created_at: nowIso,
+      });
+
+    conn.exec('COMMIT');
+  } catch (err) {
+    conn.exec('ROLLBACK');
+    throw err;
+  }
+
+  return {
+    pagePlanId,
+    finalStatus: 'proposed',
+    plan: getSeoPagePlanById(pagePlanId),
+    reviews: listSeoPagePlanReviews(pagePlanId).slice(-2),
+  };
+}
+
 // ---- seo_page_drafts (Sprint 3.6: approved Page Planから生成した統合Draft) ----------
 // Draftは常にINSERT(upsertしない)。1 Page Planにつき複数世代のDraftを履歴として保持する。
 // 保存してもseo_page_plans/seo_tasksのstatusは一切変更しない。
@@ -1508,6 +1679,7 @@ module.exports = {
   listSeoPagePlanReviews,
   getLatestSeoPagePlanReview,
   transitionSeoPagePlanStatus,
+  regenerateStaleSeoPagePlan,
   getSeoPageDraftById,
   getLatestSeoPageDraftByPlan,
   listSeoPageDrafts,

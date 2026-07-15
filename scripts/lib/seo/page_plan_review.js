@@ -3,28 +3,40 @@
 // Sprint 3.5: Page Plan(seo_page_plans)の人間レビュー状態遷移を、決定的ルールのみで
 // 検証する(LLM判断は行わない)。DB書き込みは一切行わない(scripts/lib/seo_db.jsの
 // transitionSeoPagePlanStatus()がこの検証結果を使ってDBへ反映する)。
+//
+// Sprint 3.7: 承認後にページ本文が変わったPage Planを表す`stale`状態を追加。
+// SQLのCHECK制約は使わず(既存方針どおり)、この配列とALLOWED_TRANSITIONSのみで
+// アプリ層検証する。
 
-const ALLOWED_STATUSES = new Set(['proposed', 'reviewing', 'approved', 'rejected']);
+const ALLOWED_STATUSES = new Set(['proposed', 'reviewing', 'approved', 'rejected', 'stale']);
 const ALLOWED_REVIEW_SOURCES = new Set(['cli', 'api', 'dashboard', 'system']);
 
 const ACTOR_MAX_LENGTH = 100;
 const REASON_MAX_LENGTH = 1000;
 
-// 許可する状態遷移。approvedは終端(遷移元にならない)。
-// rejectedも今回は終端として扱う(rejected→proposedの明示的な再開操作はV1では未実装。
-// 将来Page Plan再生成操作の一部として別途設計する)。
+// 許可する状態遷移。
+// rejectedは終端(rejected→proposedの明示的な再開操作はV1では未実装)。
+// staleはproposed/reviewing/approvedいずれからも到達しうる(ページ本文の変更はどの
+// レビュー段階でも起こりうるため)が、rejectedからは到達しない(rejectedは人間が
+// 却下した終端状態であり、本文変更を理由に自動的に再開はしない)。
+// staleからは必ずproposedへ一度戻し、reviewing/approvedへの直接遷移は許可しない
+// (人間レビューをやり直す前提)。
 const ALLOWED_TRANSITIONS = {
-  proposed: new Set(['reviewing', 'rejected']),
-  reviewing: new Set(['approved', 'rejected', 'proposed']),
-  approved: new Set(),
+  proposed: new Set(['reviewing', 'rejected', 'stale']),
+  reviewing: new Set(['approved', 'rejected', 'proposed', 'stale']),
+  approved: new Set(['stale']),
   rejected: new Set(),
+  stale: new Set(['proposed']),
 };
 
-// reasonを必須とする遷移(却下系、およびreviewingからproposedへの差し戻し)。
+// reasonを必須とする遷移(却下系、reviewingからproposedへの差し戻し、
+// staleへの遷移、staleからproposedへの復帰)。
 // proposed→reviewing・reviewing→approvedはreason任意。
 function isReasonRequired(fromStatus, toStatus) {
   if (toStatus === 'rejected') return true;
   if (fromStatus === 'reviewing' && toStatus === 'proposed') return true;
+  if (toStatus === 'stale') return true;
+  if (fromStatus === 'stale' && toStatus === 'proposed') return true;
   return false;
 }
 
