@@ -156,34 +156,44 @@ async function crawlCompetitor(competitor, seoConfig, dryRun) {
   return stats;
 }
 
-async function main() {
-  const { dryRun, competitorId } = parseArgs(process.argv.slice(2));
+// コア処理(テスト容易性・API層からの呼び出しのため、process.exitを含まない形で分離)。
+// branchIdを明示指定した場合(ダッシュボード/API経由): config/seo_competitors.yamlは
+// 参照せず、その校舎がDBへ直接登録した競合(seoDb.listCompetitors({branchId}))のみを
+// 対象にする(YAMLは既存の小幡校向け設定であり、他校舎の競合と混ざらないようにするため)。
+// branchId未指定の場合(CLI/週次cron): 既存どおりconfig/seo_competitors.yamlを参照し、
+// 現在アクティブな校舎へ同期する(挙動は完全に従来通り)。
+async function resolveCompetitorCrawl({ dryRun = false, competitorId, branchId, seoDbImpl = seoDb, branchesDbImpl = branchesDb } = {}) {
   const config = loadJukuConfig();
   const feature = config.features && config.features.competitor_keyword_analysis;
 
   if (!feature || !feature.enabled || !feature.crawl_enabled) {
-    console.log('[seo_competitor_crawl] competitor_keyword_analysis.enabled または crawl_enabled が false のため無処理で終了します');
-    process.exit(0);
+    return { ok: false, reason: 'feature_disabled', summary: [] };
   }
 
   const seoConfig = config.seo.competitor_analysis;
-  const competitorsConfig = loadSeoCompetitorsConfig();
   const nowIso = new Date().toISOString();
 
-  const targets = (competitorsConfig.competitors || [])
-    .filter((c) => c.crawl_enabled !== false)
-    .filter((c) => !competitorId || c.id === competitorId);
+  let targets;
+  if (branchId !== undefined && branchId !== null) {
+    targets = seoDbImpl
+      .listCompetitors({ branchId, crawlEnabledOnly: true })
+      .filter((c) => !competitorId || c.id === competitorId);
+  } else {
+    const competitorsConfig = loadSeoCompetitorsConfig();
+    targets = (competitorsConfig.competitors || [])
+      .filter((c) => c.crawl_enabled !== false)
+      .filter((c) => !competitorId || c.id === competitorId);
 
-  if (targets.length === 0) {
-    console.log('[seo_competitor_crawl] 対象の競合が登録されていません(config/seo_competitors.yaml)');
-    process.exit(0);
+    if (!dryRun) {
+      // 複数校舎管理: 「1競合は1校舎に紐づく」という単純化(config/seo_competitors.yaml
+      // 自体はフェーズ3対象外で校舎別に分離しないため、現在アクティブな校舎に紐づける)。
+      const activeBranch = branchesDbImpl.getActiveBranch();
+      targets.forEach((c) => seoDbImpl.upsertCompetitor({ ...c, branch_id: activeBranch ? activeBranch.id : null }, nowIso));
+    }
   }
 
-  if (!dryRun) {
-    // 複数校舎管理: 「1競合は1校舎に紐づく」という単純化(config/seo_competitors.yaml
-    // 自体はフェーズ3対象外で校舎別に分離しないため、現在アクティブな校舎に紐づける)。
-    const activeBranch = branchesDb.getActiveBranch();
-    targets.forEach((c) => seoDb.upsertCompetitor({ ...c, branch_id: activeBranch ? activeBranch.id : null }, nowIso));
+  if (targets.length === 0) {
+    return { ok: true, reason: 'no_targets', summary: [] };
   }
 
   const summary = [];
@@ -191,17 +201,34 @@ async function main() {
     try {
       // eslint-disable-next-line no-await-in-loop
       const stats = await crawlCompetitor(competitor, seoConfig, dryRun);
-      if (!dryRun) seoDb.recordCompetitorCrawlSuccess(competitor.id, new Date().toISOString());
-      summary.push({ competitor: competitor.id, ...stats });
+      if (!dryRun) seoDbImpl.recordCompetitorCrawlSuccess(competitor.id, new Date().toISOString());
+      summary.push({ competitor: competitor.id, name: competitor.name, ok: true, ...stats });
       console.log(`[seo_competitor_crawl] ${competitor.id}: ${JSON.stringify(stats)}`);
     } catch (err) {
-      if (!dryRun) seoDb.recordCompetitorCrawlError(competitor.id, new Date().toISOString(), err.message);
+      if (!dryRun) seoDbImpl.recordCompetitorCrawlError(competitor.id, new Date().toISOString(), err.message);
       logError('seo_competitor_crawl', `${competitor.id}: ${err.message}`);
       console.error(`[seo_competitor_crawl] ${competitor.id} で失敗しましたが他の競合の処理を継続します: ${err.message}`);
+      summary.push({ competitor: competitor.id, name: competitor.name, ok: false, error: err.message });
     }
   }
 
-  console.log(`[seo_competitor_crawl] 完了(dry-run=${dryRun}): ${JSON.stringify(summary)}`);
+  return { ok: true, dryRun, summary };
+}
+
+async function main() {
+  const { dryRun, competitorId } = parseArgs(process.argv.slice(2));
+  const result = await resolveCompetitorCrawl({ dryRun, competitorId });
+
+  if (result.reason === 'feature_disabled') {
+    console.log('[seo_competitor_crawl] competitor_keyword_analysis.enabled または crawl_enabled が false のため無処理で終了します');
+    process.exit(0);
+  }
+  if (result.reason === 'no_targets') {
+    console.log('[seo_competitor_crawl] 対象の競合が登録されていません(config/seo_competitors.yaml)');
+    process.exit(0);
+  }
+
+  console.log(`[seo_competitor_crawl] 完了(dry-run=${dryRun}): ${JSON.stringify(result.summary)}`);
 }
 
 if (require.main === module) {
@@ -212,4 +239,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { main, crawlCompetitor };
+module.exports = { main, crawlCompetitor, resolveCompetitorCrawl };

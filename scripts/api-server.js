@@ -35,9 +35,12 @@ const { safeJsonParse } = require('./lib/json_field');
 const { projectThemeCalendar } = require('./lib/theme_calendar');
 const seoDb = require('./lib/seo_db');
 const { requireLocalhost } = require('./lib/require_localhost');
-const { mondayOfWeek } = require('./seo_weekly_director');
+const { mondayOfWeek, resolveWeeklyDirector } = require('./seo_weekly_director');
 const { resultFilePathFor } = require('./seo_publisher');
 const branchesDb = require('./lib/branches_db');
+const { resolveCompetitorCrawl } = require('./seo_competitor_crawl');
+const { resolveTaskGenerate } = require('./seo_task_generate');
+const { resolvePagePlans } = require('./seo_page_plan_generate');
 
 const PORT = process.env.PORT || 3013;
 const DASHBOARD_URL = process.env.DASHBOARD_URL || `http://localhost:${PORT}`;
@@ -357,6 +360,85 @@ app.get('/api/seo/competitors', (req, res) => {
   res.json(seoDb.listCompetitors({ branchId }));
 });
 
+// ドメイン文字列から人間に読めるID(slug)を組み立てる。同一ドメイン+校舎の
+// 再登録はUNIQUE(domain, branch_id)によりupsertとして更新扱いになる。
+function slugifyDomain(domain) {
+  return domain
+    .toLowerCase()
+    .replace(/^https?:\/\//, '')
+    .replace(/^www\./, '')
+    .replace(/[^a-z0-9.-]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+function splitCommaList(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) return value.map((v) => String(v).trim()).filter(Boolean);
+  return String(value).split(',').map((v) => v.trim()).filter(Boolean);
+}
+
+// ダッシュボードから校舎ごとの競合塾を直接DBへ登録する(config/seo_competitors.yamlは
+// 触らない。既存の小幡校向けYAML設定とは独立に、校舎ごとの競合を管理できるようにする)。
+app.post('/api/seo/competitors', (req, res) => {
+  const body = req.body || {};
+  const name = (body.name || '').trim();
+  const rawDomainInput = (body.domain || body.start_url || '').trim();
+  if (!name || !rawDomainInput) {
+    return res.status(400).json({ error: 'name_and_domain_required' });
+  }
+
+  let startUrl = body.start_url ? body.start_url.trim() : null;
+  let domain;
+  try {
+    domain = body.domain
+      ? body.domain.trim().replace(/^https?:\/\//, '').replace(/\/.*$/, '')
+      : new URL(rawDomainInput).hostname;
+    if (!startUrl) startUrl = rawDomainInput.startsWith('http') ? rawDomainInput : `https://${domain}/`;
+  } catch {
+    return res.status(400).json({ error: 'invalid_domain_or_url' });
+  }
+
+  const branchId = resolveBranchId(req);
+  const id = slugifyDomain(domain);
+  seoDb.upsertCompetitor(
+    {
+      id,
+      branch_id: branchId,
+      name,
+      domain,
+      start_url: startUrl,
+      sitemap_url: body.sitemap_url || null,
+      competitor_type: body.competitor_type || null,
+      target_areas: splitCommaList(body.target_areas),
+      target_schools: splitCommaList(body.target_schools),
+      target_grades: splitCommaList(body.target_grades),
+      target_subjects: splitCommaList(body.target_subjects),
+      crawl_enabled: body.crawl_enabled !== false,
+      crawl_interval_days: body.crawl_interval_days ? Number(body.crawl_interval_days) : null,
+      max_pages: body.max_pages ? Number(body.max_pages) : null,
+    },
+    new Date().toISOString()
+  );
+  res.json(seoDb.getCompetitor(id));
+});
+
+// 競合クロールの実行(外部サイトへの実際のHTTP取得を伴うため、承認と同様
+// requireLocalhostで保護する。ALLOW_REMOTE_APPROVE=true環境では従来通り
+// Basic認証配下のダッシュボードから実行できる)。
+app.post('/api/seo/crawl', requireLocalhost, async (req, res) => {
+  const branchId = resolveBranchId(req);
+  try {
+    const result = await resolveCompetitorCrawl({ dryRun: false, branchId });
+    if (result.reason === 'feature_disabled') {
+      return res.status(400).json({ error: 'feature_disabled', message: '競合キーワード分析(features.competitor_keyword_analysis)が無効です' });
+    }
+    res.json({ ok: true, reason: result.reason || null, summary: result.summary });
+  } catch (err) {
+    logError('api_seo_crawl', err.message);
+    res.status(500).json({ error: 'crawl_failed', message: err.message });
+  }
+});
+
 app.get('/api/seo/candidates', (req, res) => {
   const { status, gapType, targetArea, minScore, orderBy } = req.query;
   const branchId = resolveBranchId(req);
@@ -438,6 +520,38 @@ app.get('/api/growth/tasks', (req, res) => {
   const { status, taskType, orderBy } = req.query;
   const branchId = resolveBranchId(req);
   res.json(seoDb.listTasks({ status, taskType, orderBy, branchId }));
+});
+
+// SEO Task生成(seo_task_generate.js相当)+ 校舎ページ向けPage Plan生成
+// (seo_page_plan_generate.js相当)を、指定校舎に対してまとめて実行する。
+// 自社ページ本文の取得(Page Plan生成側)を伴うため、requireLocalhostで保護する。
+app.post('/api/seo/generate-tasks', requireLocalhost, async (req, res) => {
+  const branchId = resolveBranchId(req);
+  try {
+    const taskResult = await resolveTaskGenerate({ branchId });
+    if (taskResult.reason === 'feature_disabled') {
+      return res.status(400).json({ error: 'feature_disabled', message: 'Growth Director(features.growth_director)が無効です' });
+    }
+
+    let pagePlanResult = null;
+    if (taskResult.reason !== 'no_candidates') {
+      pagePlanResult = await resolvePagePlans({ save: true, branchId });
+    }
+
+    res.json({
+      ok: true,
+      tasks:
+        taskResult.reason === 'no_candidates'
+          ? { tasks_created: 0, tasks_updated: 0, error_count: 0, message: '対象のキーワード候補がありません' }
+          : taskResult.stats,
+      pagePlans: pagePlanResult
+        ? { generated: pagePlanResult.planCount, saved: pagePlanResult.saved }
+        : { generated: 0, saved: false },
+    });
+  } catch (err) {
+    logError('api_seo_generate_tasks', err.message);
+    res.status(500).json({ error: 'generate_tasks_failed', message: err.message });
+  }
 });
 
 app.get('/api/growth/tasks/:id', (req, res) => {
@@ -631,6 +745,28 @@ app.get('/api/seo/weekly-recommendation', (req, res) => {
     updatedAt: rec.updated_at,
     items: rec.items.map(toWeeklyRecommendationItemDetail),
   });
+});
+
+// 今週の提案(AI Weekly Director)の新規生成。校舎ページ紐づきTaskはPage Plan経由、
+// 単発TaskはbuildDraftPreview経由でDraft Promptを事前生成するため(自社ページ本文の
+// 取得を伴う)、requireLocalhostで保護する。
+app.post('/api/seo/weekly-recommendation/generate', requireLocalhost, async (req, res) => {
+  if (!requireGrowthDirectorEnabled(res)) return;
+  const branchId = resolveBranchId(req);
+
+  try {
+    const result = await resolveWeeklyDirector({ save: true, branchId });
+    res.json({
+      ok: true,
+      batchDate: result.batchDate,
+      itemCount: result.items.length,
+      curationTier: result.curationTier,
+      locked: result.saveResult ? Boolean(result.saveResult.locked) : false,
+    });
+  } catch (err) {
+    logError('api_seo_weekly_recommendation_generate', err.message);
+    res.status(500).json({ error: 'generate_failed', message: err.message });
+  }
 });
 
 app.post('/api/seo/weekly-recommendation/:batchDate/approve', requireLocalhost, (req, res) => {

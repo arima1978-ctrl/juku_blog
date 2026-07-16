@@ -32,9 +32,9 @@ const { logError } = require('./log_error');
 // competitor_type別に集計し、Map<normalized_keyword, {type: count}>を返す。
 // difficulty_score.jsへ渡す入力をDBから組み立てるためのヘルパー(このスクリプト内に閉じる。
 // difficulty_score.js自体はDB非依存の純粋関数のまま維持する)。
-function buildCompetitorTypeCountsByKeyword(seoDbImpl = seoDb) {
+function buildCompetitorTypeCountsByKeyword(seoDbImpl = seoDb, branchId) {
   const rows = seoDbImpl.listCompoundKeywordCoverage();
-  const competitorTypeById = new Map(seoDbImpl.listCompetitors().map((c) => [c.id, c.competitor_type]));
+  const competitorTypeById = new Map(seoDbImpl.listCompetitors({ branchId }).map((c) => [c.id, c.competitor_type]));
 
   const competitorIdsByKeyword = new Map();
   rows.forEach((row) => {
@@ -171,28 +171,28 @@ function buildTaskForCandidate(
   };
 }
 
-async function main() {
-  const dryRun = process.argv.includes('--dry-run');
+// コア処理(テスト容易性・API層からの呼び出しのため、process.exitを含まない形で分離)。
+// branchIdを指定すると、その校舎のキーワード候補のみを対象にTaskを生成する
+// (未指定時は全校舎対象。CLI/cronの既存挙動を変えないためのデフォルト)。
+async function resolveTaskGenerate({ dryRun = false, branchId, seoDbImpl = seoDb } = {}) {
   const config = loadJukuConfig();
   const feature = config.features && config.features.growth_director;
 
   if (!feature || !feature.enabled) {
-    console.log('[seo_task_generate] growth_director.enabled が false のため無処理で終了します');
-    process.exit(0);
+    return { ok: false, reason: 'feature_disabled', stats: null };
   }
 
   const gdConfig = config.seo.growth_director;
   const effortMinutesByTaskType = gdConfig.effort_minutes_by_task_type;
   const opportunityWeights = gdConfig.opportunity_score_weights;
 
-  const candidates = seoDb.listKeywordCandidates({});
+  const candidates = seoDbImpl.listKeywordCandidates({ branchId });
   if (candidates.length === 0) {
-    console.log('[seo_task_generate] 対象のキーワード候補がありません');
-    return;
+    return { ok: true, reason: 'no_candidates', stats: null };
   }
 
-  const totalCompetitorsConsidered = seoDb.countAnalyzedCompetitors();
-  const competitorTypeCountsByKeyword = buildCompetitorTypeCountsByKeyword();
+  const totalCompetitorsConsidered = seoDbImpl.countAnalyzedCompetitors();
+  const competitorTypeCountsByKeyword = buildCompetitorTypeCountsByKeyword(seoDbImpl, branchId);
   const nowIso = new Date().toISOString();
   const stats = { tasks_created: 0, tasks_updated: 0, error_count: 0 };
 
@@ -225,6 +225,7 @@ async function main() {
     delete taskPayload._rawRoiScore;
   });
 
+  const previews = [];
   for (const { candidate, taskPayload } of built) {
     if (dryRun) {
       const impactCv = taskPayload.expected_impact_cv != null ? taskPayload.expected_impact_cv.toFixed(2) : '算出不可';
@@ -235,12 +236,13 @@ async function main() {
           `opportunity=${taskPayload.opportunity_score} | difficulty=${taskPayload.difficulty_score} ` +
           `impact_clicks=${impactClicks} impact_cv=${impactCv} roi_score=${roiScore}`
       );
+      previews.push({ targetKeyword: candidate.normalized_keyword, taskType: taskPayload.task_type, opportunityScore: taskPayload.opportunity_score });
       continue;
     }
 
     try {
       // 複数校舎管理: Taskは由来のキーワード候補と同じ校舎に紐づける。
-      const result = seoDb.upsertTask({ ...taskPayload, branch_id: candidate.branch_id ?? null }, nowIso);
+      const result = seoDbImpl.upsertTask({ ...taskPayload, branch_id: candidate.branch_id ?? null }, nowIso);
       if (result.isNew) stats.tasks_created += 1;
       else stats.tasks_updated += 1;
     } catch (err) {
@@ -250,6 +252,20 @@ async function main() {
   }
 
   console.log(`[seo_task_generate] 完了(dry-run=${dryRun}): ${JSON.stringify(stats)}`);
+  return { ok: true, dryRun, stats, previews };
+}
+
+async function main() {
+  const dryRun = process.argv.includes('--dry-run');
+  const result = await resolveTaskGenerate({ dryRun });
+
+  if (result.reason === 'feature_disabled') {
+    console.log('[seo_task_generate] growth_director.enabled が false のため無処理で終了します');
+    process.exit(0);
+  }
+  if (result.reason === 'no_candidates') {
+    console.log('[seo_task_generate] 対象のキーワード候補がありません');
+  }
 }
 
 if (require.main === module) {
@@ -260,4 +276,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { main, buildTaskForCandidate, buildCompetitorTypeCountsByKeyword };
+module.exports = { main, buildTaskForCandidate, buildCompetitorTypeCountsByKeyword, resolveTaskGenerate };

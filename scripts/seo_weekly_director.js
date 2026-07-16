@@ -84,14 +84,18 @@ async function resolveWeeklyDirector({
   outputDir,
   now = new Date(),
   nowIso,
+  branchId,
 } = {}) {
   const batchDate = mondayOfWeek(now);
   const stamp = nowIso || now.toISOString();
 
-  // 複数校舎管理: config自体はフェーズ3対象外(校舎別に分離しない)ため、
-  // 現在アクティブな校舎のTaskのみを対象に週次選定し、保存時も同じ校舎に紐づける。
-  const activeBranch = branchesDbImpl.getActiveBranch();
-  const activeBranchId = activeBranch ? activeBranch.id : null;
+  // 複数校舎管理: branchIdが明示指定されればその校舎を対象にする(ダッシュボード/APIから
+  // 特定の校舎向けに生成する場合)。未指定時は従来通り現在アクティブな校舎にフォールバックする
+  // (CLI/cronの既存挙動を変えないためのデフォルト)。
+  const activeBranchId =
+    branchId !== undefined && branchId !== null
+      ? branchId
+      : ((branchesDbImpl.getActiveBranch() || {}).id ?? null);
 
   const candidateTasks = seoDbImpl.listTasks({ status: 'proposed', branchId: activeBranchId });
   const curation = curateWeeklyTasksImpl(candidateTasks, curationOptions);

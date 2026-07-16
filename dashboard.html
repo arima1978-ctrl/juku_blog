@@ -380,6 +380,23 @@
       <div class="fact-check-box">
         <strong>競合塾</strong>
         <div id="seoCompetitorList" style="margin-top:8px;">読み込み中...</div>
+        <div class="actions" style="margin-top:12px;">
+          <button onclick="toggleCompetitorForm()">＋ 競合塾を登録</button>
+          <button class="primary" id="seoCrawlBtn" onclick="runSeoCrawl()">競合の分析(クロール)を実行</button>
+        </div>
+        <div id="seoCrawlStatus" style="margin-top:8px; font-size:0.85rem; color:var(--text-muted);"></div>
+        <div class="edit-form-area" id="competitorFormArea">
+          <label>競合塾名</label>
+          <input type="text" id="competitorFormName" placeholder="例: ○○ゼミナール あま校">
+          <label>競合URL(トップページ、またはドメイン)</label>
+          <input type="text" id="competitorFormDomain" placeholder="例: https://example-juku.com/">
+          <label>ターゲット地域(カンマ区切り、任意)</label>
+          <input type="text" id="competitorFormTargetAreas" placeholder="例: あま市, 甚目寺">
+          <div class="actions" style="margin-top:12px;">
+            <button class="primary" onclick="saveCompetitorForm()">登録</button>
+            <button onclick="toggleCompetitorForm()">キャンセル</button>
+          </div>
+        </div>
       </div>
 
       <div class="filters" style="margin-top:16px;">
@@ -418,6 +435,10 @@
         「次に何をすべきか」という実行可能な作業単位です。承認しても自動実行はされません
         (Sprint 1は提案の確認・承認・除外までが対象です)。
       </p>
+      <div class="actions" style="margin-bottom:14px;">
+        <button class="primary" id="growthGenerateBtn" onclick="runGrowthGenerate()">SEOタスクと構成案を自動生成</button>
+      </div>
+      <div id="growthGenerateStatus" style="margin-bottom:12px; font-size:0.85rem; color:var(--text-muted);"></div>
       <div class="filters">
         <select id="growthStatusFilter">
           <option value="proposed">ステータス: 提案中</option>
@@ -434,6 +455,10 @@
         毎週月曜日に自動選定される、最もROIの高い今週の仕事です。承認すると自動投稿ジョブ
         (次スプリント)が対象として認識できるようになります。
       </p>
+      <div class="actions" style="margin-bottom:14px;">
+        <button class="primary" id="weeklyRecGenerateBtn" onclick="runWeeklyRecGenerate()">今週の提案を新しく生成</button>
+      </div>
+      <div id="weeklyRecGenerateStatus" style="margin-bottom:12px; font-size:0.85rem; color:var(--text-muted);"></div>
       <div id="weeklyRecWarningBar"></div>
       <div class="summary-row" id="weeklyRecSummaryRow"></div>
       <div id="weeklyRecApproveArea"></div>
@@ -1068,6 +1093,67 @@ document.getElementById('seoBackLink').addEventListener('click', () => {
   document.getElementById('listView').style.display = 'block';
 });
 
+// --- 競合塾の登録・クロール実行(校舎ごとの初期データ生成) ---
+function toggleCompetitorForm() {
+  const el = document.getElementById('competitorFormArea');
+  el.style.display = el.style.display === 'block' ? 'none' : 'block';
+}
+
+async function saveCompetitorForm() {
+  const name = document.getElementById('competitorFormName').value.trim();
+  const domain = document.getElementById('competitorFormDomain').value.trim();
+  const targetAreas = document.getElementById('competitorFormTargetAreas').value.trim();
+  if (!name || !domain) {
+    alert('競合塾名と競合URLは必須です');
+    return;
+  }
+  try {
+    const params = withBranchId(new URLSearchParams());
+    await fetchJson('api/seo/competitors?' + params.toString(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, domain, target_areas: targetAreas }),
+    });
+    document.getElementById('competitorFormName').value = '';
+    document.getElementById('competitorFormDomain').value = '';
+    document.getElementById('competitorFormTargetAreas').value = '';
+    toggleCompetitorForm();
+    await loadSeoCompetitors();
+  } catch (err) {
+    alert('登録に失敗しました: ' + err.message);
+  }
+}
+
+async function runSeoCrawl() {
+  const btn = document.getElementById('seoCrawlBtn');
+  const statusEl = document.getElementById('seoCrawlStatus');
+  btn.disabled = true;
+  statusEl.textContent = '⏳ 競合の分析(クロール)を実行中です。競合数によっては数分かかる場合があります…';
+  try {
+    const params = withBranchId(new URLSearchParams());
+    const result = await fetchJson('api/seo/crawl?' + params.toString(), { method: 'POST' });
+    if (result.reason === 'no_targets') {
+      statusEl.textContent = 'ℹ️ この校舎にはクロール対象の競合塾が登録されていません。先に「＋ 競合塾を登録」から追加してください。';
+    } else {
+      const okCount = result.summary.filter((s) => s.ok).length;
+      const errCount = result.summary.length - okCount;
+      statusEl.textContent =
+        `✅ クロールが完了しました(成功:${okCount}件${errCount ? ` / 失敗:${errCount}件` : ''})。` +
+        'キーワード候補として一覧に反映するには、この後 seo_page_analyze.js → seo_gap_calculate.js の実行が必要です(現時点ではCLI操作のみ対応)。';
+    }
+    await loadSeoCompetitors();
+  } catch (err) {
+    statusEl.textContent = '';
+    if (err.message.includes('403')) {
+      alert('この操作はローカルホスト(またはALLOW_REMOTE_APPROVE=true環境)からのみ実行できます。');
+    } else {
+      alert('競合分析の実行に失敗しました: ' + err.message);
+    }
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 // --- AI Growth Director(SEO Task) ---
 const taskTypeLabel = {
   create_article: '新規記事作成', improve_existing_article: '既存記事改善', improve_school_page: '校舎ページ改善',
@@ -1160,6 +1246,33 @@ document.getElementById('growthBackLink').addEventListener('click', () => {
   document.getElementById('growthTaskDetailView').style.display = 'none';
   document.getElementById('listView').style.display = 'block';
 });
+
+async function runGrowthGenerate() {
+  const btn = document.getElementById('growthGenerateBtn');
+  const statusEl = document.getElementById('growthGenerateStatus');
+  btn.disabled = true;
+  statusEl.textContent = '⏳ SEOタスクと構成案(Page Plan)を生成中です。校舎ページ数によっては数分かかる場合があります…';
+  try {
+    const params = withBranchId(new URLSearchParams());
+    const result = await fetchJson('api/seo/generate-tasks?' + params.toString(), { method: 'POST' });
+    const tasksMsg = result.tasks.message
+      ? result.tasks.message
+      : `Task作成:${result.tasks.tasks_created}件 / 更新:${result.tasks.tasks_updated}件${result.tasks.error_count ? ` / エラー:${result.tasks.error_count}件` : ''}`;
+    statusEl.textContent = `✅ 完了しました。${tasksMsg} ・ 構成案(Page Plan)生成:${result.pagePlans.generated}件`;
+    await loadGrowthTasks();
+  } catch (err) {
+    statusEl.textContent = '';
+    if (err.message.includes('400')) {
+      alert('Growth Director(features.growth_director)が無効なため実行できません。');
+    } else if (err.message.includes('403')) {
+      alert('この操作はローカルホスト(またはALLOW_REMOTE_APPROVE=true環境)からのみ実行できます。');
+    } else {
+      alert('自動生成に失敗しました: ' + err.message);
+    }
+  } finally {
+    btn.disabled = false;
+  }
+}
 
 // --- 今週の提案(AI Weekly Director、Sprint 4.0) ---
 let currentWeeklyRec = null;
@@ -1301,6 +1414,32 @@ document.getElementById('draftResultModalClose').addEventListener('click', close
 document.getElementById('draftResultModalOverlay').addEventListener('click', (e) => {
   if (e.target.id === 'draftResultModalOverlay') closeDraftResultModal();
 });
+
+async function runWeeklyRecGenerate() {
+  const btn = document.getElementById('weeklyRecGenerateBtn');
+  const statusEl = document.getElementById('weeklyRecGenerateStatus');
+  btn.disabled = true;
+  statusEl.textContent = '⏳ 今週の提案を生成中です。対象Task数によっては数分かかる場合があります…';
+  try {
+    const params = withBranchId(new URLSearchParams());
+    const result = await fetchJson('api/seo/weekly-recommendation/generate?' + params.toString(), { method: 'POST' });
+    statusEl.textContent = result.locked
+      ? `ℹ️ ${result.batchDate}分は既に承認/アーカイブ済みのため上書きされませんでした。`
+      : `✅ ${result.batchDate}分を${result.itemCount}件のタスクで生成しました(${escapeHtml(result.curationTier || '-')})。`;
+    await loadWeeklyRecommendation();
+  } catch (err) {
+    statusEl.textContent = '';
+    if (err.message.includes('404')) {
+      alert('Growth Director(features.growth_director)が無効なため実行できません。');
+    } else if (err.message.includes('403')) {
+      alert('この操作はローカルホスト(またはALLOW_REMOTE_APPROVE=true環境)からのみ実行できます。');
+    } else {
+      alert('生成に失敗しました: ' + err.message);
+    }
+  } finally {
+    btn.disabled = false;
+  }
+}
 
 async function approveWeeklyRecommendation() {
   if (!currentWeeklyRec) return;

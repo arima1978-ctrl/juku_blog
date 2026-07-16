@@ -34,8 +34,8 @@ function parseArgs(argv) {
 
 // seo_tasks/seo_keyword_candidates/GSC実績から、page_task_grouper.jsが必要とする
 // 拡張Taskオブジェクトへ変換する(DBアクセスはここに閉じ込め、grouper自体は純粋関数に保つ)。
-function buildEnrichedTasks() {
-  const tasks = seoDb.listTasks({ status: 'proposed', taskType: 'improve_school_page' });
+function buildEnrichedTasks(branchId) {
+  const tasks = seoDb.listTasks({ status: 'proposed', taskType: 'improve_school_page', branchId });
   return tasks.map((task) => {
     const candidate = task.source_candidate_id ? seoDb.getKeywordCandidateById(task.source_candidate_id) : null;
     const gsc = seoDb.getGscAggregateForKeyword(task.target_keyword);
