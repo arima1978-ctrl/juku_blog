@@ -564,3 +564,24 @@ CREATE TABLE IF NOT EXISTS seo_weekly_recommendations (
   UNIQUE (batch_date)
 );
 CREATE INDEX IF NOT EXISTS idx_seo_weekly_recommendations_batch_date ON seo_weekly_recommendations(batch_date);
+
+-- 複数校舎管理(プランA: データベース化)。校舎ごとにWordPress投稿の著者アカウントが
+-- 異なるため、config/juku.yamlの静的なwordpress.author_id/author_display_nameに代わり、
+-- このテーブルの「現在アクティブな校舎」(is_active=1、常に1件のみ)からWordPress投稿者
+-- 検証(scripts/lib/wordpress_validation.js)の期待値を取得する。wordpress_api_tokenは
+-- 校舎ごとに異なるWordPressアカウントのアプリケーションパスワードを想定した保存領域だが、
+-- 実際のBasic認証ヘッダーへの組み込みは今回未実装(校舎ごとのユーザー名を保持する
+-- カラムが無いため、別途設計が必要な今後の課題とする)。category_idは今回の対象外の
+-- ため、引き続きconfig/juku.yamlの値を全校舎共通で使用する。
+CREATE TABLE IF NOT EXISTS branches (
+  id                              INTEGER PRIMARY KEY AUTOINCREMENT,
+  name                            TEXT NOT NULL,
+  target_area                     TEXT,
+  wordpress_author_id             INTEGER,
+  wordpress_author_display_name   TEXT,
+  wordpress_api_token              TEXT,
+  is_active                       INTEGER NOT NULL DEFAULT 0,
+  created_at                      TEXT NOT NULL,
+  updated_at                      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_branches_is_active ON branches(is_active);

@@ -324,6 +324,7 @@
       <button data-tab="seo">競合キーワード分析</button>
       <button data-tab="growth">Growth Director</button>
       <button class="tab-button" data-tab="weekly-recommendation">今週の提案</button>
+      <button data-tab="branches">校舎・塾長設定</button>
     </div>
 
     <div id="postsTab">
@@ -429,6 +430,32 @@
       <div class="summary-row" id="weeklyRecSummaryRow"></div>
       <div id="weeklyRecApproveArea"></div>
       <div class="card-list" id="weeklyRecTaskList"></div>
+    </div>
+
+    <div id="branchesTab" class="tab-content" style="display:none;">
+      <p style="color:var(--text-muted); margin: 0 0 12px;">
+        複数の校舎を登録・管理できます。「有効化」した校舎(常に1件のみ)が、WordPress投稿時の
+        投稿者検証および記事生成の基準として使われます。
+      </p>
+      <button class="primary" id="branchAddBtn" style="margin-bottom:14px;">＋ 新規校舎を追加</button>
+      <div class="edit-form-area" id="branchFormArea">
+        <input type="hidden" id="branchFormId">
+        <label>校舎名</label>
+        <input type="text" id="branchFormName">
+        <label>ターゲット地域</label>
+        <input type="text" id="branchFormTargetArea">
+        <label>WordPress著者ID</label>
+        <input type="text" id="branchFormAuthorId">
+        <label>WordPress著者表示名(塾長名)</label>
+        <input type="text" id="branchFormAuthorDisplayName">
+        <label>WordPress APIトークン(任意。校舎ごとに投稿アカウントが異なる場合)</label>
+        <input type="text" id="branchFormApiToken">
+        <div class="actions" style="margin-top:12px;">
+          <button class="primary" id="branchFormSave">保存</button>
+          <button id="branchFormCancel">キャンセル</button>
+        </div>
+      </div>
+      <div class="card-list" id="branchList"></div>
     </div>
   </div>
 
@@ -1268,6 +1295,103 @@ async function approveWeeklyRecommendation() {
   }
 }
 
+// --- 校舎・塾長設定(複数校舎管理、プランA) ---
+let currentBranches = [];
+
+async function loadBranches() {
+  currentBranches = await fetchJson('api/branches');
+  const list = document.getElementById('branchList');
+  if (currentBranches.length === 0) {
+    list.innerHTML = '<div class="empty">登録済みの校舎はありません</div>';
+    return;
+  }
+  list.innerHTML = currentBranches.map(renderBranchCard).join('');
+}
+
+function renderBranchCard(b) {
+  const activeBadge = b.is_active
+    ? '<span class="badge badge-approved">有効化中</span>'
+    : `<button onclick="activateBranch(${b.id})">この校舎を有効化</button>`;
+  return `
+    <div class="post-card">
+      <div class="row1">
+        <div>
+          <div class="title">${escapeHtml(b.name)}</div>
+          <div class="task-type-label">
+            ${b.target_area ? escapeHtml(b.target_area) + ' ・ ' : ''}
+            WP著者ID: ${b.wordpress_author_id ?? '-'} ・ 表示名: ${escapeHtml(b.wordpress_author_display_name || '-')}
+          </div>
+        </div>
+        <div style="text-align:right;">${activeBadge}</div>
+      </div>
+      <div class="actions" style="margin-top:10px;">
+        <button onclick="openBranchForm(${b.id})">編集</button>
+        ${b.is_active ? '' : `<button class="danger" onclick="deleteBranch(${b.id})">削除</button>`}
+      </div>
+    </div>
+  `;
+}
+
+function openBranchForm(branchId) {
+  const branch = branchId ? currentBranches.find((b) => b.id === branchId) : null;
+  document.getElementById('branchFormId').value = branch ? branch.id : '';
+  document.getElementById('branchFormName').value = branch ? branch.name : '';
+  document.getElementById('branchFormTargetArea').value = branch ? (branch.target_area || '') : '';
+  document.getElementById('branchFormAuthorId').value = branch && branch.wordpress_author_id != null ? branch.wordpress_author_id : '';
+  document.getElementById('branchFormAuthorDisplayName').value = branch ? (branch.wordpress_author_display_name || '') : '';
+  document.getElementById('branchFormApiToken').value = branch ? (branch.wordpress_api_token || '') : '';
+  document.getElementById('branchFormArea').style.display = 'block';
+}
+
+function closeBranchForm() {
+  document.getElementById('branchFormArea').style.display = 'none';
+}
+
+async function saveBranchForm() {
+  const id = document.getElementById('branchFormId').value;
+  const fields = {
+    name: document.getElementById('branchFormName').value.trim(),
+    target_area: document.getElementById('branchFormTargetArea').value.trim(),
+    wordpress_author_id: document.getElementById('branchFormAuthorId').value.trim(),
+    wordpress_author_display_name: document.getElementById('branchFormAuthorDisplayName').value.trim(),
+    wordpress_api_token: document.getElementById('branchFormApiToken').value.trim(),
+  };
+  try {
+    if (id) {
+      await fetchJson(`api/branches/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(fields) });
+    } else {
+      await fetchJson('api/branches', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(fields) });
+    }
+    closeBranchForm();
+    await loadBranches();
+  } catch (err) {
+    alert('保存に失敗しました: ' + err.message);
+  }
+}
+
+async function activateBranch(id) {
+  try {
+    await fetchJson(`api/branches/${id}/activate`, { method: 'POST' });
+    await loadBranches();
+  } catch (err) {
+    alert('有効化に失敗しました: ' + err.message);
+  }
+}
+
+async function deleteBranch(id) {
+  if (!confirm('この校舎を削除しますか？')) return;
+  try {
+    await fetchJson(`api/branches/${id}`, { method: 'DELETE' });
+    await loadBranches();
+  } catch (err) {
+    alert('削除に失敗しました: ' + err.message);
+  }
+}
+
+document.getElementById('branchAddBtn').addEventListener('click', () => openBranchForm(null));
+document.getElementById('branchFormSave').addEventListener('click', saveBranchForm);
+document.getElementById('branchFormCancel').addEventListener('click', closeBranchForm);
+
 // --- タブ切り替え ---
 document.querySelectorAll('.tabbar button').forEach(btn => {
   btn.addEventListener('click', () => {
@@ -1280,6 +1404,7 @@ document.querySelectorAll('.tabbar button').forEach(btn => {
     document.getElementById('seoTab').style.display = tab === 'seo' ? 'block' : 'none';
     document.getElementById('growthTab').style.display = tab === 'growth' ? 'block' : 'none';
     document.getElementById('weeklyRecommendationTab').style.display = tab === 'weekly-recommendation' ? 'block' : 'none';
+    document.getElementById('branchesTab').style.display = tab === 'branches' ? 'block' : 'none';
     if (tab === 'episodes') loadEpisodes();
     if (tab === 'calendar' && !calendarLoaded) {
       calendarLoaded = true;
@@ -1291,6 +1416,7 @@ document.querySelectorAll('.tabbar button').forEach(btn => {
     }
     if (tab === 'growth') loadGrowthTasks();
     if (tab === 'weekly-recommendation') loadWeeklyRecommendation();
+    if (tab === 'branches') loadBranches();
   });
 });
 

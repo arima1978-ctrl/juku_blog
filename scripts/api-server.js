@@ -37,6 +37,7 @@ const seoDb = require('./lib/seo_db');
 const { requireLocalhost } = require('./lib/require_localhost');
 const { mondayOfWeek } = require('./seo_weekly_director');
 const { resultFilePathFor } = require('./seo_publisher');
+const branchesDb = require('./lib/branches_db');
 
 const PORT = process.env.PORT || 3013;
 const DASHBOARD_URL = process.env.DASHBOARD_URL || `http://localhost:${PORT}`;
@@ -252,6 +253,70 @@ app.post('/api/episodes', (req, res) => {
   const text = (req.body && req.body.text || '').trim();
   if (!text) return res.status(400).json({ error: 'text is required' });
   appendEpisode(text);
+  res.json({ ok: true });
+});
+
+// --- 複数校舎管理(プランA: データベース化) ---
+// 校舎ごとにWordPress投稿者(塾長アカウント)が異なるため、静的なconfig/juku.yamlに
+// 代わりDB(branchesテーブル)で管理する。記事生成パイプラインの基盤設定のため、
+// Growth Director等とは異なりfeature flagでは制御しない(常時有効)。
+
+function coerceAuthorId(value) {
+  if (value === undefined || value === null || value === '') return null;
+  return Number(value);
+}
+
+app.get('/api/branches', (req, res) => {
+  res.json(branchesDb.listBranches());
+});
+
+app.post('/api/branches', (req, res) => {
+  const body = req.body || {};
+  const name = (body.name || '').trim();
+  if (!name) return res.status(400).json({ error: 'name_required' });
+
+  const branch = branchesDb.createBranch(
+    {
+      name,
+      target_area: body.target_area || null,
+      wordpress_author_id: coerceAuthorId(body.wordpress_author_id),
+      wordpress_author_display_name: body.wordpress_author_display_name || null,
+      wordpress_api_token: body.wordpress_api_token || null,
+    },
+    new Date().toISOString()
+  );
+  res.json(branch);
+});
+
+app.put('/api/branches/:id', (req, res) => {
+  const id = Number(req.params.id);
+  if (!branchesDb.getBranchById(id)) return res.status(404).json({ error: 'not_found' });
+
+  const body = req.body || {};
+  const fields = {};
+  branchesDb.UPDATABLE_FIELDS.forEach((key) => {
+    if (Object.prototype.hasOwnProperty.call(body, key)) fields[key] = body[key];
+  });
+  if (Object.keys(fields).length === 0) return res.status(400).json({ error: 'no_fields' });
+  if ('wordpress_author_id' in fields) fields.wordpress_author_id = coerceAuthorId(fields.wordpress_author_id);
+
+  res.json(branchesDb.updateBranch(id, fields, new Date().toISOString()));
+});
+
+app.post('/api/branches/:id/activate', (req, res) => {
+  const id = Number(req.params.id);
+  const result = branchesDb.activateBranch(id, new Date().toISOString());
+  if (!result.ok) return res.status(404).json({ error: result.reason });
+  res.json({ ok: true, branch: result.branch });
+});
+
+app.delete('/api/branches/:id', (req, res) => {
+  const id = Number(req.params.id);
+  const result = branchesDb.deleteBranch(id);
+  if (!result.ok) {
+    const status = result.reason === 'not_found' ? 404 : 400;
+    return res.status(status).json({ error: result.reason });
+  }
   res.json({ ok: true });
 });
 

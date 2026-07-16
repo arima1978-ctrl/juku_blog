@@ -16,6 +16,23 @@ const https = require('node:https');
 const { URL } = require('node:url');
 const { loadJukuConfig } = require('./config');
 const { validateAuthor, validateCategory } = require('./wordpress_validation');
+const { getActiveBranch } = require('./branches_db');
+
+// プランA(複数校舎管理): 投稿者検証の期待値(author_id/author_display_name)は、
+// config/juku.yamlの静的な値ではなく、DB上の現在アクティブな校舎(branches.is_active=1)
+// から取得する。category_idは校舎ごとの設定を持たないため、引き続きconfig/juku.yaml
+// (全校舎共通)を使う。アクティブな校舎が1件も無い場合(ensureSeeded()により通常は
+// 発生しないが、念のため)はconfig/juku.yamlの値へフォールバックする。
+function resolveWpConf() {
+  const staticWpConf = loadJukuConfig().wordpress || {};
+  const activeBranch = getActiveBranch();
+  if (!activeBranch) return staticWpConf;
+  return {
+    ...staticWpConf,
+    author_id: activeBranch.wordpress_author_id ?? staticWpConf.author_id,
+    author_display_name: activeBranch.wordpress_author_display_name ?? staticWpConf.author_display_name,
+  };
+}
 
 function getWpConfig() {
   const baseUrl = process.env.WP_URL;
@@ -106,8 +123,7 @@ async function assertWordPressTargetIsValid(config, wpConf) {
 // 省略時は従来通り即時公開(status:'publish')。
 async function publishPost(post, { date } = {}) {
   const config = getWpConfig();
-  const jukuConfig = loadJukuConfig();
-  const wpConf = jukuConfig.wordpress || {};
+  const wpConf = resolveWpConf();
   const categoryId = wpConf.category_id;
 
   await assertWordPressTargetIsValid(config, wpConf);
@@ -142,8 +158,7 @@ async function publishPost(post, { date } = {}) {
 // 下書きを確認してから公開する運用を前提とする)。
 async function createDraftPost({ title, bodyHtml, metaDescription } = {}) {
   const config = getWpConfig();
-  const jukuConfig = loadJukuConfig();
-  const wpConf = jukuConfig.wordpress || {};
+  const wpConf = resolveWpConf();
   const categoryId = wpConf.category_id;
 
   await assertWordPressTargetIsValid(config, wpConf);
@@ -180,8 +195,7 @@ async function fetchPostStatus(wpPostId) {
 // assertWordPressTargetIsValid()と同じロジックだが、例外を投げずに結果を返す。
 async function checkWordPressTargetDryRun() {
   const config = getWpConfig();
-  const jukuConfig = loadJukuConfig();
-  const wpConf = jukuConfig.wordpress || {};
+  const wpConf = resolveWpConf();
 
   const currentUser = await wpRequest(config, 'GET', 'users/me').catch(() => null);
   const authorCheck = validateAuthor(currentUser, wpConf);
