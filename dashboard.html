@@ -373,6 +373,7 @@
         優先され、対象期間外は曜日テーマ(config/calendar.yaml)にフォールバックします。
         実際の企画時は過去記事との重複回避等も加味されるため、確定ではありません。
       </p>
+      <div id="calendarFallbackBanner"></div>
       <div id="calendarList"></div>
     </div>
 
@@ -843,9 +844,22 @@ document.getElementById('episodeSubmit').addEventListener('click', async () => {
 });
 
 // --- テーマカレンダー ---
+function currentBranchLabel() {
+  const branch = currentBranches.find((b) => b.id === currentBranchId);
+  return branch ? branch.name : '選択中の校舎';
+}
+
 let calendarLoaded = false;
 async function loadThemeCalendar() {
-  const data = await fetchJson('api/theme-calendar?days=365');
+  const params = withBranchId(new URLSearchParams());
+  params.set('days', '365');
+  const data = await fetchJson('api/theme-calendar?' + params.toString());
+
+  const bannerEl = document.getElementById('calendarFallbackBanner');
+  bannerEl.innerHTML = data.isSharedFallback
+    ? `<div class="warning-banner">⚠️ このプレビューは共通設定(小幡校向け)を参考表示しています。${escapeHtml(currentBranchLabel())}専用のテーマ設定はまだ登録されていません。</div>`
+    : '';
+
   const byMonth = new Map();
   for (const day of data.calendar) {
     const monthKey = day.date.slice(0, 7); // YYYY-MM
@@ -1470,8 +1484,11 @@ function populateBranchSwitcher(branches) {
 }
 
 // 選択中の校舎を切り替えたら、記事一覧・競合キーワード分析・Growth Director・
-// 今週の提案の各タブのデータを瞬時に切り替える(表示中でないタブも次に開いた際に
-// 最新化されるよう、まとめて再読み込みする)。開いている詳細ビューは一覧へ戻す。
+// 今週の提案・テーマカレンダーの各タブのデータを瞬時に切り替える(表示中でないタブも
+// 次に開いた際に最新化されるよう、まとめて再読み込みする)。開いている詳細ビューは
+// 一覧へ戻す。テーマカレンダーは校舎ごとに参考表示バナーの有無が変わりうるため、
+// 「初回タブクリック時のみ読み込む」既存の遅延ロードキャッシュ(calendarLoaded)を
+// ここでは無視して必ず再読み込みする。
 function onBranchSwitcherChange(e) {
   currentBranchId = Number(e.target.value);
   document.getElementById('listView').style.display = 'block';
@@ -1485,6 +1502,8 @@ function onBranchSwitcherChange(e) {
   loadSeoCandidates();
   loadGrowthTasks();
   loadWeeklyRecommendation();
+  calendarLoaded = true;
+  loadThemeCalendar();
 }
 document.getElementById('branchSwitcher').addEventListener('change', onBranchSwitcherChange);
 

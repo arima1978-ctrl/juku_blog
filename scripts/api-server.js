@@ -269,8 +269,9 @@ app.get('/api/summary', (req, res) => {
 app.get('/api/theme-calendar', (req, res) => {
   const days = Math.min(Number(req.query.days) || 365, 366);
   const start = req.query.start || new Date().toISOString().slice(0, 10);
-  const calendar = projectThemeCalendar(start, days);
-  res.json({ start, days, calendar });
+  const branchId = resolveBranchId(req);
+  const { days: calendar, isSharedFallback } = projectThemeCalendar(start, days, branchId);
+  res.json({ start, days, calendar, isSharedFallback });
 });
 
 app.get('/api/episodes', (req, res) => {

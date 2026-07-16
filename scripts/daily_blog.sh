@@ -6,13 +6,37 @@
 #   → sync_draft_to_db.js で posts.sqlite に登録
 #
 # 失敗時は scripts/log_error.js でログに残し、ダッシュボードのエラー欄に表示させる。
+#
+# 記事生成パイプラインの複数校舎対応(Phase 1): 第1引数に校舎のslug(branches.slug)を
+# 指定すると、その校舎のconfig(branches/<slug>/config/)・データ(data/branches/<slug>/)
+# を使うようエージェントへコンテキストを注入する。引数を省略した場合は従来通り
+# 共有config/data(単一校舎)のまま動作し、挙動は一切変わらない。
+#
+# 使い方:
+#   ./scripts/daily_blog.sh          # 従来通り(単一校舎、共有config/data)
+#   ./scripts/daily_blog.sh obata    # 校舎「obata」向けに実行
 
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
 
+BRANCH_SLUG="${1:-}"
+BRANCH_CONTEXT_LINE=""
+if [ -n "$BRANCH_SLUG" ]; then
+  BRANCH_ID=$(node scripts/resolve_branch.js "$BRANCH_SLUG") || exit 1
+  export JUKU_BRANCH_ID="$BRANCH_ID"
+  export JUKU_BRANCH_SLUG="$BRANCH_SLUG"
+  mkdir -p "data/branches/${BRANCH_SLUG}"
+  BRANCH_CONTEXT_LINE="【校舎コンテキスト】config=branches/${BRANCH_SLUG}/config data=data/branches/${BRANCH_SLUG}
+"
+fi
+
 TODAY=$(date +%Y-%m-%d)
 mkdir -p logs
-LOG="logs/daily_blog_${TODAY}.log"
+if [ -n "$BRANCH_SLUG" ]; then
+  LOG="logs/daily_blog_${TODAY}_${BRANCH_SLUG}.log"
+else
+  LOG="logs/daily_blog_${TODAY}.log"
+fi
 
 log() { echo "[$(date '+%H:%M:%S')] $*" | tee -a "$LOG"; }
 
@@ -22,7 +46,7 @@ run_agent() {
   if ! timeout -k 20 900 claude -p --agent "$agent" \
       --allowedTools "$tools" \
       --permission-mode acceptEdits \
-      "$instruction" >> "$LOG" 2>&1; then
+      "${BRANCH_CONTEXT_LINE}${instruction}" >> "$LOG" 2>&1; then
     log "!!! ${step_name} が失敗しました"
     node scripts/log_error.js "$step_name" "claude -p --agent ${agent} が非ゼロ終了(タイムアウトまたはエラー)。詳細は ${LOG} を参照"
     return 1

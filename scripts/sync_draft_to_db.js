@@ -14,6 +14,7 @@ const { insertPost, updatePostBySlug, getPostBySlug } = require('./lib/db');
 const { ROOT } = require('./lib/config');
 const seoDb = require('./lib/seo_db');
 const branchesDb = require('./lib/branches_db');
+const { getBranchContext } = require('./lib/branch_context');
 const { logError } = require('./log_error');
 
 // パイプライン内部のdraft frontmatter status → DB(posts.sqlite)のstatus対応表。
@@ -106,13 +107,16 @@ function main() {
     postId = existing.id;
     console.log(`[sync_draft_to_db] 更新しました: id=${existing.id} slug=${fm.slug} status=${fields.status}`);
   } else {
-    // 複数校舎管理: 生成パイプラインはconfig/juku.yaml単一設定のまま(フェーズ3対象外)
-    // だが、記事は必ず現在アクティブな校舎のIDを明示的に紐づけて保存する。
-    const activeBranch = branchesDb.getActiveBranch();
+    // 記事生成パイプラインの複数校舎対応Phase 1: 校舎コンテキスト(JUKU_BRANCH_ID)が
+    // 明示されていればそれを使う(daily_blog.shがbranch引数付きで実行された場合)。
+    // 未指定時は従来通り現在アクティブな校舎にフォールバックする
+    // (CLI/cronの既存挙動を変えないためのデフォルト)。
+    const ctx = getBranchContext();
+    const branchId = ctx.isLegacy ? (branchesDb.getActiveBranch() || {}).id ?? null : ctx.branchId;
     postId = insertPost({
       created_at: new Date().toISOString(),
       slug: fm.slug,
-      branch_id: activeBranch ? activeBranch.id : null,
+      branch_id: branchId,
       ...fields,
     });
     console.log(`[sync_draft_to_db] 新規登録しました: id=${postId} slug=${fm.slug} status=${fields.status}`);

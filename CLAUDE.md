@@ -218,6 +218,31 @@ min-max正規化)が、`seo_tasks`へ`opportunity_score`とは独立した`roi_p
 - **承認ボタンを押す前に、予約予定日・期限超過有無・連続投稿警告をプレビュー表示**(`GET /api/posts/:id/schedule-preview`)
 - 差し戻し時のメモは `data/rejected_notes.json` に反映され、翌日の智谷が参照する
 
+## 複数校舎(branch-aware)対応 — Phase 1
+
+記事生成パイプライン全体を複数校舎対応させる大規模対応のPhase 1(中核メカニズム構築)が完了している。
+Phase 2(WordPress投稿の校舎別解決)・Phase 3(小幡校の実データ移行+あま本部の実設定投入)・
+Phase 4(複数校舎の日次自動オーケストレーション)は未着手(下記「既知の未実装・制約」参照)。
+
+- **ブランチコンテキスト解決の二系統**: ダッシュボードAPI(`api-server.js`)は明示的な`branchId`引数
+  (`resolveBranchId(req)`で解決)、`daily_blog.sh`配下のCLI/エージェントは環境変数
+  (`JUKU_BRANCH_ID`/`JUKU_BRANCH_SLUG`、`scripts/lib/branch_context.js`が読む)。優先順位:
+  明示branchId引数 > 環境変数アンビエントコンテキスト > legacy(校舎コンテキスト無し、既存の唯一のbranch)。
+- **`scripts/lib/config.js`**: `branches/<slug>/config/<file>.yaml`が存在すればそれを使い、無ければ
+  共有の`config/<file>.yaml`にフォールバックする。**`juku.yaml`のみ例外**で、CLIパイプライン
+  (`daily_blog.sh`経由)は校舎別`juku.yaml`が無いとハードエラーで停止する(暗黙フォールバックによる
+  誤生成事故を防ぐため)。ダッシュボードAPI経由は共有configへフォールバックした上で
+  `isSharedFallback: true`をレスポンスに含める(`isEarliestBranch()`により、最古のbranch自身が
+  共有configを使う場合はフォールバック扱いにしない)。
+- **`daily_blog.sh`**: 第1引数に校舎の`slug`(`branches.slug`)を指定すると、`scripts/resolve_branch.js`
+  でIDを解決し、各エージェントへの指示文の先頭に`【校舎コンテキスト】config=<dir> data=<dir>`を注入する。
+  引数省略時は従来通り(共有config/data、単一校舎)。
+- **5エージェント**(`researcher-local`/`planner-blog-btoc`/`writer-blog-btoc`/`editor-btoc`/`verifier-local`)
+  の`.md`冒頭に、指示文の`【校舎コンテキスト】`行を見てパスを読み替えるルールを追加済み
+  (本文中の個別パス記述は書き換えていない)。
+- **ダッシュボードのテーマカレンダー**: `GET /api/theme-calendar`が`isSharedFallback`を返し、
+  校舎別テーマ設定がまだ無い校舎を選択した際は「参考表示」の警告バナーを表示する。
+
 ## 診断・運用コマンド
 
 ```bash
@@ -245,6 +270,10 @@ node scripts/seo_task_generate.js [--dry-run]  # SEO Task生成(features.growth_
 
 ## 既知の未実装・制約
 
+- 複数校舎対応はPhase 1(中核メカニズム)のみ完了。WordPress投稿の校舎別解決(Phase 2)・
+  小幡校の実データ移行とあま本部の実設定投入(Phase 3)・複数校舎の日次自動オーケストレーション
+  `daily_blog_all.sh`(Phase 4)は未着手。現状`branches/<slug>/config/`を持つ校舎は存在せず、
+  校舎別`daily_blog.sh <slug>`実行は本番未使用
 - WordPress側で実際に公開時刻を迎えた記事のstatus同期は毎朝のcron任せ(リアルタイムではない)
 - アイキャッチは**メタデータのみ**(実画像の生成・合成は未実装)
 - `post_analytics`テーブルは将来のSearch Console連携用の**設計のみ**(データ収集処理は未実装)

@@ -114,7 +114,12 @@ function resolveBackfillBranchId(conn) {
       created_at: ts,
       updated_at: ts,
     });
-  return Number(result.lastInsertRowid);
+  const newId = Number(result.lastInsertRowid);
+  // 記事生成パイプラインの複数校舎対応Phase 1: この関数はbranches.slug列の追加+
+  // NULL一括バックフィル(このgetDb()呼び出しの少し後の行)より前に実行されるため、
+  // ここで新規作成した行だけは自分でslugを設定しておく(でないとNULLのまま残る)。
+  conn.prepare('UPDATE branches SET slug = :slug WHERE id = :id').run({ slug: `branch-${newId}`, id: newId });
+  return newId;
 }
 
 function getDb() {
@@ -173,6 +178,18 @@ function getDb() {
   ensureColumn(db, 'seo_tasks', 'expected_impact_cv', 'REAL'); // 月間見込み問い合わせ(CV)増加数
   ensureColumn(db, 'seo_tasks', 'roi_priority_score', 'INTEGER'); // 0〜100(バッチ内min-max正規化後)
   ensureColumn(db, 'seo_tasks', 'roi_score_computed_at', 'TEXT'); // 計算日時(ISO8601)
+
+  // 記事生成パイプラインの複数校舎対応 Phase 1: 校舎別ディレクトリ・ログ名に使うslug
+  // (ASCII、ダッシュボードの校舎編集フォームで変更可能)。日本語の校舎名から機械的に
+  // ローマ字化はできないため、既存行への自動採番は「branch-<id>」という安全な仮値のみに
+  // 留め、実際の値(例: 小幡校→obata)は運用者がダッシュボードから設定する運用とする。
+  ensureColumn(db, 'branches', 'slug', 'TEXT');
+  // Phase 2で使用: 校舎別WordPressカテゴリーID(現状はconfig/juku.yaml全校共通のまま)
+  ensureColumn(db, 'branches', 'wordpress_category_id', 'INTEGER');
+  // Phase 4で使用: 日次自動生成の対象にするか。既定0(オプトイン)
+  ensureColumn(db, 'branches', 'generation_enabled', 'INTEGER NOT NULL DEFAULT 0');
+  db.exec("UPDATE branches SET slug = 'branch-' || id WHERE slug IS NULL");
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_branches_slug ON branches(slug)');
 
   // 複数校舎管理(完全マルチテナント化): postsはグローバルにユニークなslugを維持するため
   // 単純なADD COLUMNで済む。以下7テーブルはUNIQUE制約にbranch_idを含める必要があるため、

@@ -11,6 +11,7 @@ const matter = require('gray-matter');
 const { listPosts } = require('./lib/db');
 const { checkSimilarity, extractHeadings } = require('./lib/similarity');
 const { loadJukuConfig, ROOT } = require('./lib/config');
+const { getBranchContext } = require('./lib/branch_context');
 
 function main() {
   const relOrAbs = process.argv[2];
@@ -28,11 +29,17 @@ function main() {
     body: content,
   };
 
+  // 記事生成パイプラインの複数校舎対応Phase 1: 校舎コンテキストが有効な場合、
+  // 過去記事の比較対象もその校舎のものだけに絞る(他校舎の記事と誤って
+  // 重複判定してしまわないように。未指定時は従来通り全記事が対象)。
+  const ctx = getBranchContext();
+  const branchId = ctx.isLegacy ? undefined : ctx.branchId;
+
   // 自分自身(同一slug)が既にDB登録済みの場合、比較対象から除外する
   // (修正モードでの再チェック時に自己一致してis_duplicate=trueにならないように)
-  const pastPosts = listPosts({}).filter((p) => p.slug !== fm.slug);
+  const pastPosts = listPosts({ branchId }).filter((p) => p.slug !== fm.slug);
 
-  const config = loadJukuConfig();
+  const config = loadJukuConfig(branchId);
   const thresholds = (config.generation && config.generation.duplicate_threshold) || {};
 
   const result = checkSimilarity(candidate, pastPosts, thresholds);

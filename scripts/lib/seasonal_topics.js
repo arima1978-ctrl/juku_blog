@@ -8,8 +8,8 @@ const { loadYaml } = require('./config');
 
 const FILE_PATH = 'config/seasonal_topics.yaml';
 
-function loadSeasonalTopics() {
-  const parsed = loadYaml(FILE_PATH);
+function loadSeasonalTopics(branchId) {
+  const parsed = loadYaml(FILE_PATH, branchId);
   return (parsed && parsed.seasonal_topics) || [];
 }
 

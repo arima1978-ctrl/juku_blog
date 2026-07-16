@@ -26,7 +26,7 @@ function ensureSeeded() {
   const jukuConf = (config && config.juku) || {};
   const ts = nowIso();
 
-  conn
+  const result = conn
     .prepare(
       `INSERT INTO branches (
         name, target_area, wordpress_author_id, wordpress_author_display_name,
@@ -44,11 +44,17 @@ function ensureSeeded() {
       created_at: ts,
       updated_at: ts,
     });
+  // db.js側のgetDb()内slugバックフィルは、このINSERTより前(branchesがまだ空の時点)に
+  // 実行されるため間に合わない。ここで自分の挿入行に対して明示的にslugを設定する
+  // (記事生成パイプラインの複数校舎対応Phase 1: branch_context.js/config.jsが
+  // slugを前提にbranches/<slug>/config/を解決するため、NULLのまま放置しない)。
+  const newId = Number(result.lastInsertRowid);
+  conn.prepare('UPDATE branches SET slug = :slug WHERE id = :id').run({ slug: `branch-${newId}`, id: newId });
 }
 
 function toBranch(row) {
   if (!row) return null;
-  return { ...row, is_active: !!row.is_active };
+  return { ...row, is_active: !!row.is_active, generation_enabled: !!row.generation_enabled };
 }
 
 function listBranches() {
@@ -61,6 +67,14 @@ function getBranchById(id) {
   ensureSeeded();
   const conn = getDb();
   return toBranch(conn.prepare('SELECT * FROM branches WHERE id = ?').get(id));
+}
+
+// 記事生成パイプラインの複数校舎対応(Phase 1): branch_context.jsがJUKU_BRANCH_SLUG経由で
+// 校舎を解決するために使う。
+function getBranchBySlug(slug) {
+  ensureSeeded();
+  const conn = getDb();
+  return toBranch(conn.prepare('SELECT * FROM branches WHERE slug = ?').get(slug));
 }
 
 // 状態不整合(is_active=1が0件/複数件)が万一発生しても、呼び出し側が確実に1件だけを
@@ -94,15 +108,23 @@ function createBranch(fields, nowIsoOverride) {
       created_at: ts,
       updated_at: ts,
     });
-  return getBranchById(Number(result.lastInsertRowid));
+  const newId = Number(result.lastInsertRowid);
+  // 記事生成パイプラインの複数校舎対応Phase 1: 全校舎が常にslugを持つという不変条件を
+  // 維持するため、指定が無ければ安全な仮値を即座に設定する(運用者はダッシュボードの
+  // 編集フォームから本来の値、例: obata/amaへ後から変更できる)。
+  conn.prepare('UPDATE branches SET slug = :slug WHERE id = :id').run({ slug: fields.slug || `branch-${newId}`, id: newId });
+  return getBranchById(newId);
 }
 
 const UPDATABLE_FIELDS = [
   'name',
+  'slug',
   'target_area',
   'wordpress_author_id',
   'wordpress_author_display_name',
   'wordpress_api_token',
+  'wordpress_category_id',
+  'generation_enabled',
 ];
 
 function updateBranch(id, fields, nowIsoOverride) {
@@ -162,6 +184,7 @@ module.exports = {
   ensureSeeded,
   listBranches,
   getBranchById,
+  getBranchBySlug,
   getActiveBranch,
   createBranch,
   updateBranch,

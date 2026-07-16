@@ -591,12 +591,20 @@ CREATE INDEX IF NOT EXISTS idx_seo_weekly_recommendations_batch_date ON seo_week
 CREATE TABLE IF NOT EXISTS branches (
   id                              INTEGER PRIMARY KEY AUTOINCREMENT,
   name                            TEXT NOT NULL,
+  slug                            TEXT,    -- 記事生成パイプラインの校舎別ディレクトリ・ログ名(ASCII)。Phase 1で追加
   target_area                     TEXT,
   wordpress_author_id             INTEGER,
   wordpress_author_display_name   TEXT,
   wordpress_api_token              TEXT,
+  wordpress_category_id           INTEGER, -- 校舎別WordPressカテゴリーID(Phase 2で使用。今回は列のみ)
+  generation_enabled              INTEGER NOT NULL DEFAULT 0, -- 日次自動生成の対象にするか(Phase 4で使用。今回は列のみ)
   is_active                       INTEGER NOT NULL DEFAULT 0,
   created_at                      TEXT NOT NULL,
   updated_at                      TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_branches_is_active ON branches(is_active);
+-- idx_branches_slugはscripts/lib/db.jsのgetDb()内で、slug列の存在が保証された後に
+-- 作成する(schema.sql内でここに直接書くと、slug列を持たない既存DBに対して
+-- CREATE TABLE IF NOT EXISTSがno-opになった直後にこのINDEX文がno such column
+-- エラーで失敗し、後続の全マイグレーションが止まってしまうため。過去のposts.branch_id
+-- と同じ落とし穴)。

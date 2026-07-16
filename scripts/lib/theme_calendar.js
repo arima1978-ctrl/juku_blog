@@ -7,7 +7,7 @@
 // あくまで表示・見通し用であり、実際の企画時は過去記事との重複回避・素材の
 // 有無等もさらに加味されるため確定ではない。
 
-const { loadCalendarConfig } = require('./config');
+const { loadCalendarConfig, resolveYamlSource } = require('./config');
 const { loadSeasonalTopics, getActiveTopics } = require('./seasonal_topics');
 const { WEEKDAY_KEYS } = require('./season');
 
@@ -64,19 +64,27 @@ function projectThemeForDate(dateStr, { calendarConfig, seasonalTopics, usedTopi
 // startDateStr(YYYY-MM-DD)からdays日分の予定テーマを配列で返す。
 // 一度使った季節テーマIDは以降の日で除外し、期間内で1日1テーマずつ消費されていく
 // ように見せる(実際の智谷の重複回避ロジックの簡易再現)。
-function projectThemeCalendar(startDateStr, days) {
-  const calendarConfig = loadCalendarConfig();
-  const seasonalTopics = loadSeasonalTopics();
+// branchId明示時(ダッシュボードAPI経由)は校舎別calendar.yaml/seasonal_topics.yamlを
+// 優先し、無ければ共有ファイルへフォールバックする(その場合isSharedFallback=trueを返す。
+// 「あま本部を見ているのに小幡校向けの地域名混じりテーマが出る」混乱を避けるため、
+// 呼び出し元がこのフラグを見て参考表示である旨をUIに明示できるようにする)。
+function projectThemeCalendar(startDateStr, days, branchId) {
+  const calendarConfig = loadCalendarConfig(branchId);
+  const seasonalTopics = loadSeasonalTopics(branchId);
+  const calendarSource = resolveYamlSource('config/calendar.yaml', branchId);
+  const seasonalTopicsSource = resolveYamlSource('config/seasonal_topics.yaml', branchId);
+  const isSharedFallback = calendarSource.isSharedFallback || seasonalTopicsSource.isSharedFallback;
+
   const usedTopicIds = new Set();
-  const result = [];
+  const days_ = [];
   let cursor = startDateStr;
   for (let i = 0; i < days; i++) {
     const day = projectThemeForDate(cursor, { calendarConfig, seasonalTopics, usedTopicIds });
     if (day.source === 'seasonal_topic') usedTopicIds.add(day.seasonalTopicId);
-    result.push(day);
+    days_.push(day);
     cursor = addDaysToDateStr(cursor, 1);
   }
-  return result;
+  return { days: days_, isSharedFallback };
 }
 
 module.exports = {
