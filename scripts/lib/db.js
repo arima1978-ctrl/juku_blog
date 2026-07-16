@@ -72,17 +72,23 @@ function ensureBranchIdRebuild(conn, tableName, newCreateTableSql, backfillBranc
   }
 }
 
-// branchesテーブルから「既存データを一括で割り当てるべきbranch_id」を決定する。
-// is_active=1の校舎を最優先し、無ければ任意の1件、それも無ければ(このプロセスで
-// branches_db.jsのensureSeeded()がまだ一度も呼ばれていない場合)config/juku.yamlの
-// 現在値から最低限の1件をこの場で作成する(branches_db.jsと同じロジックだが、
-// db.js→branches_db.js→db.jsの循環requireを避けるため最小限をここに複製する)。
+// branchesテーブルから「既存データ(移行前=単一テナント時代の全データ)を一括で
+// 割り当てるべきbranch_id」を決定する。
+//
+// 【重要】is_active=1(現在アクティブな校舎)ではなく、最も早く作成された校舎
+// (id最小、単一テナント時代から存在する唯一の校舎)を優先する。is_activeは
+// 校舎・塾長設定タブの操作で随時変わりうるミュータブルな実行時状態であり、
+// 複数テーブルの移行が別々のプロセス実行(例: 初回の7テーブル移行と、後日の
+// posts移行が別デプロイ)にまたがる場合、それぞれの実行タイミングでたまたま
+// is_active=1だった校舎が異なると、テーブルごとに異なるbranch_idへ既存データが
+// 割り当てられてしまう(2026-07-16の本番データ逆転インシデントの根本原因:
+// あま本部を有効化した状態で先にseo_*系の移行が走り、その後に小幡校を再度
+// 有効化した状態でposts移行が走ったため、同じ既存データ群が校舎間で分裂した)。
+// 「最初に作成された校舎」はis_activeの変動と無関係に一意に定まるため、
+// 複数回・複数プロセスにまたがる移行でも常に同じbranch_idを返す。
 function resolveBackfillBranchId(conn) {
-  const activeRow = conn.prepare('SELECT id FROM branches WHERE is_active = 1 ORDER BY id LIMIT 1').get();
-  if (activeRow) return activeRow.id;
-
-  const anyRow = conn.prepare('SELECT id FROM branches ORDER BY id LIMIT 1').get();
-  if (anyRow) return anyRow.id;
+  const earliestRow = conn.prepare('SELECT id FROM branches ORDER BY id ASC LIMIT 1').get();
+  if (earliestRow) return earliestRow.id;
 
   const { loadJukuConfig } = require('./config');
   const config = loadJukuConfig();

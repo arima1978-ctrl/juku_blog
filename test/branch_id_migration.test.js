@@ -211,6 +211,70 @@ test('既存DB(postsにbranch_id無し): 既存記事が失われず、現在ア
   fs.unlinkSync(TMP_LEGACY_POSTS_DB);
 });
 
+test('既存DB(2校舎あり・is_active=1が2番目に作成された校舎): バックフィルはis_activeでなく最初に作成された校舎(id最小)へ行われる', () => {
+  // 2026-07-16の本番データ逆転インシデントの回帰防止テスト。
+  // 「あま本部を有効化した状態でseo_*系の移行が先に走り、その後に小幡校を
+  // 再度有効化した状態でposts移行が走った」結果、既存データが校舎間で分裂した
+  // 事象を再現する: is_active=1の校舎が、最初に作成された校舎(=単一テナント
+  // 時代からの唯一の校舎、既存データの本来の持ち主)と異なるケース。
+  const TMP_REVERSAL_DB = path.join(os.tmpdir(), `juku_blog_branch_migration_reversal_${process.pid}.sqlite`);
+  const legacyDb = new DatabaseSync(TMP_REVERSAL_DB);
+  legacyDb.exec(`
+    CREATE TABLE seo_tasks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_type TEXT NOT NULL,
+      target_keyword TEXT NOT NULL,
+      source_candidate_id INTEGER,
+      opportunity_score INTEGER NOT NULL,
+      recommended_action TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'proposed',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE (target_keyword, task_type, source_candidate_id)
+    );
+    CREATE TABLE branches (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      target_area TEXT,
+      wordpress_author_id INTEGER,
+      wordpress_author_display_name TEXT,
+      wordpress_api_token TEXT,
+      is_active INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+  `);
+  // 小幡校(id=1、最初に作成)は非アクティブ、あま本部(id=2、後から作成)がアクティブ、
+  // という本番と同じ状況を再現する。
+  legacyDb
+    .prepare("INSERT INTO branches (name, is_active, created_at, updated_at) VALUES ('アンイングリッシュグループ 小幡校', 0, '2026-06-01', '2026-06-01')")
+    .run();
+  legacyDb
+    .prepare("INSERT INTO branches (name, is_active, created_at, updated_at) VALUES ('アンイングリッシュグループ あま本部校', 1, '2026-07-10', '2026-07-10')")
+    .run();
+  legacyDb
+    .prepare(
+      `INSERT INTO seo_tasks (task_type, target_keyword, opportunity_score, recommended_action, status, created_at, updated_at)
+       VALUES ('create_article', '小幡 塾', 70, 'create_article', 'proposed', '2026-06-01', '2026-06-01')`
+    )
+    .run();
+  legacyDb.close();
+
+  const dbModule = freshDbModules(TMP_REVERSAL_DB);
+  const conn = dbModule.getDb();
+
+  const tasks = conn.prepare('SELECT * FROM seo_tasks').all();
+  assert.equal(tasks.length, 1);
+  assert.equal(
+    tasks[0].branch_id,
+    1,
+    'is_active=1のあま本部(id=2)ではなく、最初に作成された小幡校(id=1)へバックフィルされるべき'
+  );
+
+  dbModule.closeDb();
+  fs.unlinkSync(TMP_REVERSAL_DB);
+});
+
 test('既存DB: 移行後にUNIQUE制約がbranch_id込みで機能する(別branch_idなら同じキーワード+タイプでも登録できる)', () => {
   const dbModule = freshDbModules(TMP_LEGACY_DB);
   const conn = dbModule.getDb();
