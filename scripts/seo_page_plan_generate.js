@@ -37,8 +37,8 @@ function parseArgs(argv) {
 // Feature Flagチェックを含まない中核処理(テスト容易性のため分離)。
 // save=falseの場合はDBへ一切書き込まない(seoDb.upsertSeoPagePlanを呼ばない)。
 // pageContextDepsを注入可能にし、テストでは実ネットワーク接続を避ける。
-async function resolvePagePlans({ pageType, pageId, save = false, pageContextDeps, nowIso } = {}) {
-  let enrichedTasks = buildEnrichedTasks();
+async function resolvePagePlans({ pageType, pageId, save = false, pageContextDeps, nowIso, branchId } = {}) {
+  let enrichedTasks = buildEnrichedTasks(branchId);
   if (pageType) enrichedTasks = enrichedTasks.filter((t) => t.targetPageType === pageType);
   if (pageId) enrichedTasks = enrichedTasks.filter((t) => t.targetPageId === pageId);
 

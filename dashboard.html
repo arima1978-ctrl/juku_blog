@@ -197,6 +197,26 @@
   .edit-form-area textarea.meta { min-height: 60px; }
   .edit-form-area textarea.body { min-height: 320px; }
 
+  /* 競合塾の登録フォーム(常時表示のカード。折りたたまず、目立つ枠線・背景で区別する) */
+  .competitor-form-card {
+    background: var(--card-bg);
+    border: 2px solid var(--accent);
+    border-radius: 12px;
+    padding: 18px;
+    margin: 14px 0 16px;
+  }
+  .competitor-form-card label { display: block; font-size: 0.82rem; color: var(--text-muted); margin: 10px 0 4px; }
+  .competitor-form-card label:first-of-type { margin-top: 0; }
+  .competitor-form-card input[type="text"],
+  .competitor-form-card select {
+    width: 100%;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    padding: 8px;
+    font-family: inherit;
+    font-size: 0.92rem;
+  }
+
   /* エピソード素材 */
   .episode-section {
     background: var(--card-bg);
@@ -300,6 +320,20 @@
     border-radius: 6px;
   }
 
+  /* 実行系ボタンの処理中インジケーター(競合分析一括実行・タスク自動生成・週次提案生成) */
+  .spinner {
+    display: inline-block;
+    width: 13px;
+    height: 13px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    vertical-align: middle;
+    margin-right: 6px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
   @media (max-width: 600px) {
     .detail-meta-grid { grid-template-columns: 1fr; }
     .actions { flex-direction: column; }
@@ -383,6 +417,34 @@
         <div id="seoCompetitorList" style="margin-top:8px;">読み込み中...</div>
       </div>
 
+      <div class="competitor-form-card">
+        <h3 style="margin:0 0 12px; font-size:1rem;">＋ 競合塾を登録</h3>
+        <label>競合塾名</label>
+        <input type="text" id="competitorFormName" placeholder="例: あま本部ライバル塾">
+        <label>競合URL(トップページ、またはドメイン)</label>
+        <input type="text" id="competitorFormDomain" placeholder="例: https://example-juku.com/">
+        <label>競合カテゴリ</label>
+        <select id="competitorFormType">
+          <option value="">未分類</option>
+          <option value="major_chain">大手チェーン(major_chain)</option>
+          <option value="local">地域密着(local)</option>
+          <option value="exam_specialist">受験専門(exam_specialist)</option>
+          <option value="subject_specialist">科目専門(subject_specialist)</option>
+          <option value="information_media">情報サイト(information_media)</option>
+          <option value="other">その他(other)</option>
+        </select>
+        <label>ターゲット地域(カンマ区切り、任意)</label>
+        <input type="text" id="competitorFormTargetAreas" placeholder="例: あま市, 甚目寺">
+        <div class="actions" style="margin-top:14px;">
+          <button class="primary" onclick="saveCompetitorForm()">競合を登録する</button>
+        </div>
+        <hr style="margin:18px 0; border:none; border-top:1px solid var(--border);">
+        <button class="primary" id="seoCrawlBtn" onclick="runSeoCrawl()" style="width:100%; padding:12px; font-size:0.95rem;">
+          競合のクロール・分析・スコア計算を実行
+        </button>
+        <div id="seoCrawlStatus" style="margin-top:10px; font-size:0.85rem; color:var(--text-muted);"></div>
+      </div>
+
       <div class="filters" style="margin-top:16px;">
         <select id="seoStatusFilter">
           <option value="">ステータス: すべて</option>
@@ -419,6 +481,10 @@
         「次に何をすべきか」という実行可能な作業単位です。承認しても自動実行はされません
         (Sprint 1は提案の確認・承認・除外までが対象です)。
       </p>
+      <div class="actions" style="margin-bottom:14px;">
+        <button class="primary" id="growthGenerateBtn" onclick="runGrowthGenerate()">SEOタスクと構成案を自動生成</button>
+      </div>
+      <div id="growthGenerateStatus" style="margin-bottom:12px; font-size:0.85rem; color:var(--text-muted);"></div>
       <div class="filters">
         <select id="growthStatusFilter">
           <option value="proposed">ステータス: 提案中</option>
@@ -435,6 +501,10 @@
         毎週月曜日に自動選定される、最もROIの高い今週の仕事です。承認すると自動投稿ジョブ
         (次スプリント)が対象として認識できるようになります。
       </p>
+      <div class="actions" style="margin-bottom:14px;">
+        <button class="primary" id="weeklyRecGenerateBtn" onclick="runWeeklyRecGenerate()">今週の提案を新しく生成</button>
+      </div>
+      <div id="weeklyRecGenerateStatus" style="margin-bottom:12px; font-size:0.85rem; color:var(--text-muted);"></div>
       <div id="weeklyRecWarningBar"></div>
       <div class="summary-row" id="weeklyRecSummaryRow"></div>
       <div id="weeklyRecApproveArea"></div>
@@ -519,6 +589,12 @@ function withBranchId(params) {
   return params;
 }
 
+// 空状態メッセージに校舎名を明示し、「別の校舎のデータかもしれない」という不安を防ぐ。
+function currentBranchLabel() {
+  const branch = (currentBranches || []).find((b) => b.id === currentBranchId);
+  return branch ? branch.name : '選択中の校舎';
+}
+
 async function fetchJson(url, opts) {
   const res = await fetch(url, opts);
   if (!res.ok) throw new Error(`${url} -> ${res.status}`);
@@ -571,7 +647,7 @@ async function loadPosts() {
 
   const list = document.getElementById('cardList');
   if (posts.length === 0) {
-    list.innerHTML = '<div class="empty">該当する記事がありません</div>';
+    list.innerHTML = `<div class="empty">${escapeHtml(currentBranchLabel())}の該当する記事がありません</div>`;
     return;
   }
   list.innerHTML = posts.map(p => `
@@ -844,11 +920,6 @@ document.getElementById('episodeSubmit').addEventListener('click', async () => {
 });
 
 // --- テーマカレンダー ---
-function currentBranchLabel() {
-  const branch = currentBranches.find((b) => b.id === currentBranchId);
-  return branch ? branch.name : '選択中の校舎';
-}
-
 let calendarLoaded = false;
 async function loadThemeCalendar() {
   const params = withBranchId(new URLSearchParams());
@@ -906,20 +977,24 @@ const searchIntentLabel = {
   trial_inquiry: '体験・問い合わせ',
 };
 const contentTypeLabel = { blog_article: 'ブログ記事', school_page: '校舎ページ' };
+const competitorTypeLabel = {
+  major_chain: '大手チェーン', local: '地域密着', exam_specialist: '受験専門',
+  subject_specialist: '科目専門', information_media: '情報サイト', other: 'その他',
+};
 
 async function loadSeoCompetitors() {
   const el = document.getElementById('seoCompetitorList');
   const params = withBranchId(new URLSearchParams());
   const competitors = await fetchJson('api/seo/competitors?' + params.toString());
   if (competitors.length === 0) {
-    el.innerHTML = '<span style="color:var(--text-muted);">登録されている競合塾はありません(config/seo_competitors.yamlで登録できます)</span>';
+    el.innerHTML = `<span style="color:var(--text-muted);">${escapeHtml(currentBranchLabel())}の競合塾はまだ登録されていません。下のフォームから登録してください。</span>`;
     return;
   }
   el.innerHTML = competitors.map(c => `
     <div class="seo-competitor-row">
       <div>
         <strong>${escapeHtml(c.name)}</strong>
-        <span style="color:var(--text-muted);"> ${escapeHtml(c.domain)}${c.competitor_type ? ` ・ ${escapeHtml(c.competitor_type)}` : ''}</span>
+        <span style="color:var(--text-muted);"> ${escapeHtml(c.domain)}${c.competitor_type ? ` ・ ${escapeHtml(competitorTypeLabel[c.competitor_type] || c.competitor_type)}` : ''}</span>
       </div>
       <div style="color:var(--text-muted);">
         ${c.crawl_enabled ? 'クロール有効' : 'クロール無効'}
@@ -943,7 +1018,7 @@ async function loadSeoCandidates() {
 
   const list = document.getElementById('seoCandidateList');
   if (candidates.length === 0) {
-    list.innerHTML = '<div class="empty">該当する候補がありません</div>';
+    list.innerHTML = `<div class="empty">${escapeHtml(currentBranchLabel())}のキーワード候補データはありません(競合登録・分析実行が未了か、絞り込み条件に該当する候補がありません)</div>`;
     return;
   }
   list.innerHTML = candidates.map(c => `
@@ -1082,6 +1157,70 @@ document.getElementById('seoBackLink').addEventListener('click', () => {
   document.getElementById('listView').style.display = 'block';
 });
 
+// --- 競合塾の登録・クロール実行(校舎ごとの初期データ生成) ---
+async function saveCompetitorForm() {
+  const name = document.getElementById('competitorFormName').value.trim();
+  const domain = document.getElementById('competitorFormDomain').value.trim();
+  const competitorType = document.getElementById('competitorFormType').value;
+  const targetAreas = document.getElementById('competitorFormTargetAreas').value.trim();
+  if (!name || !domain) {
+    alert('競合塾名と競合URLは必須です');
+    return;
+  }
+  try {
+    const params = withBranchId(new URLSearchParams());
+    await fetchJson('api/seo/competitors?' + params.toString(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, domain, competitor_type: competitorType || null, target_areas: targetAreas }),
+    });
+    document.getElementById('competitorFormName').value = '';
+    document.getElementById('competitorFormDomain').value = '';
+    document.getElementById('competitorFormType').value = '';
+    document.getElementById('competitorFormTargetAreas').value = '';
+    await loadSeoCompetitors();
+  } catch (err) {
+    alert('登録に失敗しました: ' + err.message);
+  }
+}
+
+async function runSeoCrawl() {
+  const btn = document.getElementById('seoCrawlBtn');
+  const statusEl = document.getElementById('seoCrawlStatus');
+  btn.disabled = true;
+  statusEl.innerHTML = '<span class="spinner"></span>競合のクロール・分析・スコア計算を実行中です…(数分かかる場合があります)';
+  try {
+    const params = withBranchId(new URLSearchParams());
+    const result = await fetchJson('api/seo/crawl?' + params.toString(), { method: 'POST' });
+    if (result.crawl.reason === 'no_targets') {
+      statusEl.textContent = 'ℹ️ この校舎にはクロール対象の競合塾が登録されていません。先に「＋ 競合塾を登録」から追加してください。';
+    } else {
+      const okCount = result.crawl.summary.filter((s) => s.ok).length;
+      const errCount = result.crawl.summary.length - okCount;
+      const gapText =
+        result.gap.reason === 'skipped'
+          ? '(解析対象ページが無かったためスコア計算はスキップされました)'
+          : result.gap.reason === 'already_running'
+            ? '(他の分析処理が実行中のためスコア計算はスキップされました。しばらくしてから再実行してください)'
+            : `新規候補${result.gap.stats ? result.gap.stats.candidates_created : 0}件・更新${result.gap.stats ? result.gap.stats.candidates_updated : 0}件`;
+      statusEl.textContent =
+        `✅ 完了しました。クロール成功:${okCount}件${errCount ? ` / 失敗:${errCount}件` : ''} ・ ` +
+        `解析ページ数:${result.analyze.stats ? result.analyze.stats.pages_analyzed : 0}件 ・ キーワード候補: ${gapText}`;
+    }
+    await loadSeoCompetitors();
+    await loadSeoCandidates();
+  } catch (err) {
+    statusEl.textContent = '';
+    if (err.message.includes('403')) {
+      alert('この操作はローカルホスト(またはALLOW_REMOTE_APPROVE=true環境)からのみ実行できます。');
+    } else {
+      alert('競合分析の実行に失敗しました: ' + err.message);
+    }
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 // --- AI Growth Director(SEO Task) ---
 const taskTypeLabel = {
   create_article: '新規記事作成', improve_existing_article: '既存記事改善', improve_school_page: '校舎ページ改善',
@@ -1102,7 +1241,7 @@ async function loadGrowthTasks() {
 
   const list = document.getElementById('growthTaskList');
   if (tasks.length === 0) {
-    list.innerHTML = '<div class="empty">今週の改善提案はまだありません</div>';
+    list.innerHTML = `<div class="empty">${escapeHtml(currentBranchLabel())}の改善提案(SEO Task)はまだありません</div>`;
     return;
   }
   list.innerHTML = tasks.map(t => `
@@ -1175,6 +1314,33 @@ document.getElementById('growthBackLink').addEventListener('click', () => {
   document.getElementById('listView').style.display = 'block';
 });
 
+async function runGrowthGenerate() {
+  const btn = document.getElementById('growthGenerateBtn');
+  const statusEl = document.getElementById('growthGenerateStatus');
+  btn.disabled = true;
+  statusEl.innerHTML = '<span class="spinner"></span>SEOタスクと構成案(Page Plan)を生成中です。校舎ページ数によっては数分かかる場合があります…';
+  try {
+    const params = withBranchId(new URLSearchParams());
+    const result = await fetchJson('api/seo/generate-tasks?' + params.toString(), { method: 'POST' });
+    const tasksMsg = result.tasks.message
+      ? result.tasks.message
+      : `Task作成:${result.tasks.tasks_created}件 / 更新:${result.tasks.tasks_updated}件${result.tasks.error_count ? ` / エラー:${result.tasks.error_count}件` : ''}`;
+    statusEl.textContent = `✅ 完了しました。${tasksMsg} ・ 構成案(Page Plan)生成:${result.pagePlans.generated}件`;
+    await loadGrowthTasks();
+  } catch (err) {
+    statusEl.textContent = '';
+    if (err.message.includes('400')) {
+      alert('Growth Director(features.growth_director)が無効なため実行できません。');
+    } else if (err.message.includes('403')) {
+      alert('この操作はローカルホスト(またはALLOW_REMOTE_APPROVE=true環境)からのみ実行できます。');
+    } else {
+      alert('自動生成に失敗しました: ' + err.message);
+    }
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 // --- 今週の提案(AI Weekly Director、Sprint 4.0) ---
 let currentWeeklyRec = null;
 
@@ -1204,7 +1370,7 @@ async function loadWeeklyRecommendation() {
     warningBar.innerHTML = '';
     summaryRow.innerHTML = '';
     approveArea.innerHTML = '';
-    list.innerHTML = '<div class="empty">今週の提案はまだありません(週次バッチが未実行です)</div>';
+    list.innerHTML = `<div class="empty">${escapeHtml(currentBranchLabel())}の今週の提案はまだありません(週次バッチが未実行です)</div>`;
     return;
   }
 
@@ -1316,6 +1482,32 @@ document.getElementById('draftResultModalOverlay').addEventListener('click', (e)
   if (e.target.id === 'draftResultModalOverlay') closeDraftResultModal();
 });
 
+async function runWeeklyRecGenerate() {
+  const btn = document.getElementById('weeklyRecGenerateBtn');
+  const statusEl = document.getElementById('weeklyRecGenerateStatus');
+  btn.disabled = true;
+  statusEl.innerHTML = '<span class="spinner"></span>今週の提案を生成中です。対象Task数によっては数分かかる場合があります…';
+  try {
+    const params = withBranchId(new URLSearchParams());
+    const result = await fetchJson('api/seo/weekly-recommendation/generate?' + params.toString(), { method: 'POST' });
+    statusEl.textContent = result.locked
+      ? `ℹ️ ${result.batchDate}分は既に承認/アーカイブ済みのため上書きされませんでした。`
+      : `✅ ${result.batchDate}分を${result.itemCount}件のタスクで生成しました(${escapeHtml(result.curationTier || '-')})。`;
+    await loadWeeklyRecommendation();
+  } catch (err) {
+    statusEl.textContent = '';
+    if (err.message.includes('404')) {
+      alert('Growth Director(features.growth_director)が無効なため実行できません。');
+    } else if (err.message.includes('403')) {
+      alert('この操作はローカルホスト(またはALLOW_REMOTE_APPROVE=true環境)からのみ実行できます。');
+    } else {
+      alert('生成に失敗しました: ' + err.message);
+    }
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 async function approveWeeklyRecommendation() {
   if (!currentWeeklyRec) return;
   const ok = confirm(`今週の提案(計${currentWeeklyRec.items.length}件)を承認し、ドラフト作成プロセスを確定しますか？`);
@@ -1412,6 +1604,8 @@ async function activateBranch(id) {
   try {
     await fetchJson(`api/branches/${id}/activate`, { method: 'POST' });
     await loadBranches();
+    // 有効化した校舎を、そのまま表示校舎(ヘッダーの切り替えプルダウン)にも追従させる。
+    await switchDisplayBranch(id);
   } catch (err) {
     alert('有効化に失敗しました: ' + err.message);
   }
@@ -1483,27 +1677,53 @@ function populateBranchSwitcher(branches) {
   select.value = currentBranchId != null ? String(currentBranchId) : '';
 }
 
-// 選択中の校舎を切り替えたら、記事一覧・競合キーワード分析・Growth Director・
-// 今週の提案・テーマカレンダーの各タブのデータを瞬時に切り替える(表示中でないタブも
-// 次に開いた際に最新化されるよう、まとめて再読み込みする)。開いている詳細ビューは
-// 一覧へ戻す。テーマカレンダーは校舎ごとに参考表示バナーの有無が変わりうるため、
-// 「初回タブクリック時のみ読み込む」既存の遅延ロードキャッシュ(calendarLoaded)を
-// ここでは無視して必ず再読み込みする。
-function onBranchSwitcherChange(e) {
-  currentBranchId = Number(e.target.value);
+// 表示中の校舎を切り替える共通処理。ドロップダウンの変更操作からだけでなく、
+// 校舎・塾長設定タブで校舎を「有効化」した場合にも同じ処理を呼び出す
+// (以前は有効化してもcurrentBranchIdが追従せず、表示校舎が旧校舎のまま固定される
+// バグがあった。「切り替えた直後なのに旧校舎のデータが残る」という報告の直接原因)。
+// 記事一覧・競合キーワード分析・Growth Director・今週の提案・テーマカレンダーの
+// 各タブのデータを瞬時に切り替える(表示中でないタブも次に開いた際に最新化されるよう、
+// まとめて再読み込みする)。テーマカレンダーは校舎ごとに参考表示バナーの有無が
+// 変わりうるため、「初回タブクリック時のみ読み込む」既存の遅延ロードキャッシュ
+// (calendarLoaded)をここでは無視して必ず再読み込みする。
+function switchDisplayBranch(newBranchId) {
+  currentBranchId = newBranchId;
+  const select = document.getElementById('branchSwitcher');
+  if (select.value !== String(newBranchId)) select.value = String(newBranchId);
+
+  // 開いている詳細ビューは一覧へ戻す(他校舎のデータが開いたままにならないように)
   document.getElementById('listView').style.display = 'block';
   document.getElementById('detailView').style.display = 'none';
   document.getElementById('seoCandidateDetailView').style.display = 'none';
   document.getElementById('growthTaskDetailView').style.display = 'none';
 
-  loadSummary();
-  loadPosts();
-  loadSeoCompetitors();
-  loadSeoCandidates();
-  loadGrowthTasks();
-  loadWeeklyRecommendation();
+  // fetch完了を待たず、まず即座に「読み込み中」表示へリセットする。旧校舎の一覧が
+  // 新しいデータに置き換わるまでの間、画面上に一瞬たりとも残らないようにするため。
+  document.getElementById('cardList').innerHTML = '<div class="empty">読み込み中...</div>';
+  document.getElementById('seoCompetitorList').textContent = '読み込み中...';
+  document.getElementById('seoCandidateList').innerHTML = '<div class="empty">読み込み中...</div>';
+  document.getElementById('growthTaskList').innerHTML = '<div class="empty">読み込み中...</div>';
+  document.getElementById('weeklyRecTaskList').innerHTML = '<div class="empty">読み込み中...</div>';
+  document.getElementById('weeklyRecSummaryRow').innerHTML = '';
+  document.getElementById('weeklyRecApproveArea').innerHTML = '';
+  document.getElementById('weeklyRecWarningBar').innerHTML = '';
+  document.getElementById('calendarFallbackBanner').innerHTML = '';
+  document.getElementById('calendarList').innerHTML = '<p>読み込み中...</p>';
+
   calendarLoaded = true;
-  loadThemeCalendar();
+  return Promise.all([
+    loadSummary(),
+    loadPosts(),
+    loadSeoCompetitors(),
+    loadSeoCandidates(),
+    loadGrowthTasks(),
+    loadWeeklyRecommendation(),
+    loadThemeCalendar(),
+  ]);
+}
+
+function onBranchSwitcherChange(e) {
+  switchDisplayBranch(Number(e.target.value));
 }
 document.getElementById('branchSwitcher').addEventListener('change', onBranchSwitcherChange);
 

@@ -80,36 +80,41 @@ function groupByCompound(rows) {
   return groups;
 }
 
-async function main() {
-  const dryRun = process.argv.includes('--dry-run');
+// コア処理(テスト容易性・API層からの呼び出しのため、process.exitを含まない形で分離)。
+// branchIdを指定すると、その校舎の競合キーワード候補・自社記事は全校舎対象のまま
+// (postsはグローバル、除外語・分母競合数は校舎スコープ)で、算出したキーワード候補・
+// 複合キーワードカバレッジをその校舎に絞って処理する(未指定時は全校舎対象。
+// CLI/cronの既存挙動を変えないためのデフォルト)。
+async function resolveGapCalculate({ dryRun = false, branchId, seoDbImpl = seoDb, branchesDbImpl = branchesDb } = {}) {
   const config = loadJukuConfig();
   const feature = config.features && config.features.competitor_keyword_analysis;
 
   if (!feature || !feature.enabled) {
-    console.log('[seo_gap_calculate] competitor_keyword_analysis.enabled が false のため無処理で終了します');
-    process.exit(0);
+    return { ok: false, reason: 'feature_disabled', stats: null };
   }
 
-  const running = seoDb.getRunningAnalysisRun();
+  const running = seoDbImpl.getRunningAnalysisRun();
   if (running) {
-    console.log(`[seo_gap_calculate] 既に実行中のanalysis_run(${running.id})があるため二重起動を回避します`);
-    process.exit(0);
+    return { ok: false, reason: 'already_running', runningId: running.id, stats: null };
   }
 
   const seoConfig = config.seo.competitor_analysis;
   const priorityWeights = seoConfig.priority_score_weights;
   const areaDictionary = buildAreaDictionary(config);
   const dictionaryEntries = buildDictionaryEntries(config);
-  const exclusionTerms = [...GENERIC_EXCLUSION_TERMS, ...seoDb.listCompetitors().map((c) => c.name)];
-  const competitorDomainById = new Map(seoDb.listCompetitors().map((c) => [c.id, c.domain]));
+  const exclusionTerms = [...GENERIC_EXCLUSION_TERMS, ...seoDbImpl.listCompetitors({ branchId }).map((c) => c.name)];
+  const competitorDomainById = new Map(seoDbImpl.listCompetitors({ branchId }).map((c) => [c.id, c.domain]));
 
   const nowIso = new Date().toISOString();
   const runId = `run-${nowIso.replace(/[:.]/g, '-')}`;
-  if (!dryRun) seoDb.createAnalysisRun(runId, nowIso);
-  // 複数校舎管理: config自体はフェーズ3対象外(校舎別に分離しない)ため、
-  // 算出したキーワード候補は現在アクティブな校舎に紐づけて保存する。
-  const activeBranch = branchesDb.getActiveBranch();
-  const activeBranchId = activeBranch ? activeBranch.id : null;
+  if (!dryRun) seoDbImpl.createAnalysisRun(runId, nowIso);
+  // 複数校舎管理: branchIdが明示指定されればその校舎を対象にする(ダッシュボード/APIから
+  // 特定の校舎向けに生成する場合)。未指定時は従来通り現在アクティブな校舎にフォールバックする
+  // (CLI/cronの既存挙動を変えないためのデフォルト)。
+  const saveBranchId =
+    branchId !== undefined && branchId !== null
+      ? branchId
+      : ((branchesDbImpl.getActiveBranch() || {}).id ?? null);
 
   const stats = { topics_extracted: 0, candidates_created: 0, candidates_updated: 0, error_count: 0 };
 
@@ -117,9 +122,9 @@ async function main() {
     const ownPosts = listPosts({}).filter((p) => p.status !== 'rejected');
     const ownCompoundCoverageIndex = buildOwnCompoundCoverageIndex(ownPosts, dictionaryEntries, seoConfig.extraction_weights, exclusionTerms);
 
-    const compoundRows = seoDb.listCompoundKeywordCoverage();
+    const compoundRows = seoDbImpl.listCompoundKeywordCoverage(branchId);
     const compoundGroups = groupByCompound(compoundRows);
-    const totalCompetitorsConsidered = seoDb.countAnalyzedCompetitors();
+    const totalCompetitorsConsidered = seoDbImpl.countAnalyzedCompetitors(branchId);
     stats.topics_extracted = compoundGroups.size;
 
     for (const rows of compoundGroups.values()) {
@@ -135,13 +140,13 @@ async function main() {
       const ownHasArticle = Boolean(ownCoverage);
       const existingPostId = ownCoverage ? ownCoverage.postId : null;
 
-      const gscAgg = seoDb.getGscAggregateForKeyword(compoundKeyword);
+      const gscAgg = seoDbImpl.getGscAggregateForKeyword(compoundKeyword);
       const ownAvgPosition = gscAgg ? gscAgg.avgPosition : null;
       const ownImpressions = gscAgg ? gscAgg.impressions : null;
       const ownCtr = gscAgg ? gscAgg.ctr : null;
 
-      const competitorBestPosition = seoDb.getCompetitorBestPosition(compoundKeyword, competitorDomains);
-      const searchDemand = seoDb.getKeywordDemand(compoundKeyword);
+      const competitorBestPosition = seoDbImpl.getCompetitorBestPosition(compoundKeyword, competitorDomains);
+      const searchDemand = seoDbImpl.getKeywordDemand(compoundKeyword);
 
       const bestEvidenceRow = rows.reduce(
         (best, r) => ((r.cooccurrence_score || 0) > (best.cooccurrence_score || 0) ? r : best),
@@ -211,7 +216,7 @@ async function main() {
       });
 
       // カニバリゼーション警告(GSC実績ベース: 同一クエリで複数の自社ページに表示があるか)
-      const cannibalizationWarning = detectCannibalization(seoDb.getGscPagesForQuery(compoundKeyword));
+      const cannibalizationWarning = detectCannibalization(seoDbImpl.getGscPagesForQuery(compoundKeyword));
 
       const searchIntent = SEARCH_INTENT_BY_TEMPLATE[templateType] || 'general_service';
       const contentType = SCHOOL_PAGE_TEMPLATES.has(templateType) ? 'school_page' : 'blog_article';
@@ -223,7 +228,7 @@ async function main() {
         continue;
       }
 
-      const candidateResult = seoDb.upsertKeywordCandidate(
+      const candidateResult = seoDbImpl.upsertKeywordCandidate(
         {
           normalized_keyword: compoundKeyword,
           raw_keyword: null,
@@ -247,7 +252,7 @@ async function main() {
           existing_post_id: existingPostId,
           cannibalization_warning: cannibalizationWarning,
           analysis_run_id: runId,
-          branch_id: activeBranchId,
+          branch_id: saveBranchId,
         },
         nowIso
       );
@@ -259,7 +264,7 @@ async function main() {
         .sort((a, b) => (b.cooccurrence_score || 0) - (a.cooccurrence_score || 0))
         .slice(0, MAX_EVIDENCE_PER_CANDIDATE);
       for (const row of topEvidence) {
-        seoDb.insertCandidateEvidence(
+        seoDbImpl.insertCandidateEvidence(
           {
             candidate_id: candidateResult.id,
             competitor_page_id: row.page_id,
@@ -272,7 +277,7 @@ async function main() {
       }
 
       if (ownCoverage) {
-        seoDb.upsertCandidateExistingArticle(
+        seoDbImpl.upsertCandidateExistingArticle(
           {
             candidate_id: candidateResult.id,
             post_id: ownCoverage.postId,
@@ -285,15 +290,30 @@ async function main() {
     }
 
     if (!dryRun) {
-      seoDb.finishAnalysisRun(runId, { status: 'completed', finishedAtIso: new Date().toISOString(), ...stats });
+      seoDbImpl.finishAnalysisRun(runId, { status: 'completed', finishedAtIso: new Date().toISOString(), ...stats });
     }
     console.log(`[seo_gap_calculate] 完了(dry-run=${dryRun}): ${JSON.stringify(stats)}`);
+    return { ok: true, dryRun, stats };
   } catch (err) {
     if (!dryRun) {
-      seoDb.finishAnalysisRun(runId, { status: 'failed', finishedAtIso: new Date().toISOString(), ...stats, error_count: stats.error_count + 1 });
+      seoDbImpl.finishAnalysisRun(runId, { status: 'failed', finishedAtIso: new Date().toISOString(), ...stats, error_count: stats.error_count + 1 });
     }
     logError('seo_gap_calculate', err.message);
     throw err;
+  }
+}
+
+async function main() {
+  const dryRun = process.argv.includes('--dry-run');
+  const result = await resolveGapCalculate({ dryRun });
+
+  if (result.reason === 'feature_disabled') {
+    console.log('[seo_gap_calculate] competitor_keyword_analysis.enabled が false のため無処理で終了します');
+    process.exit(0);
+  }
+  if (result.reason === 'already_running') {
+    console.log(`[seo_gap_calculate] 既に実行中のanalysis_run(${result.runningId})があるため二重起動を回避します`);
+    process.exit(0);
   }
 }
 
@@ -304,4 +324,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { main };
+module.exports = { main, resolveGapCalculate };

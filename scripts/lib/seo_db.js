@@ -211,8 +211,20 @@ function listPageHeadings(pageId) {
 }
 
 // 未解析、または前回解析後にfetched_atが更新された(=本文が変わった)ページを返す。
-function listPagesNeedingAnalysis() {
+// seo_competitor_pagesはbranch_id列を持たない(競合=seo_competitors.branch_id経由で
+// スコープを継承する分類のテーブルのため)。branchId指定時はJOINで絞り込む。
+function listPagesNeedingAnalysis(branchId) {
   const conn = getDb();
+  if (branchId !== undefined && branchId !== null) {
+    return conn
+      .prepare(
+        `SELECT p.* FROM seo_competitor_pages p
+         JOIN seo_competitors c ON c.id = p.competitor_id
+         WHERE (p.last_analyzed_at IS NULL OR p.last_analyzed_at < p.fetched_at) AND c.branch_id = :branch_id
+         ORDER BY p.competitor_id`
+      )
+      .all({ branch_id: branchId });
+  }
   return conn
     .prepare(
       `SELECT * FROM seo_competitor_pages
@@ -229,8 +241,18 @@ function markPageAnalyzed(pageId, atIso) {
 
 // Gap判定の「totalCompetitorsConsidered」に使う: 実際にページが1件以上取得できた競合数
 // (登録はされていても未クロールの競合を分母に含めないようにするため)。
-function countAnalyzedCompetitors() {
+function countAnalyzedCompetitors(branchId) {
   const conn = getDb();
+  if (branchId !== undefined && branchId !== null) {
+    const row = conn
+      .prepare(
+        `SELECT COUNT(DISTINCT p.competitor_id) AS c FROM seo_competitor_pages p
+         JOIN seo_competitors c ON c.id = p.competitor_id
+         WHERE c.branch_id = :branch_id`
+      )
+      .get({ branch_id: branchId });
+    return row ? row.c : 0;
+  }
   const row = conn.prepare('SELECT COUNT(DISTINCT competitor_id) AS c FROM seo_competitor_pages').get();
   return row ? row.c : 0;
 }
@@ -325,18 +347,20 @@ function listTopicsForPage(pageId) {
 
 // Gap判定用: 競合ページから抽出された全テーマを、ページ・競合情報とJOINして返す。
 // 呼び出し側(seo_gap_calculate.js)でtopic_id単位にグルーピングして使う。
-function listTopicCoverage() {
+function listTopicCoverage(branchId) {
   const conn = getDb();
-  return conn
-    .prepare(
-      `SELECT t.id AS topic_id, t.raw_keyword, t.normalized_keyword, t.target_area, t.target_school, t.target_grade, t.target_subject,
+  let query = `SELECT t.id AS topic_id, t.raw_keyword, t.normalized_keyword, t.target_area, t.target_school, t.target_grade, t.target_subject,
               pt.page_id, pt.score, pt.extraction_method, pt.confidence,
               p.competitor_id, p.canonical_url, p.title AS page_title, p.content_hash
        FROM seo_topics t
        JOIN seo_page_topics pt ON pt.topic_id = t.id
-       JOIN seo_competitor_pages p ON p.id = pt.page_id`
-    )
-    .all();
+       JOIN seo_competitor_pages p ON p.id = pt.page_id`;
+  const params = {};
+  if (branchId !== undefined && branchId !== null) {
+    query += ' WHERE t.branch_id = :branch_id';
+    params.branch_id = branchId;
+  }
+  return conn.prepare(query).all(params);
 }
 
 // ---- seo_compound_keywords / seo_page_compound_keywords --------------------
@@ -408,19 +432,21 @@ function upsertPageCompoundKeyword(entry, nowIso) {
 
 // Gap判定用: 競合ページから検出された全複合キーワードを、ページ・競合情報とJOINして返す。
 // 呼び出し側(seo_gap_calculate.js)でcompound_keyword_id単位にグルーピングして使う。
-function listCompoundKeywordCoverage() {
+function listCompoundKeywordCoverage(branchId) {
   const conn = getDb();
-  return conn
-    .prepare(
-      `SELECT ck.id AS compound_keyword_id, ck.compound_keyword, ck.template_type, ck.keyword_components,
+  let query = `SELECT ck.id AS compound_keyword_id, ck.compound_keyword, ck.template_type, ck.keyword_components,
               ck.target_area, ck.target_school, ck.target_grade, ck.target_subject,
               pck.page_id, pck.cooccurrence_score, pck.same_zone,
               p.competitor_id, p.canonical_url, p.title AS page_title, p.content_hash
        FROM seo_compound_keywords ck
        JOIN seo_page_compound_keywords pck ON pck.compound_keyword_id = ck.id
-       JOIN seo_competitor_pages p ON p.id = pck.page_id`
-    )
-    .all();
+       JOIN seo_competitor_pages p ON p.id = pck.page_id`;
+  const params = {};
+  if (branchId !== undefined && branchId !== null) {
+    query += ' WHERE ck.branch_id = :branch_id';
+    params.branch_id = branchId;
+  }
+  return conn.prepare(query).all(params);
 }
 
 // ---- seo_gsc_queries -------------------------------------------------------
