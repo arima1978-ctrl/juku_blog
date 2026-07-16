@@ -175,6 +175,11 @@ function getDb() {
   // (呼び出しの都度再解決すると、初回シードのタイミングによっては別の行を作りかねないため)。
   ensureColumn(db, 'posts', 'branch_id', 'INTEGER');
   const backfillBranchId = resolveBackfillBranchId(db);
+  // 【重要】ensureColumnはADD COLUMNのみでNULLのまま追加するため、seo_*系(rebuild経由で
+  // 自動バックフィルされる)とは異なり、postsは既存行を明示的にUPDATEしないとbranch_id=NULLの
+  // まま取り残される(2026-07-16の本番障害の直接原因。branch_id指定のダッシュボード表示が
+  // 全校舎で0件になった)。branch_id未設定の行のみを対象にする(冪等)。
+  db.prepare('UPDATE posts SET branch_id = :branch_id WHERE branch_id IS NULL').run({ branch_id: backfillBranchId });
 
   ensureBranchIdRebuild(
     db,
