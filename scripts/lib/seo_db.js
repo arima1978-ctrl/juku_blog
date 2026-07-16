@@ -59,17 +59,18 @@ function upsertCompetitor(competitor, nowIso) {
   conn
     .prepare(
       `INSERT INTO seo_competitors (
-        id, name, domain, start_url, sitemap_url, competitor_type,
+        id, branch_id, name, domain, start_url, sitemap_url, competitor_type,
         target_areas, target_schools, target_grades, target_subjects,
         crawl_enabled, crawl_interval_days, max_pages, created_at, updated_at
       ) VALUES (
-        :id, :name, :domain, :start_url, :sitemap_url, :competitor_type,
+        :id, :branch_id, :name, :domain, :start_url, :sitemap_url, :competitor_type,
         :target_areas, :target_schools, :target_grades, :target_subjects,
         :crawl_enabled, :crawl_interval_days, :max_pages, :created_at, :updated_at
       )`
     )
     .run({
       id: competitor.id,
+      branch_id: competitor.branch_id ?? null,
       name: competitor.name,
       domain: competitor.domain,
       start_url: competitor.start_url || null,
@@ -93,12 +94,17 @@ function getCompetitor(id) {
   return conn.prepare('SELECT * FROM seo_competitors WHERE id = ?').get(id) || null;
 }
 
-function listCompetitors({ crawlEnabledOnly } = {}) {
+function listCompetitors({ crawlEnabledOnly, branchId } = {}) {
   const conn = getDb();
   let query = 'SELECT * FROM seo_competitors WHERE 1=1';
+  const params = {};
   if (crawlEnabledOnly) query += ' AND crawl_enabled = 1';
+  if (branchId !== undefined && branchId !== null) {
+    query += ' AND branch_id = :branch_id';
+    params.branch_id = branchId;
+  }
   query += ' ORDER BY name';
-  return conn.prepare(query).all();
+  return conn.prepare(query).all(params);
 }
 
 function recordCompetitorCrawlSuccess(id, atIso) {
@@ -239,19 +245,21 @@ function upsertTopic(topic, nowIso) {
     target_school: topic.target_school || null,
     target_grade: topic.target_grade || null,
     target_subject: topic.target_subject || null,
+    branch_id: topic.branch_id ?? null,
   };
   const existing = conn
     .prepare(
       `SELECT id FROM seo_topics WHERE normalized_keyword = :normalized_keyword
         AND target_area IS :target_area AND target_school IS :target_school
-        AND target_grade IS :target_grade AND target_subject IS :target_subject`
+        AND target_grade IS :target_grade AND target_subject IS :target_subject
+        AND branch_id IS :branch_id`
     )
     .get(key);
   if (existing) return existing.id;
   const result = conn
     .prepare(
-      `INSERT INTO seo_topics (raw_keyword, normalized_keyword, normalization_rule, target_area, target_school, target_grade, target_subject, created_at)
-       VALUES (:raw_keyword, :normalized_keyword, :normalization_rule, :target_area, :target_school, :target_grade, :target_subject, :created_at)`
+      `INSERT INTO seo_topics (raw_keyword, normalized_keyword, normalization_rule, target_area, target_school, target_grade, target_subject, branch_id, created_at)
+       VALUES (:raw_keyword, :normalized_keyword, :normalization_rule, :target_area, :target_school, :target_grade, :target_subject, :branch_id, :created_at)`
     )
     .run({
       raw_keyword: topic.raw_keyword || topic.normalized_keyword,
@@ -261,6 +269,7 @@ function upsertTopic(topic, nowIso) {
       target_school: key.target_school,
       target_grade: key.target_grade,
       target_subject: key.target_subject,
+      branch_id: key.branch_id,
       created_at: nowIso,
     });
   return Number(result.lastInsertRowid);
@@ -341,20 +350,21 @@ function upsertCompoundKeyword(compound, nowIso) {
     target_school: compound.target_school || null,
     target_grade: compound.target_grade || null,
     target_subject: compound.target_subject || null,
+    branch_id: compound.branch_id ?? null,
   };
   const existing = conn
     .prepare(
       `SELECT id FROM seo_compound_keywords WHERE compound_keyword = :compound_keyword
         AND template_type = :template_type AND target_area IS :target_area
         AND target_school IS :target_school AND target_grade IS :target_grade
-        AND target_subject IS :target_subject`
+        AND target_subject IS :target_subject AND branch_id IS :branch_id`
     )
     .get(key);
   if (existing) return existing.id;
   const result = conn
     .prepare(
-      `INSERT INTO seo_compound_keywords (compound_keyword, template_type, keyword_components, target_area, target_school, target_grade, target_subject, created_at)
-       VALUES (:compound_keyword, :template_type, :keyword_components, :target_area, :target_school, :target_grade, :target_subject, :created_at)`
+      `INSERT INTO seo_compound_keywords (compound_keyword, template_type, keyword_components, target_area, target_school, target_grade, target_subject, branch_id, created_at)
+       VALUES (:compound_keyword, :template_type, :keyword_components, :target_area, :target_school, :target_grade, :target_subject, :branch_id, :created_at)`
     )
     .run({
       compound_keyword: compound.compound_keyword,
@@ -364,6 +374,7 @@ function upsertCompoundKeyword(compound, nowIso) {
       target_school: key.target_school,
       target_grade: key.target_grade,
       target_subject: key.target_subject,
+      branch_id: key.branch_id,
       created_at: nowIso,
     });
   return Number(result.lastInsertRowid);
@@ -607,12 +618,14 @@ function upsertKeywordCandidate(candidate, nowIso) {
     target_school: candidate.target_school || null,
     target_grade: candidate.target_grade || null,
     target_subject: candidate.target_subject || null,
+    branch_id: candidate.branch_id ?? null,
   };
   const existing = conn
     .prepare(
       `SELECT id, status FROM seo_keyword_candidates WHERE normalized_keyword = :normalized_keyword
         AND target_area IS :target_area AND target_school IS :target_school
-        AND target_grade IS :target_grade AND target_subject IS :target_subject`
+        AND target_grade IS :target_grade AND target_subject IS :target_subject
+        AND branch_id IS :branch_id`
     )
     .get(key);
   if (existing) {
@@ -658,14 +671,14 @@ function upsertKeywordCandidate(candidate, nowIso) {
   const result = conn
     .prepare(
       `INSERT INTO seo_keyword_candidates (
-        normalized_keyword, raw_keyword, target_area, target_school, target_grade, target_subject,
+        normalized_keyword, raw_keyword, target_area, target_school, target_grade, target_subject, branch_id,
         gap_type, priority_score, score_breakdown, search_demand, own_avg_position, competitor_count,
         recommended_action, suggested_title, suggested_outline,
         keyword_components, template_type, cooccurrence_score, search_intent, content_type,
         data_confidence, existing_post_id, cannibalization_warning,
         status, analysis_run_id, created_at, updated_at
       ) VALUES (
-        :normalized_keyword, :raw_keyword, :target_area, :target_school, :target_grade, :target_subject,
+        :normalized_keyword, :raw_keyword, :target_area, :target_school, :target_grade, :target_subject, :branch_id,
         :gap_type, :priority_score, :score_breakdown, :search_demand, :own_avg_position, :competitor_count,
         :recommended_action, :suggested_title, :suggested_outline,
         :keyword_components, :template_type, :cooccurrence_score, :search_intent, :content_type,
@@ -680,6 +693,7 @@ function upsertKeywordCandidate(candidate, nowIso) {
       target_school: key.target_school,
       target_grade: key.target_grade,
       target_subject: key.target_subject,
+      branch_id: key.branch_id,
       gap_type: candidate.gap_type,
       priority_score: candidate.priority_score,
       score_breakdown: toJson(candidate.score_breakdown),
@@ -722,10 +736,14 @@ function getKeywordCandidateById(id) {
   return parseCandidateJsonFields(row);
 }
 
-function listKeywordCandidates({ status, gapType, targetArea, minPriorityScore, approvedAction, orderBy } = {}) {
+function listKeywordCandidates({ status, gapType, targetArea, minPriorityScore, approvedAction, orderBy, branchId } = {}) {
   const conn = getDb();
   let query = 'SELECT * FROM seo_keyword_candidates WHERE 1=1';
   const params = {};
+  if (branchId !== undefined && branchId !== null) {
+    query += ' AND branch_id = :branch_id';
+    params.branch_id = branchId;
+  }
   if (status) {
     query += ' AND status = :status';
     params.status = status;
@@ -940,11 +958,13 @@ function upsertTask(task, nowIso) {
     target_keyword: task.target_keyword,
     task_type: task.task_type,
     source_candidate_id: task.source_candidate_id ?? null,
+    branch_id: task.branch_id ?? null,
   };
   const existing = conn
     .prepare(
       `SELECT id, status FROM seo_tasks WHERE target_keyword = :target_keyword
-        AND task_type = :task_type AND source_candidate_id IS :source_candidate_id`
+        AND task_type = :task_type AND source_candidate_id IS :source_candidate_id
+        AND branch_id IS :branch_id`
     )
     .get(key);
   if (existing) {
@@ -989,7 +1009,7 @@ function upsertTask(task, nowIso) {
     .prepare(
       `INSERT INTO seo_tasks (
         task_type, target_url, target_post_id, target_page_type, target_page_id, target_page_name,
-        target_keyword, source_candidate_id,
+        target_keyword, source_candidate_id, branch_id,
         priority_score, opportunity_score, opportunity_breakdown, estimated_effort_minutes,
         recommended_action, reason, status,
         difficulty_score, difficulty_breakdown, expected_impact_clicks, expected_impact_cv,
@@ -997,7 +1017,7 @@ function upsertTask(task, nowIso) {
         created_at, updated_at
       ) VALUES (
         :task_type, :target_url, :target_post_id, :target_page_type, :target_page_id, :target_page_name,
-        :target_keyword, :source_candidate_id,
+        :target_keyword, :source_candidate_id, :branch_id,
         :priority_score, :opportunity_score, :opportunity_breakdown, :estimated_effort_minutes,
         :recommended_action, :reason, :status,
         :difficulty_score, :difficulty_breakdown, :expected_impact_clicks, :expected_impact_cv,
@@ -1014,6 +1034,7 @@ function upsertTask(task, nowIso) {
       target_page_name: task.target_page_name || null,
       target_keyword: key.target_keyword,
       source_candidate_id: key.source_candidate_id,
+      branch_id: key.branch_id,
       priority_score: task.priority_score ?? null,
       opportunity_score: task.opportunity_score,
       opportunity_breakdown: toJson(task.opportunity_breakdown),
@@ -1049,10 +1070,14 @@ function getTaskById(id) {
   return parseTaskJsonFields(row);
 }
 
-function listTasks({ status, taskType, orderBy } = {}) {
+function listTasks({ status, taskType, orderBy, branchId } = {}) {
   const conn = getDb();
   let query = 'SELECT * FROM seo_tasks WHERE 1=1';
   const params = {};
+  if (branchId !== undefined && branchId !== null) {
+    query += ' AND branch_id = :branch_id';
+    params.branch_id = branchId;
+  }
   if (status) {
     query += ' AND status = :status';
     params.status = status;
@@ -1110,19 +1135,23 @@ function getSeoPagePlanById(id) {
   return parsePagePlanJsonFields(row);
 }
 
-function getSeoPagePlanByPage(targetPageType, targetPageId) {
+function getSeoPagePlanByPage(targetPageType, targetPageId, branchId) {
   const conn = getDb();
   const row = conn
-    .prepare('SELECT * FROM seo_page_plans WHERE target_page_type = ? AND target_page_id = ?')
-    .get(targetPageType, targetPageId);
+    .prepare('SELECT * FROM seo_page_plans WHERE target_page_type = ? AND target_page_id = ? AND branch_id IS ?')
+    .get(targetPageType, targetPageId, branchId ?? null);
   if (!row) return null;
   return parsePagePlanJsonFields(row);
 }
 
-function listSeoPagePlans({ status } = {}) {
+function listSeoPagePlans({ status, branchId } = {}) {
   const conn = getDb();
   let query = 'SELECT * FROM seo_page_plans WHERE 1=1';
   const params = {};
+  if (branchId !== undefined && branchId !== null) {
+    query += ' AND branch_id = :branch_id';
+    params.branch_id = branchId;
+  }
   if (status) {
     query += ' AND status = :status';
     params.status = status;
@@ -1148,8 +1177,8 @@ function upsertSeoPagePlan(plan, nowIso) {
   }
 
   const existing = conn
-    .prepare('SELECT id, status FROM seo_page_plans WHERE target_page_type = ? AND target_page_id = ?')
-    .get(plan.targetPageType, plan.targetPageId);
+    .prepare('SELECT id, status FROM seo_page_plans WHERE target_page_type = ? AND target_page_id = ? AND branch_id IS ?')
+    .get(plan.targetPageType, plan.targetPageId, plan.branchId ?? null);
 
   if (existing && PAGE_PLAN_LOCKED_STATUSES.has(existing.status)) {
     return { id: existing.id, isNew: false, locked: true, lockedStatus: existing.status };
@@ -1159,6 +1188,7 @@ function upsertSeoPagePlan(plan, nowIso) {
     group_key: plan.groupKey,
     target_page_type: plan.targetPageType,
     target_page_id: plan.targetPageId,
+    branch_id: plan.branchId ?? null,
     target_page_name: plan.targetPageName || null,
     target_url: plan.targetUrl || null,
     primary_task_id: plan.primaryTaskId,
@@ -1212,12 +1242,12 @@ function upsertSeoPagePlan(plan, nowIso) {
   const result = conn
     .prepare(
       `INSERT INTO seo_page_plans (
-        group_key, target_page_type, target_page_id, target_page_name, target_url,
+        group_key, target_page_type, target_page_id, branch_id, target_page_name, target_url,
         primary_task_id, primary_keyword, supporting_task_ids, supporting_keywords,
         excluded_tasks, combined_search_intents, selection_breakdown, fact_check_summary,
         warnings, source_content_hash, prompt_version, status, created_at, updated_at
       ) VALUES (
-        :group_key, :target_page_type, :target_page_id, :target_page_name, :target_url,
+        :group_key, :target_page_type, :target_page_id, :branch_id, :target_page_name, :target_url,
         :primary_task_id, :primary_keyword, :supporting_task_ids, :supporting_keywords,
         :excluded_tasks, :combined_search_intents, :selection_breakdown, :fact_check_summary,
         :warnings, :source_content_hash, :prompt_version, :status, :created_at, :updated_at
@@ -1666,9 +1696,11 @@ function parseWeeklyRecommendationJsonFields(row) {
   };
 }
 
-function getWeeklyRecommendation(batchDate) {
+function getWeeklyRecommendation(batchDate, branchId) {
   const conn = getDb();
-  const row = conn.prepare('SELECT * FROM seo_weekly_recommendations WHERE batch_date = ?').get(batchDate);
+  const row = conn
+    .prepare('SELECT * FROM seo_weekly_recommendations WHERE batch_date = ? AND branch_id IS ?')
+    .get(batchDate, branchId ?? null);
   return row ? parseWeeklyRecommendationJsonFields(row) : null;
 }
 
@@ -1680,7 +1712,9 @@ function upsertWeeklyRecommendation(rec, nowIso) {
   const conn = getDb();
   conn.exec('BEGIN');
   try {
-    const existing = conn.prepare('SELECT id, status FROM seo_weekly_recommendations WHERE batch_date = ?').get(rec.batchDate);
+    const existing = conn
+      .prepare('SELECT id, status FROM seo_weekly_recommendations WHERE batch_date = ? AND branch_id IS ?')
+      .get(rec.batchDate, rec.branchId ?? null);
 
     if (existing && WEEKLY_RECOMMENDATION_LOCKED_STATUSES.has(existing.status)) {
       conn.exec('COMMIT');
@@ -1688,6 +1722,7 @@ function upsertWeeklyRecommendation(rec, nowIso) {
     }
 
     const row = {
+      branch_id: rec.branchId ?? null,
       task_ids: toJson(rec.taskIds || []),
       items: toJson(rec.items || []),
       total_expected_cv: rec.totalExpectedCv ?? null,
@@ -1698,6 +1733,9 @@ function upsertWeeklyRecommendation(rec, nowIso) {
     };
 
     if (existing) {
+      // branch_idは既存行の作成時に固定される値のため更新対象に含めない
+      // (node:sqliteは未参照の名前付きパラメータをエラーにするため明示的に除外する)。
+      const { branch_id: _unusedBranchId, ...updateParams } = row;
       conn
         .prepare(
           `UPDATE seo_weekly_recommendations SET
@@ -1706,7 +1744,7 @@ function upsertWeeklyRecommendation(rec, nowIso) {
             curation_tier = :curation_tier, curation_params = :curation_params, updated_at = :updated_at
           WHERE id = :id`
         )
-        .run({ ...row, id: existing.id, updated_at: nowIso });
+        .run({ ...updateParams, id: existing.id, updated_at: nowIso });
       conn.exec('COMMIT');
       return { id: existing.id, isNew: false, locked: false };
     }
@@ -1714,10 +1752,10 @@ function upsertWeeklyRecommendation(rec, nowIso) {
     const result = conn
       .prepare(
         `INSERT INTO seo_weekly_recommendations (
-          batch_date, status, task_ids, items, total_expected_cv, total_effort_minutes,
+          branch_id, batch_date, status, task_ids, items, total_expected_cv, total_effort_minutes,
           task_type_breakdown, curation_tier, curation_params, created_at, updated_at
         ) VALUES (
-          :batch_date, :status, :task_ids, :items, :total_expected_cv, :total_effort_minutes,
+          :branch_id, :batch_date, :status, :task_ids, :items, :total_expected_cv, :total_effort_minutes,
           :task_type_breakdown, :curation_tier, :curation_params, :created_at, :updated_at
         )`
       )
@@ -1732,9 +1770,14 @@ function upsertWeeklyRecommendation(rec, nowIso) {
 
 // batch_date降順で最新の週次バンドルを1件取得する(Sprint 4.0: ダッシュボードが
 // 今週分未生成時にフォールバック表示するために使う)。
-function getLatestWeeklyRecommendation() {
+function getLatestWeeklyRecommendation(branchId) {
   const conn = getDb();
-  const row = conn.prepare('SELECT * FROM seo_weekly_recommendations ORDER BY batch_date DESC LIMIT 1').get();
+  const row =
+    branchId !== undefined && branchId !== null
+      ? conn
+          .prepare('SELECT * FROM seo_weekly_recommendations WHERE branch_id = ? ORDER BY batch_date DESC LIMIT 1')
+          .get(branchId)
+      : conn.prepare('SELECT * FROM seo_weekly_recommendations ORDER BY batch_date DESC LIMIT 1').get();
   return row ? parseWeeklyRecommendationJsonFields(row) : null;
 }
 
@@ -1747,12 +1790,14 @@ const WEEKLY_RECOMMENDATION_ALLOWED_TRANSITIONS = {
   approved: new Set(['archived']),
 };
 
-function transitionWeeklyRecommendationStatus({ batchDate, expectedCurrentStatus, nextStatus }, nowIso) {
+function transitionWeeklyRecommendationStatus({ batchDate, expectedCurrentStatus, nextStatus, branchId }, nowIso) {
   const conn = getDb();
   conn.exec('BEGIN');
   let current;
   try {
-    current = conn.prepare('SELECT id, status FROM seo_weekly_recommendations WHERE batch_date = ?').get(batchDate);
+    current = conn
+      .prepare('SELECT id, status FROM seo_weekly_recommendations WHERE batch_date = ? AND branch_id IS ?')
+      .get(batchDate, branchId ?? null);
     if (!current) {
       throw Object.assign(new Error(`transitionWeeklyRecommendationStatus: batch_date=${batchDate} が見つかりません`), {
         code: 'not_found',
@@ -1789,11 +1834,18 @@ function transitionWeeklyRecommendationStatus({ batchDate, expectedCurrentStatus
 
 // Sprint 4.1: 自律パブリッシュバッチ(scripts/seo_publisher.js)用。
 // statusが'approved'の週次バンドルのうち、batch_date降順で最新の1件を取得する。
-function getLatestApprovedWeeklyRecommendation() {
+function getLatestApprovedWeeklyRecommendation(branchId) {
   const conn = getDb();
-  const row = conn
-    .prepare("SELECT * FROM seo_weekly_recommendations WHERE status = 'approved' ORDER BY batch_date DESC LIMIT 1")
-    .get();
+  const row =
+    branchId !== undefined && branchId !== null
+      ? conn
+          .prepare(
+            "SELECT * FROM seo_weekly_recommendations WHERE status = 'approved' AND branch_id = ? ORDER BY batch_date DESC LIMIT 1"
+          )
+          .get(branchId)
+      : conn
+          .prepare("SELECT * FROM seo_weekly_recommendations WHERE status = 'approved' ORDER BY batch_date DESC LIMIT 1")
+          .get();
   return row ? parseWeeklyRecommendationJsonFields(row) : null;
 }
 
@@ -1802,11 +1854,13 @@ function getLatestApprovedWeeklyRecommendation() {
 // 最終防衛ライン。呼び出し側がWordPress API呼び出し前にもチェックする想定だが、
 // 実際にDBへ書き込む直前にもう一度この関数内で確認することで、万一チェックと
 // 書き込みの間に別プロセスが同じタスクを処理していた場合の二重記録を防ぐ)。
-function markWeeklyRecommendationItemPublished(batchDate, taskId, { wpPostId, draftStatus }, nowIso) {
+function markWeeklyRecommendationItemPublished(batchDate, taskId, { wpPostId, draftStatus, branchId }, nowIso) {
   const conn = getDb();
   conn.exec('BEGIN');
   try {
-    const row = conn.prepare('SELECT id, items FROM seo_weekly_recommendations WHERE batch_date = ?').get(batchDate);
+    const row = conn
+      .prepare('SELECT id, items FROM seo_weekly_recommendations WHERE batch_date = ? AND branch_id IS ?')
+      .get(batchDate, branchId ?? null);
     if (!row) {
       throw Object.assign(new Error(`markWeeklyRecommendationItemPublished: batch_date=${batchDate} が見つかりません`), {
         code: 'not_found',

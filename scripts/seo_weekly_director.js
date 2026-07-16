@@ -15,6 +15,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { loadJukuConfig, ROOT } = require('./lib/config');
 const seoDb = require('./lib/seo_db');
+const branchesDb = require('./lib/branches_db');
 const { curateWeeklyTasks } = require('./lib/seo/weekly_task_curator');
 const { dispatchWeeklyDrafts } = require('./lib/seo/weekly_draft_dispatcher');
 
@@ -76,6 +77,7 @@ async function resolveWeeklyDirector({
   save = false,
   curationOptions,
   seoDbImpl = seoDb,
+  branchesDbImpl = branchesDb,
   curateWeeklyTasksImpl = curateWeeklyTasks,
   dispatchWeeklyDraftsImpl = dispatchWeeklyDrafts,
   pageContextDeps,
@@ -86,7 +88,12 @@ async function resolveWeeklyDirector({
   const batchDate = mondayOfWeek(now);
   const stamp = nowIso || now.toISOString();
 
-  const candidateTasks = seoDbImpl.listTasks({ status: 'proposed' });
+  // 複数校舎管理: config自体はフェーズ3対象外(校舎別に分離しない)ため、
+  // 現在アクティブな校舎のTaskのみを対象に週次選定し、保存時も同じ校舎に紐づける。
+  const activeBranch = branchesDbImpl.getActiveBranch();
+  const activeBranchId = activeBranch ? activeBranch.id : null;
+
+  const candidateTasks = seoDbImpl.listTasks({ status: 'proposed', branchId: activeBranchId });
   const curation = curateWeeklyTasksImpl(candidateTasks, curationOptions);
 
   const dispatchedItems = await dispatchWeeklyDraftsImpl(curation.selectedTasks, batchDate, {
@@ -114,6 +121,7 @@ async function resolveWeeklyDirector({
   const saveResult = seoDbImpl.upsertWeeklyRecommendation(
     {
       batchDate,
+      branchId: activeBranchId,
       taskIds: curation.selectedTasks.map((t) => t.id),
       items,
       totalExpectedCv: curation.totalExpectedCv,
