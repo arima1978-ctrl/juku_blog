@@ -197,6 +197,26 @@
   .edit-form-area textarea.meta { min-height: 60px; }
   .edit-form-area textarea.body { min-height: 320px; }
 
+  /* 競合塾の登録フォーム(常時表示のカード。折りたたまず、目立つ枠線・背景で区別する) */
+  .competitor-form-card {
+    background: var(--card-bg);
+    border: 2px solid var(--accent);
+    border-radius: 12px;
+    padding: 18px;
+    margin: 14px 0 16px;
+  }
+  .competitor-form-card label { display: block; font-size: 0.82rem; color: var(--text-muted); margin: 10px 0 4px; }
+  .competitor-form-card label:first-of-type { margin-top: 0; }
+  .competitor-form-card input[type="text"],
+  .competitor-form-card select {
+    width: 100%;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    padding: 8px;
+    font-family: inherit;
+    font-size: 0.92rem;
+  }
+
   /* エピソード素材 */
   .episode-section {
     background: var(--card-bg);
@@ -394,23 +414,34 @@
       <div class="fact-check-box">
         <strong>競合塾</strong>
         <div id="seoCompetitorList" style="margin-top:8px;">読み込み中...</div>
-        <div class="actions" style="margin-top:12px;">
-          <button onclick="toggleCompetitorForm()">＋ 競合塾を登録</button>
-          <button class="primary" id="seoCrawlBtn" onclick="runSeoCrawl()">競合の分析(クロール)を実行</button>
+      </div>
+
+      <div class="competitor-form-card">
+        <h3 style="margin:0 0 12px; font-size:1rem;">＋ 競合塾を登録</h3>
+        <label>競合塾名</label>
+        <input type="text" id="competitorFormName" placeholder="例: あま本部ライバル塾">
+        <label>競合URL(トップページ、またはドメイン)</label>
+        <input type="text" id="competitorFormDomain" placeholder="例: https://example-juku.com/">
+        <label>競合カテゴリ</label>
+        <select id="competitorFormType">
+          <option value="">未分類</option>
+          <option value="major_chain">大手チェーン(major_chain)</option>
+          <option value="local">地域密着(local)</option>
+          <option value="exam_specialist">受験専門(exam_specialist)</option>
+          <option value="subject_specialist">科目専門(subject_specialist)</option>
+          <option value="information_media">情報サイト(information_media)</option>
+          <option value="other">その他(other)</option>
+        </select>
+        <label>ターゲット地域(カンマ区切り、任意)</label>
+        <input type="text" id="competitorFormTargetAreas" placeholder="例: あま市, 甚目寺">
+        <div class="actions" style="margin-top:14px;">
+          <button class="primary" onclick="saveCompetitorForm()">競合を登録する</button>
         </div>
-        <div id="seoCrawlStatus" style="margin-top:8px; font-size:0.85rem; color:var(--text-muted);"></div>
-        <div class="edit-form-area" id="competitorFormArea">
-          <label>競合塾名</label>
-          <input type="text" id="competitorFormName" placeholder="例: ○○ゼミナール あま校">
-          <label>競合URL(トップページ、またはドメイン)</label>
-          <input type="text" id="competitorFormDomain" placeholder="例: https://example-juku.com/">
-          <label>ターゲット地域(カンマ区切り、任意)</label>
-          <input type="text" id="competitorFormTargetAreas" placeholder="例: あま市, 甚目寺">
-          <div class="actions" style="margin-top:12px;">
-            <button class="primary" onclick="saveCompetitorForm()">登録</button>
-            <button onclick="toggleCompetitorForm()">キャンセル</button>
-          </div>
-        </div>
+        <hr style="margin:18px 0; border:none; border-top:1px solid var(--border);">
+        <button class="primary" id="seoCrawlBtn" onclick="runSeoCrawl()" style="width:100%; padding:12px; font-size:0.95rem;">
+          競合のクロール・分析・スコア計算を実行
+        </button>
+        <div id="seoCrawlStatus" style="margin-top:10px; font-size:0.85rem; color:var(--text-muted);"></div>
       </div>
 
       <div class="filters" style="margin-top:16px;">
@@ -557,6 +588,12 @@ function withBranchId(params) {
   return params;
 }
 
+// 空状態メッセージに校舎名を明示し、「別の校舎のデータかもしれない」という不安を防ぐ。
+function currentBranchLabel() {
+  const branch = (currentBranches || []).find((b) => b.id === currentBranchId);
+  return branch ? branch.name : '選択中の校舎';
+}
+
 async function fetchJson(url, opts) {
   const res = await fetch(url, opts);
   if (!res.ok) throw new Error(`${url} -> ${res.status}`);
@@ -609,7 +646,7 @@ async function loadPosts() {
 
   const list = document.getElementById('cardList');
   if (posts.length === 0) {
-    list.innerHTML = '<div class="empty">該当する記事がありません</div>';
+    list.innerHTML = `<div class="empty">${escapeHtml(currentBranchLabel())}の該当する記事がありません</div>`;
     return;
   }
   list.innerHTML = posts.map(p => `
@@ -931,20 +968,24 @@ const searchIntentLabel = {
   trial_inquiry: '体験・問い合わせ',
 };
 const contentTypeLabel = { blog_article: 'ブログ記事', school_page: '校舎ページ' };
+const competitorTypeLabel = {
+  major_chain: '大手チェーン', local: '地域密着', exam_specialist: '受験専門',
+  subject_specialist: '科目専門', information_media: '情報サイト', other: 'その他',
+};
 
 async function loadSeoCompetitors() {
   const el = document.getElementById('seoCompetitorList');
   const params = withBranchId(new URLSearchParams());
   const competitors = await fetchJson('api/seo/competitors?' + params.toString());
   if (competitors.length === 0) {
-    el.innerHTML = '<span style="color:var(--text-muted);">登録されている競合塾はありません(config/seo_competitors.yamlで登録できます)</span>';
+    el.innerHTML = `<span style="color:var(--text-muted);">${escapeHtml(currentBranchLabel())}の競合塾はまだ登録されていません。下のフォームから登録してください。</span>`;
     return;
   }
   el.innerHTML = competitors.map(c => `
     <div class="seo-competitor-row">
       <div>
         <strong>${escapeHtml(c.name)}</strong>
-        <span style="color:var(--text-muted);"> ${escapeHtml(c.domain)}${c.competitor_type ? ` ・ ${escapeHtml(c.competitor_type)}` : ''}</span>
+        <span style="color:var(--text-muted);"> ${escapeHtml(c.domain)}${c.competitor_type ? ` ・ ${escapeHtml(competitorTypeLabel[c.competitor_type] || c.competitor_type)}` : ''}</span>
       </div>
       <div style="color:var(--text-muted);">
         ${c.crawl_enabled ? 'クロール有効' : 'クロール無効'}
@@ -968,7 +1009,7 @@ async function loadSeoCandidates() {
 
   const list = document.getElementById('seoCandidateList');
   if (candidates.length === 0) {
-    list.innerHTML = '<div class="empty">該当する候補がありません</div>';
+    list.innerHTML = `<div class="empty">${escapeHtml(currentBranchLabel())}のキーワード候補データはありません(競合登録・分析実行が未了か、絞り込み条件に該当する候補がありません)</div>`;
     return;
   }
   list.innerHTML = candidates.map(c => `
@@ -1108,14 +1149,10 @@ document.getElementById('seoBackLink').addEventListener('click', () => {
 });
 
 // --- 競合塾の登録・クロール実行(校舎ごとの初期データ生成) ---
-function toggleCompetitorForm() {
-  const el = document.getElementById('competitorFormArea');
-  el.style.display = el.style.display === 'block' ? 'none' : 'block';
-}
-
 async function saveCompetitorForm() {
   const name = document.getElementById('competitorFormName').value.trim();
   const domain = document.getElementById('competitorFormDomain').value.trim();
+  const competitorType = document.getElementById('competitorFormType').value;
   const targetAreas = document.getElementById('competitorFormTargetAreas').value.trim();
   if (!name || !domain) {
     alert('競合塾名と競合URLは必須です');
@@ -1126,12 +1163,12 @@ async function saveCompetitorForm() {
     await fetchJson('api/seo/competitors?' + params.toString(), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, domain, target_areas: targetAreas }),
+      body: JSON.stringify({ name, domain, competitor_type: competitorType || null, target_areas: targetAreas }),
     });
     document.getElementById('competitorFormName').value = '';
     document.getElementById('competitorFormDomain').value = '';
+    document.getElementById('competitorFormType').value = '';
     document.getElementById('competitorFormTargetAreas').value = '';
-    toggleCompetitorForm();
     await loadSeoCompetitors();
   } catch (err) {
     alert('登録に失敗しました: ' + err.message);
@@ -1195,7 +1232,7 @@ async function loadGrowthTasks() {
 
   const list = document.getElementById('growthTaskList');
   if (tasks.length === 0) {
-    list.innerHTML = '<div class="empty">今週の改善提案はまだありません</div>';
+    list.innerHTML = `<div class="empty">${escapeHtml(currentBranchLabel())}の改善提案(SEO Task)はまだありません</div>`;
     return;
   }
   list.innerHTML = tasks.map(t => `
@@ -1324,7 +1361,7 @@ async function loadWeeklyRecommendation() {
     warningBar.innerHTML = '';
     summaryRow.innerHTML = '';
     approveArea.innerHTML = '';
-    list.innerHTML = '<div class="empty">今週の提案はまだありません(週次バッチが未実行です)</div>';
+    list.innerHTML = `<div class="empty">${escapeHtml(currentBranchLabel())}の今週の提案はまだありません(週次バッチが未実行です)</div>`;
     return;
   }
 
@@ -1558,6 +1595,8 @@ async function activateBranch(id) {
   try {
     await fetchJson(`api/branches/${id}/activate`, { method: 'POST' });
     await loadBranches();
+    // 有効化した校舎を、そのまま表示校舎(ヘッダーの切り替えプルダウン)にも追従させる。
+    await switchDisplayBranch(id);
   } catch (err) {
     alert('有効化に失敗しました: ' + err.message);
   }
@@ -1629,22 +1668,44 @@ function populateBranchSwitcher(branches) {
   select.value = currentBranchId != null ? String(currentBranchId) : '';
 }
 
-// 選択中の校舎を切り替えたら、記事一覧・競合キーワード分析・Growth Director・
-// 今週の提案の各タブのデータを瞬時に切り替える(表示中でないタブも次に開いた際に
-// 最新化されるよう、まとめて再読み込みする)。開いている詳細ビューは一覧へ戻す。
-function onBranchSwitcherChange(e) {
-  currentBranchId = Number(e.target.value);
+// 表示中の校舎を切り替える共通処理。ドロップダウンの変更操作からだけでなく、
+// 校舎・塾長設定タブで校舎を「有効化」した場合にも同じ処理を呼び出す
+// (以前は有効化してもcurrentBranchIdが追従せず、表示校舎が旧校舎のまま固定される
+// バグがあった。「切り替えた直後なのに旧校舎のデータが残る」という報告の直接原因)。
+function switchDisplayBranch(newBranchId) {
+  currentBranchId = newBranchId;
+  const select = document.getElementById('branchSwitcher');
+  if (select.value !== String(newBranchId)) select.value = String(newBranchId);
+
+  // 開いている詳細ビューは一覧へ戻す(他校舎のデータが開いたままにならないように)
   document.getElementById('listView').style.display = 'block';
   document.getElementById('detailView').style.display = 'none';
   document.getElementById('seoCandidateDetailView').style.display = 'none';
   document.getElementById('growthTaskDetailView').style.display = 'none';
 
-  loadSummary();
-  loadPosts();
-  loadSeoCompetitors();
-  loadSeoCandidates();
-  loadGrowthTasks();
-  loadWeeklyRecommendation();
+  // fetch完了を待たず、まず即座に「読み込み中」表示へリセットする。旧校舎の一覧が
+  // 新しいデータに置き換わるまでの間、画面上に一瞬たりとも残らないようにするため。
+  document.getElementById('cardList').innerHTML = '<div class="empty">読み込み中...</div>';
+  document.getElementById('seoCompetitorList').textContent = '読み込み中...';
+  document.getElementById('seoCandidateList').innerHTML = '<div class="empty">読み込み中...</div>';
+  document.getElementById('growthTaskList').innerHTML = '<div class="empty">読み込み中...</div>';
+  document.getElementById('weeklyRecTaskList').innerHTML = '<div class="empty">読み込み中...</div>';
+  document.getElementById('weeklyRecSummaryRow').innerHTML = '';
+  document.getElementById('weeklyRecApproveArea').innerHTML = '';
+  document.getElementById('weeklyRecWarningBar').innerHTML = '';
+
+  return Promise.all([
+    loadSummary(),
+    loadPosts(),
+    loadSeoCompetitors(),
+    loadSeoCandidates(),
+    loadGrowthTasks(),
+    loadWeeklyRecommendation(),
+  ]);
+}
+
+function onBranchSwitcherChange(e) {
+  switchDisplayBranch(Number(e.target.value));
 }
 document.getElementById('branchSwitcher').addEventListener('change', onBranchSwitcherChange);
 
