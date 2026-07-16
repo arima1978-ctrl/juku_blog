@@ -300,6 +300,20 @@
     border-radius: 6px;
   }
 
+  /* 実行系ボタンの処理中インジケーター(競合分析一括実行・タスク自動生成・週次提案生成) */
+  .spinner {
+    display: inline-block;
+    width: 13px;
+    height: 13px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    vertical-align: middle;
+    margin-right: 6px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
   @media (max-width: 600px) {
     .detail-meta-grid { grid-template-columns: 1fr; }
     .actions { flex-direction: column; }
@@ -1128,20 +1142,27 @@ async function runSeoCrawl() {
   const btn = document.getElementById('seoCrawlBtn');
   const statusEl = document.getElementById('seoCrawlStatus');
   btn.disabled = true;
-  statusEl.textContent = '⏳ 競合の分析(クロール)を実行中です。競合数によっては数分かかる場合があります…';
+  statusEl.innerHTML = '<span class="spinner"></span>競合のクロール・分析・スコア計算を実行中です…(数分かかる場合があります)';
   try {
     const params = withBranchId(new URLSearchParams());
     const result = await fetchJson('api/seo/crawl?' + params.toString(), { method: 'POST' });
-    if (result.reason === 'no_targets') {
+    if (result.crawl.reason === 'no_targets') {
       statusEl.textContent = 'ℹ️ この校舎にはクロール対象の競合塾が登録されていません。先に「＋ 競合塾を登録」から追加してください。';
     } else {
-      const okCount = result.summary.filter((s) => s.ok).length;
-      const errCount = result.summary.length - okCount;
+      const okCount = result.crawl.summary.filter((s) => s.ok).length;
+      const errCount = result.crawl.summary.length - okCount;
+      const gapText =
+        result.gap.reason === 'skipped'
+          ? '(解析対象ページが無かったためスコア計算はスキップされました)'
+          : result.gap.reason === 'already_running'
+            ? '(他の分析処理が実行中のためスコア計算はスキップされました。しばらくしてから再実行してください)'
+            : `新規候補${result.gap.stats ? result.gap.stats.candidates_created : 0}件・更新${result.gap.stats ? result.gap.stats.candidates_updated : 0}件`;
       statusEl.textContent =
-        `✅ クロールが完了しました(成功:${okCount}件${errCount ? ` / 失敗:${errCount}件` : ''})。` +
-        'キーワード候補として一覧に反映するには、この後 seo_page_analyze.js → seo_gap_calculate.js の実行が必要です(現時点ではCLI操作のみ対応)。';
+        `✅ 完了しました。クロール成功:${okCount}件${errCount ? ` / 失敗:${errCount}件` : ''} ・ ` +
+        `解析ページ数:${result.analyze.stats ? result.analyze.stats.pages_analyzed : 0}件 ・ キーワード候補: ${gapText}`;
     }
     await loadSeoCompetitors();
+    await loadSeoCandidates();
   } catch (err) {
     statusEl.textContent = '';
     if (err.message.includes('403')) {
@@ -1251,7 +1272,7 @@ async function runGrowthGenerate() {
   const btn = document.getElementById('growthGenerateBtn');
   const statusEl = document.getElementById('growthGenerateStatus');
   btn.disabled = true;
-  statusEl.textContent = '⏳ SEOタスクと構成案(Page Plan)を生成中です。校舎ページ数によっては数分かかる場合があります…';
+  statusEl.innerHTML = '<span class="spinner"></span>SEOタスクと構成案(Page Plan)を生成中です。校舎ページ数によっては数分かかる場合があります…';
   try {
     const params = withBranchId(new URLSearchParams());
     const result = await fetchJson('api/seo/generate-tasks?' + params.toString(), { method: 'POST' });
@@ -1419,7 +1440,7 @@ async function runWeeklyRecGenerate() {
   const btn = document.getElementById('weeklyRecGenerateBtn');
   const statusEl = document.getElementById('weeklyRecGenerateStatus');
   btn.disabled = true;
-  statusEl.textContent = '⏳ 今週の提案を生成中です。対象Task数によっては数分かかる場合があります…';
+  statusEl.innerHTML = '<span class="spinner"></span>今週の提案を生成中です。対象Task数によっては数分かかる場合があります…';
   try {
     const params = withBranchId(new URLSearchParams());
     const result = await fetchJson('api/seo/weekly-recommendation/generate?' + params.toString(), { method: 'POST' });

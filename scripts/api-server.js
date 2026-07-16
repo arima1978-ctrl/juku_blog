@@ -39,6 +39,8 @@ const { mondayOfWeek, resolveWeeklyDirector } = require('./seo_weekly_director')
 const { resultFilePathFor } = require('./seo_publisher');
 const branchesDb = require('./lib/branches_db');
 const { resolveCompetitorCrawl } = require('./seo_competitor_crawl');
+const { resolvePageAnalyze } = require('./seo_page_analyze');
+const { resolveGapCalculate } = require('./seo_gap_calculate');
 const { resolveTaskGenerate } = require('./seo_task_generate');
 const { resolvePagePlans } = require('./seo_page_plan_generate');
 
@@ -422,17 +424,39 @@ app.post('/api/seo/competitors', (req, res) => {
   res.json(seoDb.getCompetitor(id));
 });
 
-// 競合クロールの実行(外部サイトへの実際のHTTP取得を伴うため、承認と同様
-// requireLocalhostで保護する。ALLOW_REMOTE_APPROVE=true環境では従来通り
-// Basic認証配下のダッシュボードから実行できる)。
+// 競合分析の一括実行: ①クロール(seo_competitor_crawl.js相当) → ②ページ解析
+// (seo_page_analyze.js相当) → ③Gap計算(seo_gap_calculate.js相当)を、指定校舎の
+// データのみを対象に順番に実行する。3ステップとも同じbranchIdを引き継ぐため、
+// あま本部から実行しても小幡校のデータには一切触れない。外部サイトへの実際の
+// HTTP取得を伴うため、承認と同様requireLocalhostで保護する
+// (ALLOW_REMOTE_APPROVE=true環境では従来通りBasic認証配下のダッシュボードから実行できる)。
 app.post('/api/seo/crawl', requireLocalhost, async (req, res) => {
   const branchId = resolveBranchId(req);
   try {
-    const result = await resolveCompetitorCrawl({ dryRun: false, branchId });
-    if (result.reason === 'feature_disabled') {
+    const crawlResult = await resolveCompetitorCrawl({ dryRun: false, branchId });
+    if (crawlResult.reason === 'feature_disabled') {
       return res.status(400).json({ error: 'feature_disabled', message: '競合キーワード分析(features.competitor_keyword_analysis)が無効です' });
     }
-    res.json({ ok: true, reason: result.reason || null, summary: result.summary });
+
+    // クロール対象が無ければ後続ステップも実行しない(解析すべきページが無いため)。
+    let analyzeResult = { reason: 'skipped', stats: null };
+    let gapResult = { reason: 'skipped', stats: null };
+    if (crawlResult.reason !== 'no_targets') {
+      const analyze = await resolvePageAnalyze({ branchId });
+      analyzeResult = { reason: analyze.reason || null, stats: analyze.stats };
+
+      if (analyze.reason !== 'no_pages') {
+        const gap = await resolveGapCalculate({ branchId });
+        gapResult = { reason: gap.reason || null, stats: gap.stats };
+      }
+    }
+
+    res.json({
+      ok: true,
+      crawl: { reason: crawlResult.reason || null, summary: crawlResult.summary },
+      analyze: analyzeResult,
+      gap: gapResult,
+    });
   } catch (err) {
     logError('api_seo_crawl', err.message);
     res.status(500).json({ error: 'crawl_failed', message: err.message });

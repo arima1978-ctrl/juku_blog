@@ -51,37 +51,42 @@ function buildExclusionTerms() {
   return [...GENERIC_EXCLUSION_TERMS, ...competitorNames];
 }
 
-async function main() {
-  const dryRun = process.argv.includes('--dry-run');
+// コア処理(テスト容易性・API層からの呼び出しのため、process.exitを含まない形で分離)。
+// branchIdを指定すると、その校舎の競合(seo_competitors.branch_id)が保有するページのみを
+// 解析対象にする(未指定時は全校舎対象。CLI/cronの既存挙動を変えないためのデフォルト)。
+// 保存するテーマ・複合キーワードのbranch_idも、明示指定があればそれを使い、
+// 無ければ現在アクティブな校舎にフォールバックする。
+async function resolvePageAnalyze({ dryRun = false, branchId, seoDbImpl = seoDb, branchesDbImpl = branchesDb } = {}) {
   const config = loadJukuConfig();
   const feature = config.features && config.features.competitor_keyword_analysis;
 
   if (!feature || !feature.enabled) {
-    console.log('[seo_page_analyze] competitor_keyword_analysis.enabled が false のため無処理で終了します');
-    process.exit(0);
+    return { ok: false, reason: 'feature_disabled', stats: null };
   }
 
   const weights = config.seo.competitor_analysis.extraction_weights;
   const dictionaryEntries = buildDictionaryEntries(config);
   const exclusionTerms = buildExclusionTerms();
 
-  const pages = seoDb.listPagesNeedingAnalysis();
+  const pages = seoDbImpl.listPagesNeedingAnalysis(branchId);
   if (pages.length === 0) {
-    console.log('[seo_page_analyze] 解析対象のページがありません');
-    return;
+    return { ok: true, reason: 'no_pages', stats: null };
   }
 
   const nowIso = new Date().toISOString();
   // 複数校舎管理: config自体はフェーズ3対象外(校舎別に分離しない)ため、
-  // 抽出したテーマ・複合キーワードは現在アクティブな校舎に紐づけて保存する。
-  const activeBranch = branchesDb.getActiveBranch();
-  const activeBranchId = activeBranch ? activeBranch.id : null;
+  // 抽出したテーマ・複合キーワードは対象校舎(branchId、無ければ現在アクティブな校舎)に
+  // 紐づけて保存する。
+  const saveBranchId =
+    branchId !== undefined && branchId !== null
+      ? branchId
+      : ((branchesDbImpl.getActiveBranch() || {}).id ?? null);
   let topicsExtracted = 0;
   let compoundsExtracted = 0;
 
   for (const page of pages) {
     const bodyText = readPageBody(page.content_hash);
-    const headings = seoDb.listPageHeadings(page.id);
+    const headings = seoDbImpl.listPageHeadings(page.id);
     const pageForExtraction = {
       title: page.title || '',
       metaDescription: page.meta_description || '',
@@ -106,7 +111,7 @@ async function main() {
 
     for (const candidate of candidates) {
       const axisKey = CATEGORY_TO_AXIS[candidate.category] || null;
-      const topicId = seoDb.upsertTopic(
+      const topicId = seoDbImpl.upsertTopic(
         {
           raw_keyword: candidate.rawKeyword,
           normalized_keyword: candidate.normalizedKeyword,
@@ -115,12 +120,12 @@ async function main() {
           target_school: axisKey === 'target_school' ? candidate.normalizedKeyword : null,
           target_grade: axisKey === 'target_grade' ? candidate.normalizedKeyword : null,
           target_subject: axisKey === 'target_subject' ? candidate.normalizedKeyword : null,
-          branch_id: activeBranchId,
+          branch_id: saveBranchId,
         },
         nowIso
       );
       const occurrenceCount = Object.values(candidate.occurrences).reduce((a, b) => a + b, 0);
-      seoDb.upsertPageTopic(
+      seoDbImpl.upsertPageTopic(
         {
           page_id: page.id,
           topic_id: topicId,
@@ -137,7 +142,7 @@ async function main() {
     // 複合キーワード(「地域×塾」等)。単語単体(seo_topics)とは別テーブルに保存し、
     // seo_gap_calculate.jsはこちらを候補生成の主単位として使う。
     for (const compound of compounds) {
-      const compoundKeywordId = seoDb.upsertCompoundKeyword(
+      const compoundKeywordId = seoDbImpl.upsertCompoundKeyword(
         {
           compound_keyword: compound.compoundKeyword,
           template_type: compound.templateType,
@@ -146,11 +151,11 @@ async function main() {
           target_school: compound.components.school || null,
           target_grade: compound.components.grade || null,
           target_subject: compound.components.subject || null,
-          branch_id: activeBranchId,
+          branch_id: saveBranchId,
         },
         nowIso
       );
-      seoDb.upsertPageCompoundKeyword(
+      seoDbImpl.upsertPageCompoundKeyword(
         {
           page_id: page.id,
           compound_keyword_id: compoundKeywordId,
@@ -162,12 +167,27 @@ async function main() {
       compoundsExtracted += 1;
     }
 
-    seoDb.markPageAnalyzed(page.id, nowIso);
+    seoDbImpl.markPageAnalyzed(page.id, nowIso);
   }
 
+  const stats = { pages_analyzed: pages.length, topics_extracted: topicsExtracted, compounds_extracted: compoundsExtracted };
   console.log(
     `[seo_page_analyze] 完了: ページ${pages.length}件を解析、単語テーマ${topicsExtracted}件・複合キーワード${compoundsExtracted}件を保存しました`
   );
+  return { ok: true, dryRun, stats };
+}
+
+async function main() {
+  const dryRun = process.argv.includes('--dry-run');
+  const result = await resolvePageAnalyze({ dryRun });
+
+  if (result.reason === 'feature_disabled') {
+    console.log('[seo_page_analyze] competitor_keyword_analysis.enabled が false のため無処理で終了します');
+    process.exit(0);
+  }
+  if (result.reason === 'no_pages') {
+    console.log('[seo_page_analyze] 解析対象のページがありません');
+  }
 }
 
 if (require.main === module) {
@@ -178,4 +198,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { main };
+module.exports = { main, resolvePageAnalyze };
