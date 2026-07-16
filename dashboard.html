@@ -309,7 +309,15 @@
 </head>
 <body>
 
-<header><h1>📝 ブログ記事ダッシュボード</h1></header>
+<header>
+  <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px;">
+    <h1>📝 ブログ記事ダッシュボード</h1>
+    <div style="display:flex; align-items:center; gap:8px;">
+      <label for="branchSwitcher" style="font-size:0.85rem; color:var(--text-muted); white-space:nowrap;">表示校舎:</label>
+      <select id="branchSwitcher"></select>
+    </div>
+  </div>
+</header>
 
 <main>
   <div id="errorBanner"></div>
@@ -501,6 +509,15 @@
 <script>
 const API = '';
 
+// 複数校舎管理: ヘッダーの「表示校舎切り替え」で選択中の校舎ID。
+// nullの間はAPI側が現在アクティブな校舎にフォールバックする。
+let currentBranchId = null;
+
+function withBranchId(params) {
+  if (currentBranchId != null) params.set('branch_id', currentBranchId);
+  return params;
+}
+
 async function fetchJson(url, opts) {
   const res = await fetch(url, opts);
   if (!res.ok) throw new Error(`${url} -> ${res.status}`);
@@ -522,7 +539,8 @@ function escapeHtml(s) {
 
 // --- 一覧 ---
 async function loadSummary() {
-  const s = await fetchJson('api/summary');
+  const params = withBranchId(new URLSearchParams());
+  const s = await fetchJson('api/summary?' + params.toString());
   document.getElementById('summaryRow').innerHTML = `
     <div class="summary-card"><div class="label">${s.month} 生成本数</div><div class="value">${s.total}</div></div>
     <div class="summary-card"><div class="label">承認率</div><div class="value">${s.approvalRate}%</div></div>
@@ -547,6 +565,7 @@ async function loadPosts() {
   const params = new URLSearchParams();
   if (status) params.set('status', status);
   if (category) params.set('category', category);
+  withBranchId(params);
   const posts = await fetchJson('api/posts?' + params.toString());
 
   const list = document.getElementById('cardList');
@@ -876,7 +895,8 @@ const contentTypeLabel = { blog_article: 'ブログ記事', school_page: '校舎
 
 async function loadSeoCompetitors() {
   const el = document.getElementById('seoCompetitorList');
-  const competitors = await fetchJson('api/seo/competitors');
+  const params = withBranchId(new URLSearchParams());
+  const competitors = await fetchJson('api/seo/competitors?' + params.toString());
   if (competitors.length === 0) {
     el.innerHTML = '<span style="color:var(--text-muted);">登録されている競合塾はありません(config/seo_competitors.yamlで登録できます)</span>';
     return;
@@ -904,6 +924,7 @@ async function loadSeoCandidates() {
   if (status) params.set('status', status);
   if (gapType) params.set('gapType', gapType);
   if (orderBy) params.set('orderBy', orderBy);
+  withBranchId(params);
   const candidates = await fetchJson('api/seo/candidates?' + params.toString());
 
   const list = document.getElementById('seoCandidateList');
@@ -1062,6 +1083,7 @@ async function loadGrowthTasks() {
   const status = document.getElementById('growthStatusFilter').value;
   const params = new URLSearchParams();
   if (status) params.set('status', status);
+  withBranchId(params);
   const tasks = await fetchJson('api/growth/tasks?' + params.toString());
 
   const list = document.getElementById('growthTaskList');
@@ -1161,7 +1183,8 @@ async function loadWeeklyRecommendation() {
 
   let rec;
   try {
-    rec = await fetchJson('api/seo/weekly-recommendation');
+    const params = withBranchId(new URLSearchParams());
+    rec = await fetchJson('api/seo/weekly-recommendation?' + params.toString());
   } catch {
     currentWeeklyRec = null;
     warningBar.innerHTML = '';
@@ -1284,7 +1307,8 @@ async function approveWeeklyRecommendation() {
   const ok = confirm(`今週の提案(計${currentWeeklyRec.items.length}件)を承認し、ドラフト作成プロセスを確定しますか？`);
   if (!ok) return;
   try {
-    await fetchJson(`api/seo/weekly-recommendation/${currentWeeklyRec.batchDate}/approve`, {
+    const params = withBranchId(new URLSearchParams());
+    await fetchJson(`api/seo/weekly-recommendation/${currentWeeklyRec.batchDate}/approve?${params.toString()}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ expectedCurrentStatus: 'proposed' }),
@@ -1300,6 +1324,7 @@ let currentBranches = [];
 
 async function loadBranches() {
   currentBranches = await fetchJson('api/branches');
+  populateBranchSwitcher(currentBranches);
   const list = document.getElementById('branchList');
   if (currentBranches.length === 0) {
     list.innerHTML = '<div class="empty">登録済みの校舎はありません</div>';
@@ -1424,7 +1449,52 @@ function refreshAll() {
   loadSummary();
   loadPosts();
 }
-refreshAll();
+
+// --- 表示校舎切り替え(複数校舎管理) ---
+// branchesの内容(候補一覧)はcurrentBranches(校舎・塾長設定タブと共有)に保持する。
+function populateBranchSwitcher(branches) {
+  const select = document.getElementById('branchSwitcher');
+  const previousValue = currentBranchId;
+  select.innerHTML = branches.map(b =>
+    `<option value="${b.id}">${escapeHtml(b.name)}${b.is_active ? '(有効)' : ''}</option>`
+  ).join('');
+
+  const stillExists = previousValue != null && branches.some(b => b.id === previousValue);
+  if (stillExists) {
+    currentBranchId = previousValue;
+  } else {
+    const active = branches.find(b => b.is_active);
+    currentBranchId = active ? active.id : (branches[0] ? branches[0].id : null);
+  }
+  select.value = currentBranchId != null ? String(currentBranchId) : '';
+}
+
+// 選択中の校舎を切り替えたら、記事一覧・競合キーワード分析・Growth Director・
+// 今週の提案の各タブのデータを瞬時に切り替える(表示中でないタブも次に開いた際に
+// 最新化されるよう、まとめて再読み込みする)。開いている詳細ビューは一覧へ戻す。
+function onBranchSwitcherChange(e) {
+  currentBranchId = Number(e.target.value);
+  document.getElementById('listView').style.display = 'block';
+  document.getElementById('detailView').style.display = 'none';
+  document.getElementById('seoCandidateDetailView').style.display = 'none';
+  document.getElementById('growthTaskDetailView').style.display = 'none';
+
+  loadSummary();
+  loadPosts();
+  loadSeoCompetitors();
+  loadSeoCandidates();
+  loadGrowthTasks();
+  loadWeeklyRecommendation();
+}
+document.getElementById('branchSwitcher').addEventListener('change', onBranchSwitcherChange);
+
+async function bootstrap() {
+  const branches = await fetchJson('api/branches');
+  currentBranches = branches;
+  populateBranchSwitcher(branches);
+  refreshAll();
+}
+bootstrap();
 </script>
 </body>
 </html>

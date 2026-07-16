@@ -11,6 +11,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { loadJukuConfig } = require('./lib/config');
 const seoDb = require('./lib/seo_db');
+const branchesDb = require('./lib/branches_db');
 const { buildDictionaryEntries, extractKeywordCandidates } = require('./lib/seo/keyword_extractor');
 const { buildCompoundKeywords } = require('./lib/seo/compound_keyword_builder');
 const { GENERIC_EXCLUSION_TERMS } = require('./lib/seo/dictionaries');
@@ -71,6 +72,10 @@ async function main() {
   }
 
   const nowIso = new Date().toISOString();
+  // 複数校舎管理: config自体はフェーズ3対象外(校舎別に分離しない)ため、
+  // 抽出したテーマ・複合キーワードは現在アクティブな校舎に紐づけて保存する。
+  const activeBranch = branchesDb.getActiveBranch();
+  const activeBranchId = activeBranch ? activeBranch.id : null;
   let topicsExtracted = 0;
   let compoundsExtracted = 0;
 
@@ -110,6 +115,7 @@ async function main() {
           target_school: axisKey === 'target_school' ? candidate.normalizedKeyword : null,
           target_grade: axisKey === 'target_grade' ? candidate.normalizedKeyword : null,
           target_subject: axisKey === 'target_subject' ? candidate.normalizedKeyword : null,
+          branch_id: activeBranchId,
         },
         nowIso
       );
@@ -140,6 +146,7 @@ async function main() {
           target_school: compound.components.school || null,
           target_grade: compound.components.grade || null,
           target_subject: compound.components.subject || null,
+          branch_id: activeBranchId,
         },
         nowIso
       );

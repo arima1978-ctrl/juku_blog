@@ -46,10 +46,12 @@ const ERRORS_PATH = path.join(ROOT, 'logs', 'errors.json');
 // ダッシュボードの確認が不定期でも、承認をまとめて行った際に同日に複数本
 // 公開されないよう、直近の予約済み/公開済み日の翌日を次の枠として予約投稿する。
 // (このサイトはJST運用のため、WordPressの`date`フィールドにはJSTのwall-clockを渡す)
-function getNextScheduleSlot() {
+// branchId: 予約枠・連続投稿の判定は校舎ごとに独立させる(他校舎の投稿ペースの
+// 影響を受けないようにするため)。
+function getNextScheduleSlot(branchId) {
   const config = loadJukuConfig();
   const runTime = (config.generation && config.generation.run_time) || '05:00';
-  const latest = getLatestScheduleDate();
+  const latest = getLatestScheduleDate(branchId);
   return computeNextScheduleSlot(latest, runTime);
 }
 
@@ -57,14 +59,22 @@ function getNextScheduleSlot() {
 // 承認前プレビュー(GET /api/posts/:id/schedule-preview)とも共有する。
 function computeApprovalPreview(post) {
   const config = loadJukuConfig();
-  const slot = getNextScheduleSlot();
+  const slot = getNextScheduleSlot(post.branch_id);
   const scheduledDateLabel = slot.dateOnly;
   const withinWindow = isWithinPublishWindow(scheduledDateLabel, post.publish_window_end);
 
   const maxCategoryStreak = (config.generation && config.generation.max_same_category_streak) || 0;
   const maxAudienceStreak = (config.generation && config.generation.max_same_audience_streak) || 0;
-  const categoryStreak = checkStreak(getRecentScheduledValues('category', maxCategoryStreak || 10), post.category, maxCategoryStreak);
-  const audienceStreak = checkStreak(getRecentScheduledValues('target_audience', maxAudienceStreak || 10), post.target_audience, maxAudienceStreak);
+  const categoryStreak = checkStreak(
+    getRecentScheduledValues('category', maxCategoryStreak || 10, post.branch_id),
+    post.category,
+    maxCategoryStreak
+  );
+  const audienceStreak = checkStreak(
+    getRecentScheduledValues('target_audience', maxAudienceStreak || 10, post.branch_id),
+    post.target_audience,
+    maxAudienceStreak
+  );
 
   const streakWarnings = [
     categoryStreak.warn ? `カテゴリー「${post.category}」が${categoryStreak.streak}日連続になります` : null,
@@ -72,6 +82,18 @@ function computeApprovalPreview(post) {
   ].filter(Boolean);
 
   return { slot, scheduledDateLabel, withinWindow, streakWarnings };
+}
+
+// 複数校舎管理: リクエストの?branch_id=が指定されていればそれを使い、無ければ
+// 現在アクティブな校舎にフォールバックする(要件定義Step 2)。
+function resolveBranchId(req) {
+  const raw = req.query.branch_id;
+  if (raw !== undefined && raw !== null && raw !== '') {
+    const parsed = Number(raw);
+    if (Number.isInteger(parsed) && parsed > 0) return parsed;
+  }
+  const active = branchesDb.getActiveBranch();
+  return active ? active.id : null;
 }
 
 const app = express();
@@ -94,7 +116,8 @@ app.get('/', (req, res) => {
 
 app.get('/api/posts', (req, res) => {
   const { status, category } = req.query;
-  const posts = listPosts({ status, category });
+  const branchId = resolveBranchId(req);
+  const posts = listPosts({ status, category, branchId });
   res.json(posts);
 });
 
@@ -207,12 +230,16 @@ app.post('/api/posts/:id/approve', async (req, res) => {
 });
 
 app.post('/api/posts/:id/reject', (req, res) => {
+  const id = Number(req.params.id);
   const note = (req.body && req.body.reviewer_note) || '';
-  const changes = setStatus(Number(req.params.id), 'rejected', note);
+  const changes = setStatus(id, 'rejected', note);
   if (changes === 0) return res.status(404).json({ error: 'not_found' });
 
   // 翌日の智谷(planner-blog-btoc)が差し戻し理由を参照できるよう即時に再生成
-  const rows = listRejectedWithNotes(20);
+  // (智谷は現状config/juku.yaml単一校舎前提のため、差し戻された記事自身の校舎の
+  // 履歴のみを対象にする)
+  const post = getPostById(id);
+  const rows = listRejectedWithNotes(20, post ? post.branch_id : undefined);
   fs.writeFileSync(path.join(ROOT, 'data', 'rejected_notes.json'), JSON.stringify(rows, null, 2), 'utf8');
 
   res.json({ ok: true });
@@ -221,7 +248,8 @@ app.post('/api/posts/:id/reject', (req, res) => {
 app.get('/api/summary', (req, res) => {
   const now = new Date();
   const yearMonthPrefix = now.toISOString().slice(0, 7); // YYYY-MM
-  const summary = monthlySummary(yearMonthPrefix);
+  const branchId = resolveBranchId(req);
+  const summary = monthlySummary(yearMonthPrefix, branchId);
 
   let errors = [];
   if (fs.existsSync(ERRORS_PATH)) {
@@ -325,17 +353,20 @@ app.delete('/api/branches/:id', (req, res) => {
 // 候補・競合の確認/承認/除外はできるようにする(分析を止めても過去の候補は確認できる)。
 
 app.get('/api/seo/competitors', (req, res) => {
-  res.json(seoDb.listCompetitors());
+  const branchId = resolveBranchId(req);
+  res.json(seoDb.listCompetitors({ branchId }));
 });
 
 app.get('/api/seo/candidates', (req, res) => {
   const { status, gapType, targetArea, minScore, orderBy } = req.query;
+  const branchId = resolveBranchId(req);
   const candidates = seoDb.listKeywordCandidates({
     status,
     gapType,
     targetArea,
     minPriorityScore: minScore ? Number(minScore) : undefined,
     orderBy,
+    branchId,
   });
   res.json(candidates);
 });
@@ -405,7 +436,8 @@ app.post('/api/seo/candidates/:id/queue', (req, res) => {
 
 app.get('/api/growth/tasks', (req, res) => {
   const { status, taskType, orderBy } = req.query;
-  res.json(seoDb.listTasks({ status, taskType, orderBy }));
+  const branchId = resolveBranchId(req);
+  res.json(seoDb.listTasks({ status, taskType, orderBy, branchId }));
 });
 
 app.get('/api/growth/tasks/:id', (req, res) => {
@@ -471,7 +503,8 @@ function toPagePlanSummary(plan) {
 app.get('/api/seo/page-plans', (req, res) => {
   if (!requireGrowthDirectorEnabled(res)) return;
   const { status, page_type: pageType, page_id: pageId } = req.query;
-  let plans = seoDb.listSeoPagePlans({ status });
+  const branchId = resolveBranchId(req);
+  let plans = seoDb.listSeoPagePlans({ status, branchId });
   if (pageType) plans = plans.filter((p) => p.target_page_type === pageType);
   if (pageId) plans = plans.filter((p) => p.target_page_id === pageId);
   res.json(plans.map(toPagePlanSummary));
@@ -580,9 +613,10 @@ app.get('/api/seo/weekly-recommendation', (req, res) => {
 
   const currentWeekMonday = mondayOfWeek(new Date());
   const requestedBatchDate = req.query.batch_date || currentWeekMonday;
+  const branchId = resolveBranchId(req);
 
-  let rec = seoDb.getWeeklyRecommendation(requestedBatchDate);
-  if (!rec) rec = seoDb.getLatestWeeklyRecommendation();
+  let rec = seoDb.getWeeklyRecommendation(requestedBatchDate, branchId);
+  if (!rec) rec = seoDb.getLatestWeeklyRecommendation(branchId);
   if (!rec) return res.status(404).json({ error: 'not_found' });
 
   res.json({
@@ -607,10 +641,11 @@ app.post('/api/seo/weekly-recommendation/:batchDate/approve', requireLocalhost, 
   if (!expectedCurrentStatus) {
     return res.status(400).json({ error: 'expected_current_status_required' });
   }
+  const branchId = resolveBranchId(req);
 
   try {
     const result = seoDb.transitionWeeklyRecommendationStatus(
-      { batchDate, expectedCurrentStatus, nextStatus: 'approved' },
+      { batchDate, expectedCurrentStatus, nextStatus: 'approved', branchId },
       new Date().toISOString()
     );
     res.json({ ok: true, batchDate: result.batchDate, status: result.to });

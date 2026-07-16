@@ -1,6 +1,9 @@
 -- posts テーブル: フェーズ2(WordPress REST API投稿)を見据えたスキーマ
 CREATE TABLE IF NOT EXISTS posts (
   id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+  branch_id          INTEGER,                      -- 複数校舎管理(branches.id)。全校舎が同一WordPress
+                                                     -- サイトへ投稿するため、slugのUNIQUE制約はグローバルの
+                                                     -- まま維持する(branch_idはフィルタ用の付加情報)。
   created_at         TEXT NOT NULL,               -- 生成日時 (ISO8601)
   title              TEXT NOT NULL,                -- タイトル
   slug               TEXT NOT NULL UNIQUE,          -- URL用スラッグ(英数字)
@@ -106,8 +109,12 @@ CREATE INDEX IF NOT EXISTS idx_exam_research_updates_source_id ON exam_research_
 
 -- 競合塾レジストリ(config/seo_competitors.yamlの内容 + クロール実行状態)。
 -- idはyaml側のidと一致させる。未登録ドメインは他のどのテーブルにも現れない(許可リスト方式)。
+-- 複数校舎管理: 「1競合は1校舎に紐づく」という単純化(校舎をまたいで同一競合を複数校舎が
+-- 参照する多対多構造は今回のスコープ外)。UNIQUE(domain)はUNIQUE(domain, branch_id)へ変更し、
+-- 異なる校舎が同一ドメインを別々に登録できるようにする。
 CREATE TABLE IF NOT EXISTS seo_competitors (
   id                  TEXT PRIMARY KEY,       -- config/seo_competitors.yamlのid
+  branch_id           INTEGER,                -- 複数校舎管理(branches.id)
   name                TEXT NOT NULL,
   domain              TEXT NOT NULL,
   start_url           TEXT,
@@ -126,7 +133,7 @@ CREATE TABLE IF NOT EXISTS seo_competitors (
   last_error_message  TEXT,
   created_at          TEXT NOT NULL,
   updated_at          TEXT NOT NULL,
-  UNIQUE (domain)
+  UNIQUE (domain, branch_id)
 );
 
 -- 競合サイトから取得したページ(本文は原則data/seo/配下のファイルに保存し、
@@ -169,6 +176,7 @@ CREATE INDEX IF NOT EXISTS idx_seo_page_headings_page_id ON seo_page_headings(pa
 -- 正規化済みキーワード/テーマの辞書(表記揺れの正規化前後を両方保持)。
 CREATE TABLE IF NOT EXISTS seo_topics (
   id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+  branch_id            INTEGER,            -- 複数校舎管理(branches.id)
   raw_keyword          TEXT NOT NULL,
   normalized_keyword   TEXT NOT NULL,
   normalization_rule   TEXT,               -- 適用した正規化ルール名(無ければNULL=そのまま)
@@ -177,7 +185,7 @@ CREATE TABLE IF NOT EXISTS seo_topics (
   target_grade         TEXT,
   target_subject       TEXT,
   created_at           TEXT NOT NULL,
-  UNIQUE (normalized_keyword, target_area, target_school, target_grade, target_subject)
+  UNIQUE (normalized_keyword, target_area, target_school, target_grade, target_subject, branch_id)
 );
 CREATE INDEX IF NOT EXISTS idx_seo_topics_normalized_keyword ON seo_topics(normalized_keyword);
 
@@ -252,8 +260,11 @@ CREATE TABLE IF NOT EXISTS seo_serp_rankings (
 CREATE INDEX IF NOT EXISTS idx_seo_serp_rankings_normalized_keyword ON seo_serp_rankings(normalized_keyword);
 
 -- Keyword Gap判定結果 + 優先度スコアを持つ記事候補(人間の承認フローの対象)。
+-- 複数校舎管理: branch_idをUNIQUE制約に含め、異なる校舎が同じキーワード/地域の組み合わせを
+-- 独立して保持できるようにする。
 CREATE TABLE IF NOT EXISTS seo_keyword_candidates (
   id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+  branch_id            INTEGER,          -- 複数校舎管理(branches.id)
   normalized_keyword   TEXT NOT NULL,
   raw_keyword          TEXT,
   target_area          TEXT,
@@ -274,7 +285,7 @@ CREATE TABLE IF NOT EXISTS seo_keyword_candidates (
   created_at           TEXT NOT NULL,
   updated_at           TEXT NOT NULL,
   FOREIGN KEY (analysis_run_id) REFERENCES seo_analysis_runs(id),
-  UNIQUE (normalized_keyword, target_area, target_school, target_grade, target_subject)
+  UNIQUE (normalized_keyword, target_area, target_school, target_grade, target_subject, branch_id)
 );
 CREATE INDEX IF NOT EXISTS idx_seo_keyword_candidates_status ON seo_keyword_candidates(status);
 CREATE INDEX IF NOT EXISTS idx_seo_keyword_candidates_priority_score ON seo_keyword_candidates(priority_score);
@@ -370,6 +381,7 @@ CREATE INDEX IF NOT EXISTS idx_seo_import_jobs_job_type ON seo_import_jobs(job_t
 -- seo_topics/seo_page_topics(単語単位)とは別に、テンプレートマッチ結果を保持する。
 CREATE TABLE IF NOT EXISTS seo_compound_keywords (
   id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+  branch_id           INTEGER,         -- 複数校舎管理(branches.id)
   compound_keyword    TEXT NOT NULL,
   template_type       TEXT NOT NULL,   -- area_juku/area_grade_juku/area_teaching_style/...
   keyword_components  TEXT NOT NULL,   -- JSON: {area, school, grade, subject, teaching_style, service, exam}
@@ -378,7 +390,7 @@ CREATE TABLE IF NOT EXISTS seo_compound_keywords (
   target_grade        TEXT,
   target_subject      TEXT,
   created_at          TEXT NOT NULL,
-  UNIQUE (compound_keyword, template_type, target_area, target_school, target_grade, target_subject)
+  UNIQUE (compound_keyword, template_type, target_area, target_school, target_grade, target_subject, branch_id)
 );
 CREATE INDEX IF NOT EXISTS idx_seo_compound_keywords_compound_keyword ON seo_compound_keywords(compound_keyword);
 CREATE INDEX IF NOT EXISTS idx_seo_compound_keywords_template_type ON seo_compound_keywords(template_type);
@@ -404,6 +416,7 @@ CREATE INDEX IF NOT EXISTS idx_seo_page_compound_keywords_compound_keyword_id ON
 -- 実行(in_progress/done)の自動化は行わない。
 CREATE TABLE IF NOT EXISTS seo_tasks (
   id                        INTEGER PRIMARY KEY AUTOINCREMENT,
+  branch_id                 INTEGER,         -- 複数校舎管理(branches.id)
   task_type                 TEXT NOT NULL,   -- create_article/improve_existing_article/improve_school_page/add_internal_links/add_faq/monitor/exclude
   target_url                TEXT,            -- 対象URL(既存記事・校舎ページ等。新規作成なら NULL)
   target_post_id            INTEGER,         -- 対象postsレコード(あれば)
@@ -423,7 +436,7 @@ CREATE TABLE IF NOT EXISTS seo_tasks (
   updated_at                TEXT NOT NULL,
   FOREIGN KEY (source_candidate_id) REFERENCES seo_keyword_candidates(id),
   FOREIGN KEY (target_post_id) REFERENCES posts(id),
-  UNIQUE (target_keyword, task_type, source_candidate_id)
+  UNIQUE (target_keyword, task_type, source_candidate_id, branch_id)
 );
 CREATE INDEX IF NOT EXISTS idx_seo_tasks_status ON seo_tasks(status);
 CREATE INDEX IF NOT EXISTS idx_seo_tasks_opportunity_score ON seo_tasks(opportunity_score);
@@ -436,6 +449,7 @@ CREATE INDEX IF NOT EXISTS idx_seo_tasks_opportunity_score ON seo_tasks(opportun
 -- 統合Draftの生成・保存(seo_task_drafts相当)は未実装(将来Sprint)。
 CREATE TABLE IF NOT EXISTS seo_page_plans (
   id                        INTEGER PRIMARY KEY AUTOINCREMENT,
+  branch_id                 INTEGER,         -- 複数校舎管理(branches.id)
 
   group_key                 TEXT NOT NULL,   -- target_page_type + ":" + target_page_id と同一(表示・監査用)
   target_page_type          TEXT NOT NULL,
@@ -465,7 +479,7 @@ CREATE TABLE IF NOT EXISTS seo_page_plans (
   created_at                TEXT NOT NULL,
   updated_at                TEXT NOT NULL,
 
-  UNIQUE (target_page_type, target_page_id),
+  UNIQUE (target_page_type, target_page_id, branch_id),
   FOREIGN KEY (primary_task_id) REFERENCES seo_tasks(id)
 );
 CREATE INDEX IF NOT EXISTS idx_seo_page_plans_status ON seo_page_plans(status);
@@ -550,6 +564,7 @@ CREATE INDEX IF NOT EXISTS idx_seo_page_drafts_page_plan_id ON seo_page_drafts(p
 -- 独立したテーブルにする、既存のPage Plan/Page Draftと同じ設計方針)。
 CREATE TABLE IF NOT EXISTS seo_weekly_recommendations (
   id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+  branch_id             INTEGER,                            -- 複数校舎管理(branches.id)
   batch_date            TEXT NOT NULL,                      -- その週の月曜日(YYYY-MM-DD形式)
   status                TEXT NOT NULL DEFAULT 'proposed',   -- proposed/approved/archived
   task_ids              TEXT NOT NULL DEFAULT '[]',         -- JSON配列: [61, 64, ...]
@@ -561,7 +576,7 @@ CREATE TABLE IF NOT EXISTS seo_weekly_recommendations (
   curation_params       TEXT,                               -- JSON(実行時のパラメータ。budget等、監査用)
   created_at            TEXT NOT NULL,
   updated_at            TEXT NOT NULL,
-  UNIQUE (batch_date)
+  UNIQUE (batch_date, branch_id)
 );
 CREATE INDEX IF NOT EXISTS idx_seo_weekly_recommendations_batch_date ON seo_weekly_recommendations(batch_date);
 

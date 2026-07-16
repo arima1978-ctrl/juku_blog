@@ -41,6 +41,7 @@ function buildEnrichedTasks() {
     const gsc = seoDb.getGscAggregateForKeyword(task.target_keyword);
     return {
       taskId: task.id,
+      branchId: task.branch_id,
       status: task.status,
       taskType: task.task_type,
       targetUrl: task.target_url,

@@ -239,7 +239,8 @@ async function main() {
     }
 
     try {
-      const result = seoDb.upsertTask(taskPayload, nowIso);
+      // 複数校舎管理: Taskは由来のキーワード候補と同じ校舎に紐づける。
+      const result = seoDb.upsertTask({ ...taskPayload, branch_id: candidate.branch_id ?? null }, nowIso);
       if (result.isNew) stats.tasks_created += 1;
       else stats.tasks_updated += 1;
     } catch (err) {

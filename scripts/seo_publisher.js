@@ -24,6 +24,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { loadJukuConfig, ROOT } = require('./lib/config');
 const seoDb = require('./lib/seo_db');
+const branchesDb = require('./lib/branches_db');
 const wordpress = require('./lib/wordpress');
 const { validatePublishResponse } = require('./lib/seo/publish_response_validator');
 
@@ -63,7 +64,7 @@ function readResultFile(resultPath) {
 // 1件のTaskを処理する。DB書き込みはWordPress投稿が成功した場合のみ行う
 // (一時的なエラーで失敗した場合はDBを一切変更しない。次回実行時に自動的に
 // 再試行対象になる=失敗したTaskだけが取り残され、他のTaskの処理は妨げない)。
-async function publishOneItem(item, batchDate, { seoDbImpl, wordpressImpl, nowIso, save }) {
+async function publishOneItem(item, batchDate, { seoDbImpl, wordpressImpl, nowIso, save, branchId }) {
   if (!PUBLISHABLE_TASK_TYPES.has(item.taskType)) {
     return { taskId: item.taskId, outcome: 'not_publishable_task_type' };
   }
@@ -115,7 +116,7 @@ async function publishOneItem(item, batchDate, { seoDbImpl, wordpressImpl, nowIs
     const markResult = seoDbImpl.markWeeklyRecommendationItemPublished(
       batchDate,
       item.taskId,
-      { wpPostId: created.wpPostId, draftStatus: 'published_draft' },
+      { wpPostId: created.wpPostId, draftStatus: 'published_draft', branchId },
       nowIso
     );
     if (markResult.skipped) {
@@ -133,10 +134,17 @@ async function resolvePublisher({
   batchDate,
   save = false,
   seoDbImpl = seoDb,
+  branchesDbImpl = branchesDb,
   wordpressImpl = wordpress,
   nowIso = new Date().toISOString(),
 } = {}) {
-  const rec = batchDate ? seoDbImpl.getWeeklyRecommendation(batchDate) : seoDbImpl.getLatestApprovedWeeklyRecommendation();
+  // 複数校舎管理: config自体はフェーズ3対象外(校舎別に分離しない)ため、
+  // 現在アクティブな校舎の週次バンドルのみを対象にする。
+  const activeBranch = branchesDbImpl.getActiveBranch();
+  const activeBranchId = activeBranch ? activeBranch.id : null;
+  const rec = batchDate
+    ? seoDbImpl.getWeeklyRecommendation(batchDate, activeBranchId)
+    : seoDbImpl.getLatestApprovedWeeklyRecommendation(activeBranchId);
 
   if (!rec || rec.status !== 'approved') {
     return { batchDate: rec ? rec.batch_date : null, found: false, results: [], archived: false };
@@ -145,7 +153,7 @@ async function resolvePublisher({
   const results = [];
   for (const item of rec.items) {
     // eslint-disable-next-line no-await-in-loop
-    const result = await publishOneItem(item, rec.batch_date, { seoDbImpl, wordpressImpl, nowIso, save });
+    const result = await publishOneItem(item, rec.batch_date, { seoDbImpl, wordpressImpl, nowIso, save, branchId: rec.branch_id });
     results.push(result);
   }
 
@@ -158,7 +166,7 @@ async function resolvePublisher({
   let archived = false;
   if (save && allPublishableDone && publishableItems.length > 0) {
     seoDbImpl.transitionWeeklyRecommendationStatus(
-      { batchDate: rec.batch_date, expectedCurrentStatus: 'approved', nextStatus: 'archived' },
+      { batchDate: rec.batch_date, expectedCurrentStatus: 'approved', nextStatus: 'archived', branchId: rec.branch_id },
       nowIso
     );
     archived = true;

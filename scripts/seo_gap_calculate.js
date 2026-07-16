@@ -21,6 +21,7 @@ const path = require('node:path');
 const { loadJukuConfig, ROOT } = require('./lib/config');
 const { listPosts } = require('./lib/db');
 const seoDb = require('./lib/seo_db');
+const branchesDb = require('./lib/branches_db');
 const { buildAreaDictionary, GENERIC_EXCLUSION_TERMS } = require('./lib/seo/dictionaries');
 const { buildDictionaryEntries } = require('./lib/seo/keyword_extractor');
 const { buildOwnCompoundCoverageIndex, getOwnCompoundCoverage, isOwnContentThinner } = require('./lib/seo/own_content_analyzer');
@@ -105,6 +106,10 @@ async function main() {
   const nowIso = new Date().toISOString();
   const runId = `run-${nowIso.replace(/[:.]/g, '-')}`;
   if (!dryRun) seoDb.createAnalysisRun(runId, nowIso);
+  // 複数校舎管理: config自体はフェーズ3対象外(校舎別に分離しない)ため、
+  // 算出したキーワード候補は現在アクティブな校舎に紐づけて保存する。
+  const activeBranch = branchesDb.getActiveBranch();
+  const activeBranchId = activeBranch ? activeBranch.id : null;
 
   const stats = { topics_extracted: 0, candidates_created: 0, candidates_updated: 0, error_count: 0 };
 
@@ -242,6 +247,7 @@ async function main() {
           existing_post_id: existingPostId,
           cannibalization_warning: cannibalizationWarning,
           analysis_run_id: runId,
+          branch_id: activeBranchId,
         },
         nowIso
       );

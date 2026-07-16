@@ -53,6 +53,8 @@ async function resolvePagePlans({ pageType, pageId, save = false, pageContextDep
     const factChecked = applySupportingFactChecks(group, pageContext);
     const plan = buildPagePlan(factChecked, pageContext);
     if (!plan) continue;
+    // 複数校舎管理: Page PlanはグループのPrimary Taskと同じ校舎に紐づける。
+    plan.branchId = group.primaryTask ? group.primaryTask.branchId : null;
 
     const saveResult = save ? seoDb.upsertSeoPagePlan(plan, stamp) : null;
     plans.push({ plan, saveResult });

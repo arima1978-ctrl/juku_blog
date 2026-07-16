@@ -13,6 +13,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { loadJukuConfig, loadSeoCompetitorsConfig, ROOT } = require('./lib/config');
 const seoDb = require('./lib/seo_db');
+const branchesDb = require('./lib/branches_db');
 const { fetchExternalUrl } = require('./lib/seo/fetcher');
 const { extractFromHtml } = require('./lib/seo/html_extract');
 const { resolveCanonicalUrl } = require('./lib/seo/url_normalize');
@@ -179,7 +180,10 @@ async function main() {
   }
 
   if (!dryRun) {
-    targets.forEach((c) => seoDb.upsertCompetitor(c, nowIso));
+    // 複数校舎管理: 「1競合は1校舎に紐づく」という単純化(config/seo_competitors.yaml
+    // 自体はフェーズ3対象外で校舎別に分離しないため、現在アクティブな校舎に紐づける)。
+    const activeBranch = branchesDb.getActiveBranch();
+    targets.forEach((c) => seoDb.upsertCompetitor({ ...c, branch_id: activeBranch ? activeBranch.id : null }, nowIso));
   }
 
   const summary = [];
