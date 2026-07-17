@@ -111,6 +111,7 @@ async function publishOneItem(item, batchDate, { seoDbImpl, wordpressImpl, nowIs
       title: parsed.title,
       bodyHtml: parsed.body_html,
       metaDescription: parsed.meta_description,
+      branchId,
     });
 
     const markResult = seoDbImpl.markWeeklyRecommendationItemPublished(

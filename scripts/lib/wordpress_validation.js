@@ -41,4 +41,12 @@ function validateCategory(category, expectedCategoryId) {
   return { ok: true };
 }
 
-module.exports = { validateAuthor, validateCategory };
+// 2026-07-17追加: 校舎ごとに投稿者IDを書き分けるため、認証中のWordPressユーザーが
+// 自分以外のユーザーをauthorに指定できるか(WordPress core の Editor 以上が持つ
+// edit_others_posts)を確認する。Author役割の個人アカウントで運用していた頃は
+// currentUser自身が常にauthor_idと一致している前提だったため、この確認は不要だった。
+function hasEditOthersPostsCapability(user) {
+  return !!(user && user.capabilities && user.capabilities.edit_others_posts);
+}
+
+module.exports = { validateAuthor, validateCategory, hasEditOthersPostsCapability };

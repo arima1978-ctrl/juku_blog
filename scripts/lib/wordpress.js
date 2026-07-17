@@ -15,22 +15,28 @@
 const https = require('node:https');
 const { URL } = require('node:url');
 const { loadJukuConfig } = require('./config');
-const { validateAuthor, validateCategory } = require('./wordpress_validation');
-const { getActiveBranch } = require('./branches_db');
+const { validateAuthor, validateCategory, hasEditOthersPostsCapability } = require('./wordpress_validation');
+const { getActiveBranch, getBranchById } = require('./branches_db');
 
-// プランA(複数校舎管理): 投稿者検証の期待値(author_id/author_display_name)は、
-// config/juku.yamlの静的な値ではなく、DB上の現在アクティブな校舎(branches.is_active=1)
-// から取得する。category_idは校舎ごとの設定を持たないため、引き続きconfig/juku.yaml
-// (全校舎共通)を使う。アクティブな校舎が1件も無い場合(ensureSeeded()により通常は
-// 発生しないが、念のため)はconfig/juku.yamlの値へフォールバックする。
-function resolveWpConf() {
-  const staticWpConf = loadJukuConfig().wordpress || {};
-  const activeBranch = getActiveBranch();
-  if (!activeBranch) return staticWpConf;
+// 2026-07-17判明(重要): 以前はbranchIdを一切受け取らず、常に「ダッシュボードで
+// 現在アクティブな校舎(branches.is_active=1、ユーザーが随時切り替えられるUIトグル)」を
+// 見ていた。これは「今まさに投稿しようとしている記事(post)がどの校舎のものか」とは
+// 無関係な、グローバルな可変状態であり、あま本部校の記事を投稿する瞬間にダッシュボードの
+// 表示が小幡校に切り替わっていれば、投稿者名だけ差し替わってもcategory_idは元々
+// 校舎ごとの設定を持たず常に共有config/juku.yaml(小幡校のコラム、263)のままになる、
+// という実害が発生した(あま本部校の記事がカテゴリー・投稿者ともに小幡校のまま
+// WordPressへ同期されたインシデント)。呼び出し側(publishPost等)が投稿対象の
+// post.branch_idを明示的に渡すよう変更し、category_idもbranches.wordpress_category_id
+// (Phase 1で列だけ用意されていた)から校舎ごとに解決する。
+function resolveWpConf(branchId) {
+  const staticWpConf = loadJukuConfig(branchId).wordpress || {};
+  const branch = branchId != null ? getBranchById(branchId) : getActiveBranch();
+  if (!branch) return staticWpConf;
   return {
     ...staticWpConf,
-    author_id: activeBranch.wordpress_author_id ?? staticWpConf.author_id,
-    author_display_name: activeBranch.wordpress_author_display_name ?? staticWpConf.author_display_name,
+    author_id: branch.wordpress_author_id ?? staticWpConf.author_id,
+    author_display_name: branch.wordpress_author_display_name ?? staticWpConf.author_display_name,
+    category_id: branch.wordpress_category_id ?? staticWpConf.category_id,
   };
 }
 
@@ -99,14 +105,44 @@ async function fetchCategoryOrNull(config, categoryId) {
   }
 }
 
+async function fetchUserOrNull(config, userId) {
+  try {
+    return await wpRequest(config, 'GET', `users/${userId}`);
+  } catch {
+    return null;
+  }
+}
+
 // 投稿前に、認証中のWordPressユーザー・投稿先カテゴリーが想定通りかを確認する。
 // 「教室からのBLOG」一覧が投稿者IDで絞り込まれる構造のため、想定と異なるアカウント
 // で誤って投稿すると記事が意図した場所に表示されない、という事故を防ぐための検証。
+//
+// 2026-07-17追加: 校舎ごとに投稿者を書き分けられるよう、authorをWordPress投稿の
+// author欄に明示指定する運用に変更した(共有の編集者以上権限アカウントで認証し、
+// 投稿ごとにauthorだけ切り替える)。認証中のユーザー自身がexpected.author_idと
+// 一致する場合(従来通りの個人アカウント運用)は追加確認不要。異なる場合は、
+// 認証中のユーザーがedit_others_posts(他ユーザーをauthor指定する権限)を
+// 持っているか、かつexpected.author_idが実在し表示名が一致するかを確認する。
 async function assertWordPressTargetIsValid(config, wpConf) {
   const currentUser = await wpRequest(config, 'GET', 'users/me').catch(() => null);
-  const authorCheck = validateAuthor(currentUser, wpConf);
-  if (!authorCheck.ok) {
-    throw new Error(`WordPress投稿者の事前検証に失敗しました: ${authorCheck.reason}`);
+
+  if (wpConf && wpConf.author_id && currentUser && String(currentUser.id) === String(wpConf.author_id)) {
+    const authorCheck = validateAuthor(currentUser, wpConf);
+    if (!authorCheck.ok) {
+      throw new Error(`WordPress投稿者の事前検証に失敗しました: ${authorCheck.reason}`);
+    }
+  } else if (wpConf && wpConf.author_id) {
+    if (!hasEditOthersPostsCapability(currentUser)) {
+      throw new Error(
+        `WordPress投稿者の事前検証に失敗しました: 認証中のユーザー(id=${currentUser ? currentUser.id : '取得失敗'})には` +
+        `他ユーザー(id=${wpConf.author_id})を投稿者に指定する権限(edit_others_posts)がありません`
+      );
+    }
+    const targetAuthor = await fetchUserOrNull(config, wpConf.author_id);
+    const authorCheck = validateAuthor(targetAuthor, wpConf);
+    if (!authorCheck.ok) {
+      throw new Error(`WordPress投稿者の事前検証に失敗しました: ${authorCheck.reason}`);
+    }
   }
 
   if (wpConf && wpConf.category_id) {
@@ -121,9 +157,11 @@ async function assertWordPressTargetIsValid(config, wpConf) {
 // date: WordPressサイトのローカル時刻(このサイトはJST確認済み)のwall-clock文字列
 // (例: "2026-07-12T05:00:00")。指定するとstatus:'future'の予約投稿になる。
 // 省略時は従来通り即時公開(status:'publish')。
+// 2026-07-17追加: post.branch_idからその校舎のwpConf(投稿者ID・カテゴリーID)を解決し、
+// 共有の編集者以上権限アカウントで認証しつつ、投稿ごとにauthorを明示指定する。
 async function publishPost(post, { date } = {}) {
   const config = getWpConfig();
-  const wpConf = resolveWpConf();
+  const wpConf = resolveWpConf(post.branch_id);
   const categoryId = wpConf.category_id;
 
   await assertWordPressTargetIsValid(config, wpConf);
@@ -143,6 +181,7 @@ async function publishPost(post, { date } = {}) {
     status: date ? 'future' : 'publish',
   };
   if (date) body.date = date;
+  if (wpConf.author_id) body.author = wpConf.author_id;
   if (categoryId) body.categories = [categoryId];
   if (tagIds.length) body.tags = tagIds;
 
@@ -156,9 +195,10 @@ async function publishPost(post, { date } = {}) {
 // 由来の原稿を扱うため、引数の形も{title, bodyHtml, metaDescription}に絞っている
 // (slug/keywords/予約投稿日時は現時点では扱わない。人間がWordPress管理画面で
 // 下書きを確認してから公開する運用を前提とする)。
-async function createDraftPost({ title, bodyHtml, metaDescription } = {}) {
+// 2026-07-17追加: branchIdを渡すとその校舎のauthor_id/category_idを使う(publishPostと同様)。
+async function createDraftPost({ title, bodyHtml, metaDescription, branchId } = {}) {
   const config = getWpConfig();
-  const wpConf = resolveWpConf();
+  const wpConf = resolveWpConf(branchId);
   const categoryId = wpConf.category_id;
 
   await assertWordPressTargetIsValid(config, wpConf);
@@ -169,6 +209,7 @@ async function createDraftPost({ title, bodyHtml, metaDescription } = {}) {
     excerpt: metaDescription || '',
     status: 'draft',
   };
+  if (wpConf.author_id) body.author = wpConf.author_id;
   if (categoryId) body.categories = [categoryId];
 
   const created = await wpRequest(config, 'POST', 'posts', body);
@@ -193,12 +234,28 @@ async function fetchPostStatus(wpPostId) {
 
 // dry-run用: 投稿者・カテゴリーの検証結果を(投稿せず)そのまま返す。
 // assertWordPressTargetIsValid()と同じロジックだが、例外を投げずに結果を返す。
-async function checkWordPressTargetDryRun() {
+async function checkWordPressTargetDryRun(branchId) {
   const config = getWpConfig();
-  const wpConf = resolveWpConf();
+  const wpConf = resolveWpConf(branchId);
 
   const currentUser = await wpRequest(config, 'GET', 'users/me').catch(() => null);
-  const authorCheck = validateAuthor(currentUser, wpConf);
+
+  let authorCheck;
+  if (wpConf.author_id && currentUser && String(currentUser.id) === String(wpConf.author_id)) {
+    authorCheck = validateAuthor(currentUser, wpConf);
+  } else if (wpConf.author_id) {
+    if (!hasEditOthersPostsCapability(currentUser)) {
+      authorCheck = {
+        ok: false,
+        reason: `認証中のユーザー(id=${currentUser ? currentUser.id : '取得失敗'})には他ユーザー(id=${wpConf.author_id})を投稿者に指定する権限(edit_others_posts)がありません`,
+      };
+    } else {
+      const targetAuthor = await fetchUserOrNull(config, wpConf.author_id);
+      authorCheck = validateAuthor(targetAuthor, wpConf);
+    }
+  } else {
+    authorCheck = validateAuthor(currentUser, wpConf);
+  }
 
   let categoryCheck = { ok: true, skipped: true };
   if (wpConf.category_id) {
@@ -221,4 +278,11 @@ async function resolveTagCandidates(keywordsCsv) {
   return results;
 }
 
-module.exports = { publishPost, createDraftPost, fetchPostStatus, checkWordPressTargetDryRun, resolveTagCandidates };
+module.exports = {
+  publishPost,
+  createDraftPost,
+  fetchPostStatus,
+  checkWordPressTargetDryRun,
+  resolveTagCandidates,
+  resolveWpConf,
+};

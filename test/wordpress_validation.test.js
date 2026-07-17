@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { validateAuthor, validateCategory } = require('../scripts/lib/wordpress_validation');
+const { validateAuthor, validateCategory, hasEditOthersPostsCapability } = require('../scripts/lib/wordpress_validation');
 
 test('validateAuthor: IDと表示名が一致すればok', () => {
   const result = validateAuthor({ id: 13, name: '米澤由里子' }, { author_id: 13, author_display_name: '米澤由里子' });
@@ -47,4 +47,20 @@ test('validateCategory: expectedCategoryIdが無ければ検証スキップでok
   const result = validateCategory(null, undefined);
   assert.equal(result.ok, true);
   assert.equal(result.skipped, true);
+});
+
+test('hasEditOthersPostsCapability: capabilities.edit_others_posts=trueならtrue', () => {
+  assert.equal(hasEditOthersPostsCapability({ id: 5, capabilities: { edit_others_posts: true } }), true);
+});
+
+test('hasEditOthersPostsCapability: capabilities.edit_others_posts=false(Author役割)ならfalse', () => {
+  assert.equal(hasEditOthersPostsCapability({ id: 13, capabilities: { edit_posts: true, edit_others_posts: false } }), false);
+});
+
+test('hasEditOthersPostsCapability: capabilitiesフィールド自体が無ければfalse', () => {
+  assert.equal(hasEditOthersPostsCapability({ id: 13 }), false);
+});
+
+test('hasEditOthersPostsCapability: userがnullならfalse', () => {
+  assert.equal(hasEditOthersPostsCapability(null), false);
 });
