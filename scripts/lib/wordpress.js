@@ -124,7 +124,11 @@ async function fetchUserOrNull(config, userId) {
 // 認証中のユーザーがedit_others_posts(他ユーザーをauthor指定する権限)を
 // 持っているか、かつexpected.author_idが実在し表示名が一致するかを確認する。
 async function assertWordPressTargetIsValid(config, wpConf) {
-  const currentUser = await wpRequest(config, 'GET', 'users/me').catch(() => null);
+  // capabilities(edit_others_posts等)はWordPress REST APIのview(既定)contextには
+  // 含まれず、edit contextでのみ返される。context指定を忘れるとcapabilitiesが
+  // 常にundefinedになり、実際にはedit_others_postsを持つアカウントでも
+  // hasEditOthersPostsCapability()がfalseと誤判定してしまう(実際に発生した不具合)。
+  const currentUser = await wpRequest(config, 'GET', 'users/me?context=edit').catch(() => null);
 
   if (wpConf && wpConf.author_id && currentUser && String(currentUser.id) === String(wpConf.author_id)) {
     const authorCheck = validateAuthor(currentUser, wpConf);
@@ -238,7 +242,7 @@ async function checkWordPressTargetDryRun(branchId) {
   const config = getWpConfig();
   const wpConf = resolveWpConf(branchId);
 
-  const currentUser = await wpRequest(config, 'GET', 'users/me').catch(() => null);
+  const currentUser = await wpRequest(config, 'GET', 'users/me?context=edit').catch(() => null);
 
   let authorCheck;
   if (wpConf.author_id && currentUser && String(currentUser.id) === String(wpConf.author_id)) {
