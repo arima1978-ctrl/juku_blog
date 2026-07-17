@@ -20,3 +20,6 @@ data/seo_drafts/
 
 # 手動生成レポート・エクスポート類(Sprint 2.5以降、CSV/JSONの人間向け出力。DB非連携)
 data/reports/
+
+# 本番DBの日次自動バックアップ(scripts/backup_db.sh、直近7世代)
+data/backups/
