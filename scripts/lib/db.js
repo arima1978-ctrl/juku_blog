@@ -72,6 +72,49 @@ function ensureBranchIdRebuild(conn, tableName, newCreateTableSql, backfillBranc
   }
 }
 
+// 2026-07-17判明: 一部の既存DB(本番含む)で、seo_competitor_pages等のFOREIGN KEY定義が
+// 実在しない一時テーブル名(<table>_pre_branch_id)を指したまま固定されてしまっていた。
+// schema.sql自体はgit全履歴を通じて一度もpre_branch_idを含んでおらず常に正しいが、
+// CREATE TABLE IF NOT EXISTSは既存テーブルの定義を書き換えないため、過去のいずれかの
+// タイミング(branch_id移行がensureBranchIdRebuild()の現行の安全な形になる前)で
+// この不整合を抱えたまま作成されたDBファイルだけがこの問題を持ち続ける。
+// PRAGMA foreign_keys=ONの状態でINSERTしようとした瞬間に
+// 「no such table: main.<table>_pre_branch_id」として初めて表面化する
+// (CREATE TABLE時点ではSQLiteは参照先テーブルの実在を検証しないため無症状で残り続ける)。
+// sqlite_masterを全件走査し、該当テーブルを「リネーム→正しいFK文字列で再作成→
+// データコピー→旧テーブル削除」で自己修復する(該当が無ければ何もしない、完全に冪等)。
+function ensureNoStaleForeignKeyReferences(conn) {
+  const broken = conn
+    .prepare("SELECT name, sql FROM sqlite_master WHERE type = 'table' AND sql LIKE '%_pre_branch_id%'")
+    .all();
+  if (broken.length === 0) return;
+
+  for (const { name, sql } of broken) {
+    const fixedSql = sql.replace(/"?(\w+)_pre_branch_id"?/g, '$1');
+    const columns = conn.prepare(`PRAGMA table_info(${name})`).all().map((c) => c.name);
+    const tempName = `${name}_stale_fk_repair`;
+
+    conn.exec('PRAGMA foreign_keys = OFF');
+    try {
+      conn.exec('BEGIN');
+      try {
+        conn.exec(`ALTER TABLE ${name} RENAME TO ${tempName}`);
+        conn.exec(fixedSql);
+        conn
+          .prepare(`INSERT INTO ${name} (${columns.join(', ')}) SELECT ${columns.join(', ')} FROM ${tempName}`)
+          .run();
+        conn.exec(`DROP TABLE ${tempName}`);
+        conn.exec('COMMIT');
+      } catch (err) {
+        conn.exec('ROLLBACK');
+        throw err;
+      }
+    } finally {
+      conn.exec('PRAGMA foreign_keys = ON');
+    }
+  }
+}
+
 // branchesテーブルから「既存データ(移行前=単一テナント時代の全データ)を一括で
 // 割り当てるべきbranch_id」を決定する。
 //
@@ -128,6 +171,7 @@ function getDb() {
   db = new DatabaseSync(DB_PATH);
   const schema = fs.readFileSync(SCHEMA_PATH, 'utf8');
   db.exec(schema);
+  ensureNoStaleForeignKeyReferences(db);
   // フェーズ2(WordPress自動投稿)で追加: 実際に投稿されたWordPress側のURL
   ensureColumn(db, 'posts', 'wp_link', 'TEXT');
   // 季節テーマ管理で追加: config/seasonal_topics.yamlのどのテーマを採用したか、
