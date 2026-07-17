@@ -5,8 +5,12 @@
 // 1競合の失敗は他競合の処理を止めない。取得本文はDBに入れずdata/seo/pages/配下に保存する
 // (DB肥大化を避けるため。DBにはメタデータ・見出し・ハッシュのみ保持)。
 //
+// 複数校舎対応(Keyword Gap Lite): 校舎ごとにダッシュボード登録済みの競合だけを対象に
+// するため、引数なし実行時は全校舎を1校舎ずつ処理する(main()参照)。
+//
 // 使い方:
-//   node scripts/seo_competitor_crawl.js [--dry-run] [--competitor=<id>]
+//   node scripts/seo_competitor_crawl.js [--dry-run] [--competitor=<id>]        # 全校舎を順に処理
+//   node scripts/seo_competitor_crawl.js --branch <id> [--dry-run] [--competitor=<id>]  # 指定校舎のみ(デバッグ用)
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -28,7 +32,9 @@ function parseArgs(argv) {
   const dryRun = argv.includes('--dry-run');
   const competitorArg = argv.find((a) => a.startsWith('--competitor='));
   const competitorId = competitorArg ? competitorArg.split('=')[1] : null;
-  return { dryRun, competitorId };
+  const branchArgIndex = argv.indexOf('--branch');
+  const branchId = branchArgIndex !== -1 ? Number(argv[branchArgIndex + 1]) : null;
+  return { dryRun, competitorId, branchId };
 }
 
 function contentHashOf(text) {
@@ -215,20 +221,42 @@ async function resolveCompetitorCrawl({ dryRun = false, competitorId, branchId, 
   return { ok: true, dryRun, summary };
 }
 
+// 校舎ごとにダッシュボード登録済みの競合(seo_competitors.branch_id)だけを対象にするため、
+// 全校舎を1校舎ずつ順に処理する。--branch <id> 指定時はその校舎のみ処理する(デバッグ用)。
+// 1校舎の失敗は他校舎の処理を止めず、いずれかが失敗していればexit codeを非ゼロにする
+// (cronでの検知用)。
 async function main() {
-  const { dryRun, competitorId } = parseArgs(process.argv.slice(2));
-  const result = await resolveCompetitorCrawl({ dryRun, competitorId });
+  const { dryRun, competitorId, branchId } = parseArgs(process.argv.slice(2));
 
-  if (result.reason === 'feature_disabled') {
-    console.log('[seo_competitor_crawl] competitor_keyword_analysis.enabled または crawl_enabled が false のため無処理で終了します');
-    process.exit(0);
-  }
-  if (result.reason === 'no_targets') {
-    console.log('[seo_competitor_crawl] 対象の競合が登録されていません(config/seo_competitors.yaml)');
-    process.exit(0);
+  const targets = branchId ? [branchesDb.getBranchById(branchId)].filter(Boolean) : branchesDb.listBranches();
+  if (branchId && targets.length === 0) {
+    console.error(`[seo_competitor_crawl] branch_id=${branchId} に該当する校舎が見つかりません`);
+    process.exitCode = 1;
+    return;
   }
 
-  console.log(`[seo_competitor_crawl] 完了(dry-run=${dryRun}): ${JSON.stringify(result.summary)}`);
+  for (const branch of targets) {
+    console.log(`=== ${branch.name} (branchId=${branch.id}, area=${branch.target_area || '未設定'}) ===`);
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      const result = await resolveCompetitorCrawl({ dryRun, competitorId, branchId: branch.id });
+
+      if (result.reason === 'feature_disabled') {
+        console.log('[seo_competitor_crawl] competitor_keyword_analysis.enabled または crawl_enabled が false のため無処理で終了します');
+        return; // 全校舎共通の設定のため、これ以降のループも同じ結果になる
+      }
+      if (result.reason === 'no_targets') {
+        console.log(`[seo_competitor_crawl] ${branch.name}: 対象の競合が登録されていません`);
+        continue;
+      }
+
+      console.log(`[seo_competitor_crawl] ${branch.name} 完了(dry-run=${dryRun}): ${JSON.stringify(result.summary)}`);
+    } catch (err) {
+      console.error(`[seo_competitor_crawl] ${branch.name}(branchId=${branch.id})で失敗しましたが他校舎の処理を継続します: ${err.message}`);
+      logError('seo_competitor_crawl', `branchId=${branch.id}: ${err.message}`, branch.id);
+      process.exitCode = 1;
+    }
+  }
 }
 
 if (require.main === module) {

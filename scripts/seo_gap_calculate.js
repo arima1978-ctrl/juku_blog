@@ -14,7 +14,13 @@
 // 既存candidateのstatus(承認/除外等、人間が設定した値)は再計算時も保持される
 // (upsertKeywordCandidateはstatusを更新しない)。
 //
-// 使い方: node scripts/seo_gap_calculate.js [--dry-run]
+// 複数校舎対応(Keyword Gap Lite): area_relevance_ratio等の算出に使う地域辞書は
+// 校舎ごとのtarget_area(branchesテーブル)を反映する必要があるため、branchIdは必須引数。
+// 引数なし実行時はscripts/lib/branches_db.jsの全校舎を1校舎ずつ処理する(main()参照)。
+//
+// 使い方:
+//   node scripts/seo_gap_calculate.js [--dry-run]        # 全校舎を順に処理
+//   node scripts/seo_gap_calculate.js --branch <id> [--dry-run]  # 指定校舎のみ(デバッグ用)
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -22,6 +28,7 @@ const { loadJukuConfig, ROOT } = require('./lib/config');
 const { listPosts } = require('./lib/db');
 const seoDb = require('./lib/seo_db');
 const branchesDb = require('./lib/branches_db');
+const { applyBranchArea, normalizeBranchId } = require('./lib/branch_area');
 const { buildAreaDictionary, GENERIC_EXCLUSION_TERMS } = require('./lib/seo/dictionaries');
 const { buildDictionaryEntries } = require('./lib/seo/keyword_extractor');
 const { buildOwnCompoundCoverageIndex, getOwnCompoundCoverage, isOwnContentThinner } = require('./lib/seo/own_content_analyzer');
@@ -81,13 +88,13 @@ function groupByCompound(rows) {
 }
 
 // コア処理(テスト容易性・API層からの呼び出しのため、process.exitを含まない形で分離)。
-// branchIdを指定すると、その校舎の競合キーワード候補・自社記事は全校舎対象のまま
-// (postsはグローバル、除外語・分母競合数は校舎スコープ)で、算出したキーワード候補・
-// 複合キーワードカバレッジをその校舎に絞って処理する(未指定時は全校舎対象。
-// CLI/cronの既存挙動を変えないためのデフォルト)。
+// branchIdは必須(applyBranchAreaが不正値なら即throwする)。算出したキーワード候補・
+// 複合キーワードカバレッジはその校舎に絞って処理し(postsはグローバル、除外語・分母
+// 競合数は校舎スコープ)、area_relevance_ratio等の算出にもその校舎のtarget_areaを
+// 反映したconfigを使う。
 async function resolveGapCalculate({ dryRun = false, branchId, seoDbImpl = seoDb, branchesDbImpl = branchesDb } = {}) {
-  const config = loadJukuConfig();
-  const feature = config.features && config.features.competitor_keyword_analysis;
+  const sharedConfig = loadJukuConfig();
+  const feature = sharedConfig.features && sharedConfig.features.competitor_keyword_analysis;
 
   if (!feature || !feature.enabled) {
     return { ok: false, reason: 'feature_disabled', stats: null };
@@ -98,23 +105,22 @@ async function resolveGapCalculate({ dryRun = false, branchId, seoDbImpl = seoDb
     return { ok: false, reason: 'already_running', runningId: running.id, stats: null };
   }
 
+  const { config, branch } = applyBranchArea(sharedConfig, branchId, branchesDbImpl);
+  console.log(`[seo_gap_calculate] 辞書エリア: ${config.area.city}(${branch.name})`);
+  // これ以降、branchIdの代わりに検証済みのbranch.idを使う(SQLite prepared statementへ
+  // 未検証の値が渡ることのない根治的な対策)。
+  const saveBranchId = branch.id;
+
   const seoConfig = config.seo.competitor_analysis;
   const priorityWeights = seoConfig.priority_score_weights;
   const areaDictionary = buildAreaDictionary(config);
   const dictionaryEntries = buildDictionaryEntries(config);
-  const exclusionTerms = [...GENERIC_EXCLUSION_TERMS, ...seoDbImpl.listCompetitors({ branchId }).map((c) => c.name)];
-  const competitorDomainById = new Map(seoDbImpl.listCompetitors({ branchId }).map((c) => [c.id, c.domain]));
+  const exclusionTerms = [...GENERIC_EXCLUSION_TERMS, ...seoDbImpl.listCompetitors({ branchId: saveBranchId }).map((c) => c.name)];
+  const competitorDomainById = new Map(seoDbImpl.listCompetitors({ branchId: saveBranchId }).map((c) => [c.id, c.domain]));
 
   const nowIso = new Date().toISOString();
   const runId = `run-${nowIso.replace(/[:.]/g, '-')}`;
   if (!dryRun) seoDbImpl.createAnalysisRun(runId, nowIso);
-  // 複数校舎管理: branchIdが明示指定されればその校舎を対象にする(ダッシュボード/APIから
-  // 特定の校舎向けに生成する場合)。未指定時は従来通り現在アクティブな校舎にフォールバックする
-  // (CLI/cronの既存挙動を変えないためのデフォルト)。
-  const saveBranchId =
-    branchId !== undefined && branchId !== null
-      ? branchId
-      : ((branchesDbImpl.getActiveBranch() || {}).id ?? null);
 
   const stats = { topics_extracted: 0, candidates_created: 0, candidates_updated: 0, error_count: 0 };
 
@@ -122,9 +128,9 @@ async function resolveGapCalculate({ dryRun = false, branchId, seoDbImpl = seoDb
     const ownPosts = listPosts({}).filter((p) => p.status !== 'rejected');
     const ownCompoundCoverageIndex = buildOwnCompoundCoverageIndex(ownPosts, dictionaryEntries, seoConfig.extraction_weights, exclusionTerms);
 
-    const compoundRows = seoDbImpl.listCompoundKeywordCoverage(branchId);
+    const compoundRows = seoDbImpl.listCompoundKeywordCoverage(saveBranchId);
     const compoundGroups = groupByCompound(compoundRows);
-    const totalCompetitorsConsidered = seoDbImpl.countAnalyzedCompetitors(branchId);
+    const totalCompetitorsConsidered = seoDbImpl.countAnalyzedCompetitors(saveBranchId);
     stats.topics_extracted = compoundGroups.size;
 
     for (const rows of compoundGroups.values()) {
@@ -298,22 +304,51 @@ async function resolveGapCalculate({ dryRun = false, branchId, seoDbImpl = seoDb
     if (!dryRun) {
       seoDbImpl.finishAnalysisRun(runId, { status: 'failed', finishedAtIso: new Date().toISOString(), ...stats, error_count: stats.error_count + 1 });
     }
-    logError('seo_gap_calculate', err.message);
+    logError('seo_gap_calculate', err.message, saveBranchId);
     throw err;
   }
 }
 
-async function main() {
-  const dryRun = process.argv.includes('--dry-run');
-  const result = await resolveGapCalculate({ dryRun });
+function parseArgs(argv) {
+  const dryRun = argv.includes('--dry-run');
+  const branchArgIndex = argv.indexOf('--branch');
+  const branchId = branchArgIndex !== -1 ? Number(argv[branchArgIndex + 1]) : null;
+  return { dryRun, branchId };
+}
 
-  if (result.reason === 'feature_disabled') {
-    console.log('[seo_gap_calculate] competitor_keyword_analysis.enabled が false のため無処理で終了します');
-    process.exit(0);
+// 校舎ごとに独立したconfig(area辞書)で算出するため、全校舎を1校舎ずつ順に処理する。
+// analysis_run(seoDb.getRunningAnalysisRun)は校舎をまたぐグローバルなロックだが、
+// 各校舎の呼び出しをawaitで直列実行するため、次の校舎の開始時には前の校舎の実行が
+// 必ず完了(成功/失敗いずれもfinishAnalysisRun済み)しており二重起動にはならない。
+// --branch <id> 指定時はその校舎のみ処理する(デバッグ用)。1校舎の失敗は他校舎の処理を
+// 止めず、いずれかが失敗していればexit codeを非ゼロにする(cronでの検知用)。
+async function main() {
+  const { dryRun, branchId } = parseArgs(process.argv.slice(2));
+
+  const targets = branchId ? [branchesDb.getBranchById(branchId)].filter(Boolean) : branchesDb.listBranches();
+  if (branchId && targets.length === 0) {
+    console.error(`[seo_gap_calculate] branch_id=${branchId} に該当する校舎が見つかりません`);
+    process.exitCode = 1;
+    return;
   }
-  if (result.reason === 'already_running') {
-    console.log(`[seo_gap_calculate] 既に実行中のanalysis_run(${result.runningId})があるため二重起動を回避します`);
-    process.exit(0);
+
+  for (const branch of targets) {
+    console.log(`=== ${branch.name} (branchId=${branch.id}, area=${branch.target_area || '未設定'}) ===`);
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      const result = await resolveGapCalculate({ dryRun, branchId: branch.id });
+      if (result.reason === 'feature_disabled') {
+        console.log('[seo_gap_calculate] competitor_keyword_analysis.enabled が false のため無処理で終了します');
+        return; // 全校舎共通の設定のため、これ以降のループも同じ結果になる
+      }
+      if (result.reason === 'already_running') {
+        console.log(`[seo_gap_calculate] 既に実行中のanalysis_run(${result.runningId})があるため二重起動を回避します`);
+        process.exitCode = 1;
+      }
+    } catch (err) {
+      console.error(`[seo_gap_calculate] ${branch.name}(branchId=${branch.id})で失敗しましたが他校舎の処理を継続します: ${err.message}`);
+      process.exitCode = 1;
+    }
   }
 }
 
