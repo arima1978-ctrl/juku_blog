@@ -23,6 +23,20 @@ BRANCH_SLUG="${1:-}"
 BRANCH_CONTEXT_LINE=""
 if [ -n "$BRANCH_SLUG" ]; then
   BRANCH_ID=$(node scripts/resolve_branch.js "$BRANCH_SLUG") || exit 1
+
+  # 2026-07-17追加: Phase 4(複数校舎の日次自動オーケストレーション)が無い現状でも、
+  # 校舎を明示指定した実行そのものは(手動テスト等で)可能なため、
+  # generation_enabled=false(既定)の校舎は安全側に倒してスキップする。
+  # ダッシュボードで明示的に有効化されるまで、その校舎向けの生成は一切走らない。
+  GENERATION_ENABLED=$(node -e "
+    const b = require('./scripts/lib/branches_db').getBranchById(${BRANCH_ID});
+    console.log(b && b.generation_enabled ? '1' : '0');
+  ")
+  if [ "$GENERATION_ENABLED" != "1" ]; then
+    echo "[daily_blog] 校舎「${BRANCH_SLUG}」(id=${BRANCH_ID})は generation_enabled=false のため、日次生成をスキップします(ダッシュボードで有効化してください)"
+    exit 0
+  fi
+
   export JUKU_BRANCH_ID="$BRANCH_ID"
   export JUKU_BRANCH_SLUG="$BRANCH_SLUG"
   mkdir -p "data/branches/${BRANCH_SLUG}"
@@ -107,6 +121,7 @@ while true; do
   # get_draft_status.js(fs.readdirSyncで確実に発見する決定的スクリプト)が
   # 見つけたパスを、指示文に明示して渡す。
   PRE_STATUS_LINE=$(node scripts/get_draft_status.js "$TODAY")
+  PRE_STATUS=$(echo "$PRE_STATUS_LINE" | cut -f1)
   PRE_DRAFT_PATH=$(echo "$PRE_STATUS_LINE" | cut -f2)
   if [ -z "$PRE_DRAFT_PATH" ]; then
     log "!!! 本日のドラフトが見つかりません(檜山の執筆直後)"
@@ -121,7 +136,20 @@ while true; do
   # frontmatterのsimilarity_checkに記録する(石橋が判定材料として読む)。
   # 失敗してもパイプライン自体は止めない(類似度チェックは付加的なチェックのため)。
   CUR_STATUS_LINE=$(node scripts/get_draft_status.js "$TODAY")
+  CUR_STATUS=$(echo "$CUR_STATUS_LINE" | cut -f1)
   CUR_DRAFT_PATH=$(echo "$CUR_STATUS_LINE" | cut -f2)
+
+  # 2026-07-17追加: 赤羽が対象ファイルと校舎コンテキストの不一致等を検出して
+  # 処理を拒否した場合、赤羽自身は正しく振る舞っていても(claude -pはexit 0で
+  # 終了するため)従来はこのシェルスクリプトが検知できず、そのまま後続処理へ
+  # 進んでしまっていた(あま本部校のテスト生成で実際に発生した根本原因の一つ)。
+  # statusが赤羽の処理前後で変化していない場合は、拒否/失敗とみなして停止する。
+  if [ "$CUR_STATUS" = "$PRE_STATUS" ]; then
+    log "!!! 赤羽の処理後もstatusが「${PRE_STATUS}」のまま変化していません。校舎コンテキストとの不一致、または処理拒否の可能性があります"
+    node scripts/log_error.js "editor-btoc" "status不変(${PRE_STATUS} -> ${CUR_STATUS})。対象ファイル取り違え・校舎コンテキスト不一致の可能性。詳細は ${LOG} を参照"
+    exit 1
+  fi
+
   if [ -n "$CUR_DRAFT_PATH" ]; then
     if ! node scripts/check_similarity.js "$CUR_DRAFT_PATH" >> "$LOG" 2>&1; then
       log "!!! check_similarity.js が失敗しました(類似度チェックをスキップして続行します)"
@@ -139,6 +167,8 @@ while true; do
     fi
   fi
 
+  PRE_VERIFY_STATUS="$CUR_STATUS"
+
   run_agent verifier-local "Read,Write" \
     "対象ファイル ${CUR_DRAFT_PATH:-$PRE_DRAFT_PATH} をファクトチェックして" "verifier-local" || exit 1
 
@@ -146,6 +176,14 @@ while true; do
   STATUS=$(echo "$STATUS_LINE" | cut -f1)
   DRAFT_PATH=$(echo "$STATUS_LINE" | cut -f2)
   log "現在のステータス: ${STATUS} (${DRAFT_PATH})"
+
+  # 赤羽と同じ理由: 石橋が不一致・拒否を検出して処理を止めた場合も、
+  # statusが処理前後で変化していなければ失敗として扱う。
+  if [ "$STATUS" = "$PRE_VERIFY_STATUS" ]; then
+    log "!!! 石橋の処理後もstatusが「${PRE_VERIFY_STATUS}」のまま変化していません。校舎コンテキストとの不一致、または処理拒否の可能性があります"
+    node scripts/log_error.js "verifier-local" "status不変(${PRE_VERIFY_STATUS} -> ${STATUS})。対象ファイル取り違え・校舎コンテキスト不一致の可能性。詳細は ${LOG} を参照"
+    exit 1
+  fi
 
   case "$STATUS" in
     verified|escalated)

@@ -11,7 +11,7 @@ const matter = require('gray-matter');
 const { listPosts } = require('./lib/db');
 const { checkSimilarity, extractHeadings } = require('./lib/similarity');
 const { loadJukuConfig, ROOT } = require('./lib/config');
-const { getBranchContext } = require('./lib/branch_context');
+const { getBranchContext, toDbSlug } = require('./lib/branch_context');
 
 function main() {
   const relOrAbs = process.argv[2];
@@ -36,8 +36,11 @@ function main() {
   const branchId = ctx.isLegacy ? undefined : ctx.branchId;
 
   // 自分自身(同一slug)が既にDB登録済みの場合、比較対象から除外する
-  // (修正モードでの再チェック時に自己一致してis_duplicate=trueにならないように)
-  const pastPosts = listPosts({ branchId }).filter((p) => p.slug !== fm.slug);
+  // (修正モードでの再チェック時に自己一致してis_duplicate=trueにならないように)。
+  // DB上のslugはtoDbSlug()で校舎prefixが付いている可能性があるため、
+  // 生のfm.slugではなく同じ変換を通した値で比較する(sync_draft_to_db.jsと揃える)。
+  const dbSlug = toDbSlug(fm.slug, ctx);
+  const pastPosts = listPosts({ branchId }).filter((p) => p.slug !== dbSlug);
 
   const config = loadJukuConfig(branchId);
   const thresholds = (config.generation && config.generation.duplicate_threshold) || {};

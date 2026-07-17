@@ -34,4 +34,15 @@ function getBranchContext() {
   };
 }
 
-module.exports = { getBranchContext };
+// posts.slug は全校舎共有の単一WordPressサイトへ投稿するため意図的にグローバル
+// UNIQUE制約になっている(db/schema.sql参照)。校舎間でslugが衝突しにくくするため、
+// legacy(最初の校舎=小幡校相当)以外は校舎slugを前置したDB/WordPress向けslugを使う。
+// 2026-07-17追加: sync_draft_to_db.js(実際のDB反映)とcheck_similarity.js(自分自身を
+// 比較対象から除外するための自己slug照合)の両方が、常に同じ変換規則を使う必要がある
+// (この関数を経由せず個別にfm.slugを比較すると、片方だけprefixがずれて自己一致に
+// 失敗し、修正モードの再チェックで誤って「重複」判定される事故になる)。
+function toDbSlug(rawSlug, ctx) {
+  return ctx.isLegacy ? rawSlug : `${ctx.slug}-${rawSlug}`;
+}
+
+module.exports = { getBranchContext, toDbSlug };

@@ -14,7 +14,7 @@ const { insertPost, updatePostBySlug, getPostBySlug } = require('./lib/db');
 const { ROOT } = require('./lib/config');
 const seoDb = require('./lib/seo_db');
 const branchesDb = require('./lib/branches_db');
-const { getBranchContext } = require('./lib/branch_context');
+const { getBranchContext, toDbSlug } = require('./lib/branch_context');
 const { logError } = require('./log_error');
 
 // パイプライン内部のdraft frontmatter status → DB(posts.sqlite)のstatus対応表。
@@ -60,7 +60,45 @@ function main() {
   const bodyMd = content.trim();
   const bodyHtml = marked.parse(bodyMd);
 
-  const existing = getPostBySlug(fm.slug);
+  // 記事生成パイプラインの複数校舎対応Phase 1: 校舎コンテキスト(JUKU_BRANCH_ID)が
+  // 明示されていればそれを使う(daily_blog.shがbranch引数付きで実行された場合)。
+  // 未指定時は従来通り現在アクティブな校舎にフォールバックする
+  // (CLI/cronの既存挙動を変えないためのデフォルト)。
+  // 2026-07-17: 以前はこの解決を「新規登録」分岐の中だけで行っていたため、
+  // 既存postの分岐では校舎の判定に一切使われていなかった(下記の衝突検知バグの一因)。
+  const ctx = getBranchContext();
+  const branchId = ctx.isLegacy ? (branchesDb.getActiveBranch() || {}).id ?? null : ctx.branchId;
+
+  // db/schema.sql の posts.slug は全校舎共有の単一WordPressサイトへ投稿するため
+  // 意図的にグローバルUNIQUE制約(NOT NULL UNIQUE)になっている。校舎ごとに別々の
+  // UNIQUE制約(slug, branch_id)にしてしまうと、異なる校舎の記事が同じslugを持てて
+  // しまい、後でWordPressへ実際に投稿する段階で(WordPress側もサイト全体でslugが
+  // 一意なため)初めて衝突が表面化し、より深刻な問題になる。そのため対策は
+  // (a) 校舎間でslugが衝突しにくいよう、legacy(最初の校舎=小幡校相当)以外は
+  //     DB/WordPress向けのslugに校舎slugを前置する、
+  // (b) それでも衝突した場合は既存のUNIQUE(slug)制約がINSERT時に確実に弾く、
+  // (c) 「同じslugの既存postがある」ことを即座に「同じ記事の更新」とみなさず、
+  //     branch_idが異なる場合は衝突として処理を止める、の3本柱とする。
+  const dbSlug = toDbSlug(fm.slug, ctx);
+
+  const existing = getPostBySlug(dbSlug);
+
+  // 2026-07-17判明(重要): 既存の同slug postが「別の校舎」のものだった場合、
+  // 従来はbranch_idを一切見ずに無条件でupdatePostBySlugを呼んでいたため、
+  // 既に承認・WordPress予約済みの記事の中身をまるごと別校舎の内容で上書きして
+  // しまう実害が発生した(あま本部校のテスト生成で実際に発生、小幡校の
+  // 予約済み記事1件を巻き込んだ)。dbSlugの前置により今後この衝突自体が
+  // 起きにくくなるが、万一(手動でのslug指定・prefix導入前の旧draft残存等)
+  // 発生した場合はサイレントに上書きせず、ここで明確に停止する。
+  if (existing && existing.branch_id !== branchId) {
+    console.error(
+      `[sync_draft_to_db] slug="${dbSlug}" は既に branch_id=${existing.branch_id} の記事` +
+      `(id=${existing.id})で使用されています。校舎間でslugが衝突しています: ${filePath}\n` +
+      `対処: draftのslugを変更するか、既存記事の内容を確認してから再実行してください。`
+    );
+    process.exit(1);
+  }
+
   const fields = {
     title: fm.title,
     category: fm.category,
@@ -103,23 +141,18 @@ function main() {
 
   let postId;
   if (existing) {
-    updatePostBySlug(fm.slug, fields);
+    // 上の衝突チェックにより、ここに来る時点で existing.branch_id === branchId が保証されている。
+    updatePostBySlug(dbSlug, fields);
     postId = existing.id;
-    console.log(`[sync_draft_to_db] 更新しました: id=${existing.id} slug=${fm.slug} status=${fields.status}`);
+    console.log(`[sync_draft_to_db] 更新しました: id=${existing.id} slug=${dbSlug} status=${fields.status}`);
   } else {
-    // 記事生成パイプラインの複数校舎対応Phase 1: 校舎コンテキスト(JUKU_BRANCH_ID)が
-    // 明示されていればそれを使う(daily_blog.shがbranch引数付きで実行された場合)。
-    // 未指定時は従来通り現在アクティブな校舎にフォールバックする
-    // (CLI/cronの既存挙動を変えないためのデフォルト)。
-    const ctx = getBranchContext();
-    const branchId = ctx.isLegacy ? (branchesDb.getActiveBranch() || {}).id ?? null : ctx.branchId;
     postId = insertPost({
       created_at: new Date().toISOString(),
-      slug: fm.slug,
+      slug: dbSlug,
       branch_id: branchId,
       ...fields,
     });
-    console.log(`[sync_draft_to_db] 新規登録しました: id=${postId} slug=${fm.slug} status=${fields.status}`);
+    console.log(`[sync_draft_to_db] 新規登録しました: id=${postId} slug=${dbSlug} status=${fields.status}`);
   }
 
   // 競合キーワード分析(Keyword Gap Lite): 智谷がdata/seo_candidates/の候補を採用した場合、
