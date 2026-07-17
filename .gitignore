@@ -1,6 +1,7 @@
 node_modules/
 data/posts.sqlite
 data/posts.sqlite-*
+data/posts.sqlite.*
 data/topics/*.json
 data/plans/*.json
 data/drafts/*.md
@@ -10,6 +11,8 @@ data/rejected_notes.json
 logs/*.log
 logs/errors.json
 .env
+.env.bak-*
+.env.*.bak
 
 # 競合キーワード分析(Keyword Gap Lite)
 data/seo/
