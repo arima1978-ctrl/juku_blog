@@ -46,7 +46,9 @@ const { resolvePagePlans } = require('./seo_page_plan_generate');
 
 const PORT = process.env.PORT || 3013;
 const DASHBOARD_URL = process.env.DASHBOARD_URL || `http://localhost:${PORT}`;
-const ERRORS_PATH = path.join(ROOT, 'logs', 'errors.json');
+// テスト時のみ、JUKU_BLOG_ERRORS_PATH で本番のlogs/errors.jsonと別のファイルを使う
+// (log_error.jsと同じ方式・同じ環境変数)。
+const ERRORS_PATH = process.env.JUKU_BLOG_ERRORS_PATH || path.join(ROOT, 'logs', 'errors.json');
 
 // ダッシュボードの確認が不定期でも、承認をまとめて行った際に同日に複数本
 // 公開されないよう、直近の予約済み/公開済み日の翌日を次の枠として予約投稿する。
@@ -227,7 +229,7 @@ app.post('/api/posts/:id/approve', async (req, res) => {
     setScheduled(id, { wpPostId: result.wpPostId, wpLink: result.link, scheduledAt: slot.utcIso });
     published = true;
   } catch (err) {
-    logError('wordpress_publish', `${post.title}: ${err.message}`);
+    logError('wordpress_publish', `${post.title}: ${err.message}`, post.branch_id);
     await sendTelegram(`⚠️ WordPress投稿に失敗しました(承認自体は完了。ダッシュボードで再度「承認」を押すとリトライできます)\n${post.title}\n${err.message}`);
   }
 
@@ -259,7 +261,12 @@ app.get('/api/summary', (req, res) => {
   let errors = [];
   if (fs.existsSync(ERRORS_PATH)) {
     try {
-      errors = JSON.parse(fs.readFileSync(ERRORS_PATH, 'utf8')).filter((e) => !e.resolved).slice(0, 10);
+      // branch_idが記録されているエラーは表示中の校舎のものだけに絞り込む(他校舎の
+      // クロール失敗等が混ざって表示されないように)。branch_idがnull/未記録の
+      // エラー(校舎に紐づかない全体的な問題)は従来通りどの校舎からでも見える。
+      errors = JSON.parse(fs.readFileSync(ERRORS_PATH, 'utf8'))
+        .filter((e) => !e.resolved && (e.branch_id == null || e.branch_id === branchId))
+        .slice(0, 10);
     } catch {
       errors = [];
     }
@@ -459,7 +466,7 @@ app.post('/api/seo/crawl', requireLocalhost, async (req, res) => {
       gap: gapResult,
     });
   } catch (err) {
-    logError('api_seo_crawl', err.message);
+    logError('api_seo_crawl', err.message, branchId);
     res.status(500).json({ error: 'crawl_failed', message: err.message });
   }
 });
@@ -574,7 +581,7 @@ app.post('/api/seo/generate-tasks', requireLocalhost, async (req, res) => {
         : { generated: 0, saved: false },
     });
   } catch (err) {
-    logError('api_seo_generate_tasks', err.message);
+    logError('api_seo_generate_tasks', err.message, branchId);
     res.status(500).json({ error: 'generate_tasks_failed', message: err.message });
   }
 });
@@ -789,7 +796,7 @@ app.post('/api/seo/weekly-recommendation/generate', requireLocalhost, async (req
       locked: result.saveResult ? Boolean(result.saveResult.locked) : false,
     });
   } catch (err) {
-    logError('api_seo_weekly_recommendation_generate', err.message);
+    logError('api_seo_weekly_recommendation_generate', err.message, branchId);
     res.status(500).json({ error: 'generate_failed', message: err.message });
   }
 });

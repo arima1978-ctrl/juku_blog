@@ -206,7 +206,7 @@ async function resolveCompetitorCrawl({ dryRun = false, competitorId, branchId, 
       console.log(`[seo_competitor_crawl] ${competitor.id}: ${JSON.stringify(stats)}`);
     } catch (err) {
       if (!dryRun) seoDbImpl.recordCompetitorCrawlError(competitor.id, new Date().toISOString(), err.message);
-      logError('seo_competitor_crawl', `${competitor.id}: ${err.message}`);
+      logError('seo_competitor_crawl', `${competitor.id}: ${err.message}`, competitor.branch_id ?? branchId ?? null);
       console.error(`[seo_competitor_crawl] ${competitor.id} で失敗しましたが他の競合の処理を継続します: ${err.message}`);
       summary.push({ competitor: competitor.id, name: competitor.name, ok: false, error: err.message });
     }
