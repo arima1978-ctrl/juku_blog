@@ -38,9 +38,25 @@ fs.writeFileSync(
   'utf8'
 );
 
+// crawl_enabledは既定(2026-07-17付でtrueへ変更。週次バッチであま本部校も含めた実クロールを
+// 稼働させるため)。crawl_enabled自体のゲート(enabledがtrueでもcrawl_enabledがfalseなら
+// 無処理終了する経路)は引き続き検証したいため、こちらだけ明示的にfalseへ上書きする。
+const TMP_CRAWL_DISABLED_CONFIG = path.join(os.tmpdir(), `juku_blog_seo_cli_crawl_disabled_config_${process.pid}.yaml`);
+fs.writeFileSync(
+  TMP_CRAWL_DISABLED_CONFIG,
+  yaml.dump(
+    (() => {
+      const config = yaml.load(fs.readFileSync(path.join(ROOT, 'config', 'juku.yaml'), 'utf8'));
+      config.features.competitor_keyword_analysis.crawl_enabled = false;
+      return config;
+    })()
+  ),
+  'utf8'
+);
+
 after(() => {
   closeDb();
-  [TMP_DB, TMP_DISABLED_CONFIG].forEach((f) => {
+  [TMP_DB, TMP_DISABLED_CONFIG, TMP_CRAWL_DISABLED_CONFIG].forEach((f) => {
     try {
       fs.unlinkSync(f);
     } catch {
@@ -57,8 +73,8 @@ function run(script, args = [], envOverrides = {}) {
   });
 }
 
-test('seo_competitor_crawl.js: crawl_enabled=false(既定)なら無処理で終了する', () => {
-  const output = run('seo_competitor_crawl.js', ['--dry-run']);
+test('seo_competitor_crawl.js: crawl_enabled=falseなら無処理で終了する', () => {
+  const output = run('seo_competitor_crawl.js', ['--dry-run'], { JUKU_BLOG_CONFIG_PATH: TMP_CRAWL_DISABLED_CONFIG });
   assert.match(output, /無処理で終了/);
 });
 

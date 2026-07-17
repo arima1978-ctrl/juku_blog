@@ -80,7 +80,7 @@ features:
     # 人間がダッシュボードで承認(approved)した候補のみ企画候補として使われる。
     use_for_topic_selection: false
     # 競合サイトの実クロールを行うか(false のままなら手動登録データ・CSV取込のみで運用可能)
-    crawl_enabled: false
+    crawl_enabled: true
     # Google Search Console API連携を行うか
     search_console_enabled: false
   # AI Growth Director(SEO Task生成・Opportunity Score・改善提案画面)。
