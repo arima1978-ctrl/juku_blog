@@ -31,37 +31,41 @@ function ensureColumn(conn, table, column, type) {
   }
 }
 
-// 複数校舎管理: 既存テーブルのUNIQUE制約にbranch_idを含めるには、SQLiteの制約上
-// ALTER TABLE ADD COLUMNだけでは対応できない(制約自体はCREATE TABLE時に固定される)ため、
-// 「リネーム→新テーブル作成→データコピー→旧テーブル削除」のテーブル再構築を1トランザクション
-// 内で行う。branch_id列が既に存在する場合は何もしない(冪等)。
-// newCreateTableSql: 更新後のCREATE TABLE文(branch_id・新UNIQUE制約込み)。
-// backfillBranchId: 既存の全行に一括セットするbranch_id(既存データが混ざらないようにする)。
-function ensureBranchIdRebuild(conn, tableName, newCreateTableSql, backfillBranchId) {
-  const existingCols = conn.prepare(`PRAGMA table_info(${tableName})`).all();
-  if (existingCols.some((c) => c.name === 'branch_id')) return; // 既に移行済み
+// 2026-07-17判明(重要): SQLiteは PRAGMA foreign_keys=OFF や PRAGMA legacy_alter_table=ON を
+// 設定していても、「ALTER TABLE x RENAME TO y」を実行すると、他のテーブルがxを参照する
+// FOREIGN KEY定義を無条件でyへ書き換えてしまう(node:sqliteで実機検証済み。ドキュメントの
+// 記載やこのファイルの過去のコメントが想定していた回避策は効かない)。そのため「対象テーブルを
+// リネームして退避→正しい定義で同名テーブルを再作成→データコピー→退避テーブル削除」という
+// 旧来の手順は、対象テーブルを参照する*他の*テーブルのFOREIGN KEY定義を、リネーム後の
+// 一時テーブル名(削除されて実在しなくなる名前)へ書き換えてしまい、新たな
+// 「no such table: main.<table>_xxx」を誘発する副作用があった
+// (ensureBranchIdRebuild()の旧実装、およびそれを修復するはずだった最初のensureNoStale
+// ForeignKeyReferences()の両方がこの欠陥を持っていた)。
+//
+// 安全な手順: 対象テーブル自体は一度もリネームしない。代わりに「新しい定義で全く別名の
+// テーブルを作成→データコピー→対象テーブルをDROP→新テーブルを対象テーブルの名前へ
+// リネーム」の順で行う。この順序では、対象テーブルへの参照を持つ他のテーブルは
+// リネーム操作の影響(対象テーブル名の書き換え)を一切受けない
+// (RENAME TOの対象は常に「まだ何にも参照されていない新テーブル」であるため)。
+// newCreateTableSqlの列がtableNameの現行の列より増えている場合(例: branch_id追加時)、
+// 増えた列は単純にINSERT対象から外れるため、SQLiteの既定(DEFAULT指定が無ければNULL)が
+// 入る。呼び出し側で別途UPDATEして値を埋めること(ensureBranchIdRebuild参照)。
+function rebuildTablePreservingOtherTablesForeignKeys(conn, tableName, newCreateTableSql) {
+  const columnNames = conn.prepare(`PRAGMA table_info(${tableName})`).all().map((c) => c.name);
+  const tempTableName = `${tableName}__rebuild_tmp`;
+  const tempCreateSql = newCreateTableSql.replace(
+    new RegExp(`CREATE TABLE\\s+"?${tableName}"?\\s*\\(`),
+    `CREATE TABLE ${tempTableName} (`
+  );
 
-  const columnNames = existingCols.map((c) => c.name);
-  const oldTableName = `${tableName}_pre_branch_id`;
-
-  // node:sqliteはPRAGMA foreign_keys=ONが既定。ONのままRENAME TOすると、他テーブルが
-  // このテーブルを参照するFOREIGN KEY定義(例: seo_page_plans→seo_tasks)を
-  // SQLiteが自動的に新テーブル名へ書き換えてしまい、後続のDROP TABLEで
-  // 参照整合性違反(FOREIGN KEY constraint failed)を起こす。また同プラグマは
-  // トランザクション内では変更できないため、BEGIN前後でOFF/ONを切り替える。
   conn.exec('PRAGMA foreign_keys = OFF');
   try {
     conn.exec('BEGIN');
     try {
-      conn.exec(`ALTER TABLE ${tableName} RENAME TO ${oldTableName}`);
-      conn.exec(newCreateTableSql);
-      conn
-        .prepare(
-          `INSERT INTO ${tableName} (${columnNames.join(', ')}, branch_id)
-           SELECT ${columnNames.join(', ')}, :branch_id FROM ${oldTableName}`
-        )
-        .run({ branch_id: backfillBranchId });
-      conn.exec(`DROP TABLE ${oldTableName}`);
+      conn.exec(tempCreateSql);
+      conn.exec(`INSERT INTO ${tempTableName} (${columnNames.join(', ')}) SELECT ${columnNames.join(', ')} FROM ${tableName}`);
+      conn.exec(`DROP TABLE ${tableName}`);
+      conn.exec(`ALTER TABLE ${tempTableName} RENAME TO ${tableName}`);
       conn.exec('COMMIT');
     } catch (err) {
       conn.exec('ROLLBACK');
@@ -72,46 +76,58 @@ function ensureBranchIdRebuild(conn, tableName, newCreateTableSql, backfillBranc
   }
 }
 
+// 複数校舎管理: 既存テーブルのUNIQUE制約にbranch_idを含めるには、SQLiteの制約上
+// ALTER TABLE ADD COLUMNだけでは対応できない(制約自体はCREATE TABLE時に固定される)ため、
+// テーブル再構築を行う。branch_id列が既に存在する場合は何もしない(冪等)。
+// newCreateTableSql: 更新後のCREATE TABLE文(branch_id・新UNIQUE制約込み)。
+// backfillBranchId: 既存の全行に一括セットするbranch_id(既存データが混ざらないようにする)。
+function ensureBranchIdRebuild(conn, tableName, newCreateTableSql, backfillBranchId) {
+  const existingCols = conn.prepare(`PRAGMA table_info(${tableName})`).all();
+  if (existingCols.some((c) => c.name === 'branch_id')) return; // 既に移行済み
+
+  rebuildTablePreservingOtherTablesForeignKeys(conn, tableName, newCreateTableSql);
+  conn.prepare(`UPDATE ${tableName} SET branch_id = :branch_id WHERE branch_id IS NULL`).run({ branch_id: backfillBranchId });
+}
+
 // 2026-07-17判明: 一部の既存DB(本番含む)で、seo_competitor_pages等のFOREIGN KEY定義が
-// 実在しない一時テーブル名(<table>_pre_branch_id)を指したまま固定されてしまっていた。
-// schema.sql自体はgit全履歴を通じて一度もpre_branch_idを含んでおらず常に正しいが、
-// CREATE TABLE IF NOT EXISTSは既存テーブルの定義を書き換えないため、過去のいずれかの
-// タイミング(branch_id移行がensureBranchIdRebuild()の現行の安全な形になる前)で
-// この不整合を抱えたまま作成されたDBファイルだけがこの問題を持ち続ける。
-// PRAGMA foreign_keys=ONの状態でINSERTしようとした瞬間に
-// 「no such table: main.<table>_pre_branch_id」として初めて表面化する
-// (CREATE TABLE時点ではSQLiteは参照先テーブルの実在を検証しないため無症状で残り続ける)。
-// sqlite_masterを全件走査し、該当テーブルを「リネーム→正しいFK文字列で再作成→
-// データコピー→旧テーブル削除」で自己修復する(該当が無ければ何もしない、完全に冪等)。
+// 実在しない一時テーブル名(過去の移行時にensureBranchIdRebuild()の旧実装が生成した
+// 「<table>_pre_branch_id」等)を指したまま固定されてしまっていた。schema.sql自体は
+// git全履歴を通じて一度もこの種の一時テーブル名を含んだことがなく常に正しいが、
+// CREATE TABLE IF NOT EXISTSは既存テーブルの定義を書き換えないため、過去に生成された
+// 不整合を抱えたまま作成されたDBファイルだけがこの問題を持ち続ける。PRAGMA
+// foreign_keys=ONの状態でINSERTしようとした瞬間に「no such table: main.<存在しない名前>」
+// として初めて表面化する(CREATE TABLE時点ではSQLiteは参照先テーブルの実在を検証しない
+// ため無症状で残り続ける)。
+//
+// 特定のサフィックス文字列(_pre_branch_id等)をパターンマッチするのではなく、
+// 「FOREIGN KEYが参照しているテーブル名が実際にsqlite_masterに存在するか」を機械的に
+// 判定し、存在しない場合のみ「実在するテーブル名のいずれかを前方一致で含むか」で
+// 正しい参照先を特定して修復する(命名パターンに依存せず、将来同種の問題が別の
+// サフィックスで発生しても自動的に検知・修復できるようにするため)。
 function ensureNoStaleForeignKeyReferences(conn) {
-  const broken = conn
-    .prepare("SELECT name, sql FROM sqlite_master WHERE type = 'table' AND sql LIKE '%_pre_branch_id%'")
-    .all();
-  if (broken.length === 0) return;
+  for (let iteration = 0; iteration < 20; iteration += 1) {
+    const tables = conn.prepare("SELECT name, sql FROM sqlite_master WHERE type = 'table' AND sql IS NOT NULL").all();
+    const existingNames = new Set(tables.map((t) => t.name));
 
-  for (const { name, sql } of broken) {
-    const fixedSql = sql.replace(/"?(\w+)_pre_branch_id"?/g, '$1');
-    const columns = conn.prepare(`PRAGMA table_info(${name})`).all().map((c) => c.name);
-    const tempName = `${name}_stale_fk_repair`;
+    let repaired = false;
+    for (const { name, sql } of tables) {
+      const referencedNames = [...sql.matchAll(/REFERENCES\s+"?(\w+)"?\s*\(/g)].map((m) => m[1]);
+      const danglingNames = [...new Set(referencedNames)].filter((ref) => !existingNames.has(ref));
+      if (danglingNames.length === 0) continue;
 
-    conn.exec('PRAGMA foreign_keys = OFF');
-    try {
-      conn.exec('BEGIN');
-      try {
-        conn.exec(`ALTER TABLE ${name} RENAME TO ${tempName}`);
-        conn.exec(fixedSql);
-        conn
-          .prepare(`INSERT INTO ${name} (${columns.join(', ')}) SELECT ${columns.join(', ')} FROM ${tempName}`)
-          .run();
-        conn.exec(`DROP TABLE ${tempName}`);
-        conn.exec('COMMIT');
-      } catch (err) {
-        conn.exec('ROLLBACK');
-        throw err;
+      let fixedSql = sql;
+      for (const dangling of danglingNames) {
+        const realTarget = [...existingNames].find((t) => dangling.startsWith(`${t}_`) || dangling.startsWith(`${t}__`));
+        if (!realTarget) continue; // 対応関係が特定できない場合は何もしない(安全側)
+        fixedSql = fixedSql.replace(new RegExp(`"?${dangling}"?`, 'g'), realTarget);
       }
-    } finally {
-      conn.exec('PRAGMA foreign_keys = ON');
+      if (fixedSql === sql) continue; // 特定できる参照先が無かった
+
+      rebuildTablePreservingOtherTablesForeignKeys(conn, name, fixedSql);
+      repaired = true;
+      break; // sqlite_masterの状態が変わったので、次のイテレーションで取り直す
     }
+    if (!repaired) return; // これ以上の破損なし
   }
 }
 
@@ -778,4 +794,7 @@ module.exports = {
   insertExamResearchUpdateEvent,
   closeDb,
   DB_PATH,
+  // 移行ヘルパーはtest/db_fk_repair.test.js専用に公開する(単体テストのため)
+  ensureBranchIdRebuild,
+  ensureNoStaleForeignKeyReferences,
 };
