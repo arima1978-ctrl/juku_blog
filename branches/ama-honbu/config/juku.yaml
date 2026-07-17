@@ -1,0 +1,137 @@
+juku:
+  name: "アンイングリッシュグループ あま本部教室"     # 実データ(2026-07-17 WebFetch確認: an-english.com/school/ama-honbu/)
+  brand_voice: "親しみやすく誠実。専門用語を避け、保護者の不安に寄り添う"   # ネットワーク共通のブランドボイス(docs/an-shingaku-jim.md参照)。小幡校版と同一
+  cta_url: "https://an-english.com/school/ama-honbu/"   # 教室紹介ページ(体験授業専用ページ未確認のため暫定。小幡校版と同じ方針)
+  # ページ内に "http://www.meidaisky.jp/taiken" という体験申込リンクの記載も確認できたが、
+  # ネットワーク共通のコールセンター経由フォームである可能性が高く、あま本部固有か未確認のため
+  # 今回は採用しない(小幡校版と同じ保守的な扱い)。
+  line_url: ""                  # LINE登録URL(未確認)
+  cta_types:
+    trial_lesson:
+      label: "体験授業のお申込みはこちら"
+      url: null
+    learning_consultation:
+      label: "学習相談のご予約はこちら"
+      url: null
+    school_tour:
+      label: "教室見学のお申込みはこちら"
+      url: null
+    summer_course_info:
+      label: "夏期講習の詳細はこちら"
+      url: null
+    course_consultation:
+      label: "進路・学習相談のご予約はこちら"
+      url: null
+area:
+  prefecture: "愛知県"
+  city: "あま市"
+  neighborhoods: ["丹波", "甚目寺", "美和"]  # 住所(丹波深田)周辺の実在地名+指導実績校が集中する2地区
+  elementary_schools: ["美和小学校", "正則小学校", "篠田小学校", "美和東小学校", "伊福小学校", "甚目寺小学校", "甚目寺南小学校", "甚目寺東小学校", "甚目寺西小学校"]
+  junior_high_schools: ["美和中学校", "七宝中学校", "甚目寺中学校", "甚目寺南中学校"]
+  # 2026-07-17確認: an-english.com/school/ama-honbu/ の「指導実績校」欄には上記に加えて
+  # 大治小学校/千代田小学校/大里中学校/供米田中学校/千代田中学校の記載もあったが、あま市公式サイトの
+  # 小中学校一覧(city.ama.aichi.jp)では確認できず(隣接する大治町等の学校の可能性が高い)、
+  # 二次情報源での裏取りができなかったためユーザー判断により今回は含めていない
+  # (2026-07-17ユーザー指示: 「あま市内のみで開始」)。裏取りが取れ次第、追加を検討する。
+  target_high_schools: ["愛知県立五条高等学校", "愛知県立津島高等学校", "名城大学附属高等学校"]
+  # 2026-07-17 minkou.jp確認、偏差値55以上のみ掲載(2026-07-06ユーザー指示・小幡校版と同一基準):
+  # 五条高等学校(公立,58)/津島高等学校(公立,56)/名城大学附属高等学校(私立,56〜66)。
+  # いずれも「指導実績校」欄に記載があった学校。
+  # 除外した学校: 津島東高校(49)/愛知黎明高校(40-48)は偏差値55未満のため除外。
+  # 清林館高校(文理特進コースのみ58、他3コースは46〜54)は、大半のコースが基準未満のため
+  # 今回は除外の判断とした(該当コースのみでの掲載は要ユーザー確認)。
+targets:
+  grades: ["小1", "小2", "小3", "小4", "小5", "小6", "中1", "中2", "中3"]
+author:                          # 塾長ペルソナ(実在の方。小幡校の米澤塾長と異なり、実ブログ記事・実LINE等の
+                                  # 一次情報源がまだ無いため、具体的な口調・エピソードは一切創作せず、
+                                  # 一般的なトーンのみを指定する。素材が集まり次第、小幡校版と同様に具体化する)
+  name: "山口 誠司"              # 実データ(branches.wordpress_author_display_name / an-english.com確認済み)
+  title: "塾長"
+  teaching_years: null           # 未確認
+  subjects: ["個別指導(アン進学ジム)", "英会話(アンイングリッシュクラブ)"]  # 教室が提供する主なコース(ネットワーク共通・実データ)
+  background: ""                 # 未確認
+  personality: ""                # 未確認。実ブログ・LINE等の一次情報源が無いため、断定的な人物像を記載しない
+  first_person: "私"
+  tone_notes: |
+    - 保護者には敬体(です・ます)で、同じ子育て世代・教育者としての目線で語る
+    - 断定しすぎず「〜だと私は考えています」「教室で見ていて感じるのは」等、経験に基づく語り口
+    - 実在の人物のため、確認が取れていない具体的な経歴・指導年数・個人的エピソードは記事内で断定しない(一般論として書く)
+    - あま本部教室独自の実ブログ・実LINE等の一次情報源が2026-07-17時点で未確認のため、
+      小幡校版のような固有の口癖・絵文字使用等は指定しない。素材が確認でき次第、追記する
+  signature_phrases: []          # 未確認(小幡校版のような実際の冒頭挨拶の定型句は情報源が無いため空のまま)
+generation:
+  daily_count: 1
+  run_time: "05:00"
+  max_retry: 2
+  duplicate_threshold:
+    title: 0.8
+    headings: 0.75
+    body: 0.7
+  max_same_category_streak: 2
+  max_same_audience_streak: 3
+features:
+  aichi_exam_research:
+    enabled: false
+  competitor_keyword_analysis:
+    enabled: true
+    use_for_topic_selection: false
+    crawl_enabled: true
+    search_console_enabled: false
+  growth_director:
+    enabled: true
+
+seo:
+  competitor_analysis:
+    max_pages_per_site: 100
+    request_interval_ms: 3000
+    request_timeout_ms: 15000
+    max_retries: 2
+    minimum_priority_score: 70
+    data_retention_days: 365
+    user_agent: "JukuBlogSEOResearchBot/1.0 (+https://an-english.com/school/ama-honbu/)"
+    extraction_weights:
+      title: 5
+      h1: 5
+      h2: 3
+      h3: 2
+      meta_description: 2
+      body: 1
+    priority_score_weights:
+      area_relevance: 25
+      inquiry_intent: 25
+      competitor_adoption: 15
+      competitor_rank: 10
+      search_demand: 10
+      own_rank_improvement: 10
+      seasonality: 5
+  growth_director:
+    opportunity_score_weights:
+      competitor_adoption: 20
+      area_relevance: 20
+      search_intent: 20
+      own_coverage_gap: 20
+      data_confidence: 10
+      effort_efficiency: 10
+    effort_minutes_by_task_type:
+      add_faq: 5
+      add_internal_links: 5
+      improve_school_page: 10
+      improve_existing_article: 15
+      create_article: 30
+      monitor: 0
+      exclude: 0
+    weekly_director:
+      effort_budget_minutes: 60
+      max_per_task_type: 2
+
+wordpress:
+  # Phase 2(WordPress投稿の校舎別解決)未着手のため、以下は暫定値。
+  # 今回のテスト生成は記事をreview_pendingで止めるためWordPress投稿には到達しない想定。
+  category_id: null   # 未確定(Phase 2で決定)
+  author_id: null      # 未確定(branches.wordpress_author_id/tokenも現状NULL)
+  author_display_name: "山口誠司 塾長"   # branches.wordpress_author_display_nameと同一(実データ)
+
+# 提供コース一覧(実データ、ネットワーク共通。an-english.com/school/ama-honbu/ より):
+#   アンイングリッシュクラブ(英会話)/アンそろばんクラブ/アン美文字クラブ(習字)/
+#   アンプログラミングクラブ/アン将棋クラブ/アンさんこくキッズ/アン進学ジム(個別指導)/アンまなびワールド
+# 住所: 〒490-1224 愛知県あま市丹波深田53 / 電話: 0561-54-4449(ネットワーク共通コールセンター、小幡校と同一番号)
