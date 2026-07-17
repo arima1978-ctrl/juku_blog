@@ -75,7 +75,7 @@ features:
   # enabled: false(既定)の間は seo_*.js が即座に無処理で終了し、
   # 既存の記事生成フロー・DB・ダッシュボード・WordPress投稿には一切影響しない。
   competitor_keyword_analysis:
-    enabled: false
+    enabled: true
     # true でも、候補は表示されるだけで智谷(planner-blog-btoc)の企画には自動採用されない。
     # 人間がダッシュボードで承認(approved)した候補のみ企画候補として使われる。
     use_for_topic_selection: false

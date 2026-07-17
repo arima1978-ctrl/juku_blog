@@ -4,10 +4,10 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { loadJukuConfig, loadSeoCompetitorsConfig } = require('../scripts/lib/config');
 
-test('loadJukuConfig: competitor_keyword_analysisは既定で全フラグfalse', () => {
+test('loadJukuConfig: competitor_keyword_analysisは有効化済みだが、実クロール・GSC連携は既定でfalse', () => {
   const config = loadJukuConfig();
   const feature = config.features.competitor_keyword_analysis;
-  assert.equal(feature.enabled, false);
+  assert.equal(feature.enabled, true);
   assert.equal(feature.use_for_topic_selection, false);
   assert.equal(feature.crawl_enabled, false);
   assert.equal(feature.search_console_enabled, false);

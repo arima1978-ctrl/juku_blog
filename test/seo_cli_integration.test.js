@@ -16,36 +16,59 @@ const path = require('node:path');
 const TMP_DB = path.join(os.tmpdir(), `juku_blog_seo_cli_test_${process.pid}.sqlite`);
 process.env.JUKU_BLOG_DB_PATH = TMP_DB;
 
+const yaml = require('js-yaml');
 const { execFileSync } = require('node:child_process');
 const { ROOT } = require('../scripts/lib/config');
 const seoDb = require('../scripts/lib/seo_db');
 const { closeDb } = require('../scripts/lib/db');
 
+// competitor_keyword_analysis.enabledは既定(有効)だが、featureフラグOFF時の
+// 無処理終了経路自体は引き続き検証したいため、この2件のテストだけ明示的にfalseへ
+// 上書きした一時configを使う(他テストは実configのenabled: trueのまま動く)。
+const TMP_DISABLED_CONFIG = path.join(os.tmpdir(), `juku_blog_seo_cli_disabled_config_${process.pid}.yaml`);
+fs.writeFileSync(
+  TMP_DISABLED_CONFIG,
+  yaml.dump(
+    (() => {
+      const config = yaml.load(fs.readFileSync(path.join(ROOT, 'config', 'juku.yaml'), 'utf8'));
+      config.features.competitor_keyword_analysis.enabled = false;
+      return config;
+    })()
+  ),
+  'utf8'
+);
+
 after(() => {
   closeDb();
-  try {
-    fs.unlinkSync(TMP_DB);
-  } catch {
-    // 既に無ければ無視
-  }
+  [TMP_DB, TMP_DISABLED_CONFIG].forEach((f) => {
+    try {
+      fs.unlinkSync(f);
+    } catch {
+      // 既に無ければ無視
+    }
+  });
 });
 
-function run(script, args = []) {
-  return execFileSync('node', [path.join(ROOT, 'scripts', script), ...args], { cwd: ROOT, encoding: 'utf8', env: process.env });
+function run(script, args = [], envOverrides = {}) {
+  return execFileSync('node', [path.join(ROOT, 'scripts', script), ...args], {
+    cwd: ROOT,
+    encoding: 'utf8',
+    env: { ...process.env, ...envOverrides },
+  });
 }
 
-test('seo_competitor_crawl.js: competitor_keyword_analysis.enabled=false(既定)なら無処理で終了する', () => {
+test('seo_competitor_crawl.js: crawl_enabled=false(既定)なら無処理で終了する', () => {
   const output = run('seo_competitor_crawl.js', ['--dry-run']);
   assert.match(output, /無処理で終了/);
 });
 
-test('seo_page_analyze.js: competitor_keyword_analysis.enabled=false(既定)なら無処理で終了する', () => {
-  const output = run('seo_page_analyze.js', ['--dry-run']);
+test('seo_page_analyze.js: competitor_keyword_analysis.enabled=falseなら無処理で終了する', () => {
+  const output = run('seo_page_analyze.js', ['--dry-run'], { JUKU_BLOG_CONFIG_PATH: TMP_DISABLED_CONFIG });
   assert.match(output, /無処理で終了/);
 });
 
-test('seo_gap_calculate.js: competitor_keyword_analysis.enabled=false(既定)なら無処理で終了する', () => {
-  const output = run('seo_gap_calculate.js', ['--dry-run']);
+test('seo_gap_calculate.js: competitor_keyword_analysis.enabled=falseなら無処理で終了する', () => {
+  const output = run('seo_gap_calculate.js', ['--dry-run'], { JUKU_BLOG_CONFIG_PATH: TMP_DISABLED_CONFIG });
   assert.match(output, /無処理で終了/);
 });
 
