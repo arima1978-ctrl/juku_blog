@@ -2,13 +2,13 @@
 
 const { loadExamSourcesConfig } = require('../config');
 
-function loadEnabledSources() {
-  const config = loadExamSourcesConfig();
+function loadEnabledSources(branchId) {
+  const config = loadExamSourcesConfig(branchId);
   return (config.sources || []).filter((s) => s.enabled !== false);
 }
 
-function loadClassificationKeywords() {
-  const config = loadExamSourcesConfig();
+function loadClassificationKeywords(branchId) {
+  const config = loadExamSourcesConfig(branchId);
   return config.classification_keywords || [];
 }
 

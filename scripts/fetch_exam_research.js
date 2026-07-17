@@ -13,6 +13,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { ROOT, loadJukuConfig } = require('./lib/config');
+const { getBranchContext } = require('./lib/branch_context');
 const { loadEnabledSources, loadClassificationKeywords, selectSourcesByTags } = require('./lib/exam_research/source_registry');
 const { classifyIsExamRelated, extractTagsFromText } = require('./lib/exam_research/topic_classifier');
 const { fetchExternalUrl } = require('./lib/exam_research/fetcher');
@@ -281,21 +282,29 @@ async function main() {
     process.exit(1);
   }
 
-  const config = loadJukuConfig();
+  // 2026-07-17判明の一連の「branchId無しでconfig/共有パスを読む」バグと同種のため、
+  // 校舎コンテキスト(daily_blog.sh <slug>実行時にexportされるJUKU_BRANCH_ID/SLUG)を
+  // ここでも解決する。無効化中(既定)は挙動に影響しないが、有効化した際に
+  // 早瀬(researcher-local)が書いたbranches/<slug>/topics/配下ではなく共有
+  // data/topics/配下を見てしまい、常に「見つからない」扱いになるのを防ぐ。
+  const ctx = getBranchContext();
+  const config = loadJukuConfig(ctx.isLegacy ? undefined : ctx.branchId);
   if (!config.features || !config.features.aichi_exam_research || !config.features.aichi_exam_research.enabled) {
     log('features.aichi_exam_research.enabled が false のため無処理で終了します');
     process.exit(0);
   }
 
-  const topicsPath = path.join(ROOT, 'data', 'topics', `${date}.json`);
+  const topicsDir = ctx.isLegacy ? path.join(ROOT, 'data', 'topics') : path.join(ctx.dataDir, 'topics');
+  const topicsPath = path.join(topicsDir, `${date}.json`);
   if (!fs.existsSync(topicsPath)) {
-    log(`data/topics/${date}.json が見つからないため無処理で終了します`);
+    log(`${topicsPath} が見つからないため無処理で終了します`);
     process.exit(0);
   }
 
   const topics = JSON.parse(fs.readFileSync(topicsPath, 'utf8'));
   const candidateTexts = topics.flatMap((t) => [t.headline, t.detail, t.category_hint]);
-  const classificationKeywords = loadClassificationKeywords();
+  const branchId = ctx.isLegacy ? undefined : ctx.branchId;
+  const classificationKeywords = loadClassificationKeywords(branchId);
   const classification = classifyIsExamRelated(candidateTexts, classificationKeywords);
 
   if (!classification.isExamRelated) {
@@ -306,7 +315,7 @@ async function main() {
   log(`愛知県高校入試関連と判定しました(一致キーワード: ${classification.matchedKeywords.join(', ')})`);
 
   const tags = [...new Set(candidateTexts.flatMap((t) => extractTagsFromText(t)))];
-  const sources = selectSourcesByTags(loadEnabledSources(), tags);
+  const sources = selectSourcesByTags(loadEnabledSources(branchId), tags);
   log(`選定したソース: ${sources.map((s) => s.id).join(', ') || '(タグ一致なし。全有効ソースをtier順で使用)'}`);
 
   const defaultTargetYear = computeDefaultTargetYear(date);

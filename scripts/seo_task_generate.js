@@ -84,7 +84,11 @@ function buildTaskForCandidate(
 ) {
   const isLowIntent = isLowIntentKeyword(candidate.normalized_keyword);
   const relatedPostId = findRelatedPostId(candidate);
-  const schoolPage = findSchoolPage(candidate.target_area);
+  // 2026-07-17判明: candidate.branch_id を渡さずfindSchoolPageByArea()を呼んでいたため、
+  // どの校舎の候補を処理していても常に共有config/school_pages.yaml(小幡校のobataのみ)しか
+  // 見ておらず、あま本部校の候補が校舎ページ未登録(no_registered_school_page_or_landing_page)
+  // としてmonitor止まりになっていた。
+  const schoolPage = findSchoolPage(candidate.target_area, candidate.branch_id);
 
   const allocation = allocateUrl({
     normalizedKeyword: candidate.normalized_keyword,
@@ -171,23 +175,37 @@ function buildTaskForCandidate(
   };
 }
 
+// 2026-07-17判明の一連の「branchId無しでconfig読込」バグと同種: 以前はloadJukuConfig()を
+// branchId無しで1回だけ呼び、全候補(複数校舎にまたがりうる)へ同じfeatureフラグ・
+// Opportunity Score配点・工数見積りを適用していた。候補ごとの本来の校舎(candidate.branch_id)
+// でconfigを解決し直す(同一校舎の候補が複数あってもYAMLの再読込は1回で済むようキャッシュする)。
+function resolveGrowthDirectorConfigForBranch(branchId, cache) {
+  const cacheKey = branchId ?? null;
+  if (cache.has(cacheKey)) return cache.get(cacheKey);
+  const config = loadJukuConfig(branchId);
+  const resolved = {
+    feature: config.features && config.features.growth_director,
+    effortMinutesByTaskType: config.seo.growth_director.effort_minutes_by_task_type,
+    opportunityWeights: config.seo.growth_director.opportunity_score_weights,
+  };
+  cache.set(cacheKey, resolved);
+  return resolved;
+}
+
 // コア処理(テスト容易性・API層からの呼び出しのため、process.exitを含まない形で分離)。
 // branchIdを指定すると、その校舎のキーワード候補のみを対象にTaskを生成する
 // (未指定時は全校舎対象。CLI/cronの既存挙動を変えないためのデフォルト)。
 async function resolveTaskGenerate({ dryRun = false, branchId, seoDbImpl = seoDb } = {}) {
-  const config = loadJukuConfig();
-  const feature = config.features && config.features.growth_director;
-
-  if (!feature || !feature.enabled) {
-    return { ok: false, reason: 'feature_disabled', stats: null };
-  }
-
-  const gdConfig = config.seo.growth_director;
-  const effortMinutesByTaskType = gdConfig.effort_minutes_by_task_type;
-  const opportunityWeights = gdConfig.opportunity_score_weights;
-
   const candidates = seoDbImpl.listKeywordCandidates({ branchId });
   if (candidates.length === 0) {
+    // 候補自体が無い場合は、featureが無効なのか単に候補が無いだけなのかを区別するため、
+    // 従来通りの既定(branchId無し)configでfeature.enabledを確認する(候補が無ければ
+    // どの校舎のconfigを見るべきか特定しようがないため、これは意図的にlegacy解決のまま)。
+    const config = loadJukuConfig();
+    const feature = config.features && config.features.growth_director;
+    if (!feature || !feature.enabled) {
+      return { ok: false, reason: 'feature_disabled', stats: null };
+    }
     return { ok: true, reason: 'no_candidates', stats: null };
   }
 
@@ -195,12 +213,21 @@ async function resolveTaskGenerate({ dryRun = false, branchId, seoDbImpl = seoDb
   const competitorTypeCountsByKeyword = buildCompetitorTypeCountsByKeyword(seoDbImpl, branchId);
   const nowIso = new Date().toISOString();
   const stats = { tasks_created: 0, tasks_updated: 0, error_count: 0 };
+  const configCache = new Map();
 
   // Sprint 3.8: roi_priority_scoreはバッチ全体のImpact/Difficultyが出揃わないと
   // 正規化(min-max)できないため、まず全候補分のTaskペイロードを組み立ててから、
   // バッチ単位でROIスコアを確定させ、その後で保存/プレビューを行う(2段階処理)。
   const built = [];
+  let allDisabled = true;
   for (const candidate of candidates) {
+    const { feature, effortMinutesByTaskType, opportunityWeights } = resolveGrowthDirectorConfigForBranch(
+      candidate.branch_id,
+      configCache
+    );
+    if (!feature || !feature.enabled) continue; // この候補の校舎ではgrowth_directorが無効
+    allDisabled = false;
+
     try {
       const taskPayload = buildTaskForCandidate(candidate, {
         effortMinutesByTaskType,
@@ -213,6 +240,10 @@ async function resolveTaskGenerate({ dryRun = false, branchId, seoDbImpl = seoDb
       stats.error_count += 1;
       logError('seo_task_generate', `candidate_id=${candidate.id}: ${err.message}`);
     }
+  }
+
+  if (allDisabled) {
+    return { ok: false, reason: 'feature_disabled', stats: null };
   }
 
   const rawRoiScores = built.map(({ taskPayload }) => taskPayload._rawRoiScore);

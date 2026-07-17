@@ -32,8 +32,14 @@ function validateSchoolPages(rawPages) {
   });
 }
 
-function loadValidatedSchoolPages() {
-  const config = loadSchoolPagesConfig() || {};
+// 2026-07-17判明: 本関数がbranchIdを一切受け取らずloadSchoolPagesConfig()を
+// 呼んでいたため、branches/<slug>/config/school_pages.yamlを用意しても参照されず、
+// どの校舎向けにTask生成しても常に共有config/school_pages.yaml(小幡校のobataのみ)を
+// 見てしまうバグがあった(あま本部校のTaskが常にno_registered_school_page_or_landing_page
+// で止まっていた実例で発覚)。branchIdを明示的に受け取り、config.jsのresolveYamlSourceの
+// フォールバック規則(校舎別ファイル優先、無ければ共有)にそのまま委譲する。
+function loadValidatedSchoolPages(branchId) {
+  const config = loadSchoolPagesConfig(branchId) || {};
   const pages = config.school_pages || [];
   validateSchoolPages(pages);
   return pages;
@@ -45,8 +51,8 @@ function filterEnabled(pages) {
   return pages.filter((page) => page.enabled !== false);
 }
 
-function listEnabledSchoolPages() {
-  return filterEnabled(loadValidatedSchoolPages());
+function listEnabledSchoolPages(branchId) {
+  return filterEnabled(loadValidatedSchoolPages(branchId));
 }
 
 function normalizeAreaForMatch(area) {
@@ -65,16 +71,16 @@ function findSchoolPageIn(pages, targetArea) {
   );
 }
 
-function findSchoolPageByArea(targetArea) {
-  return findSchoolPageIn(listEnabledSchoolPages(), targetArea);
+function findSchoolPageByArea(targetArea, branchId) {
+  return findSchoolPageIn(listEnabledSchoolPages(branchId), targetArea);
 }
 
-function getSchoolPageById(id) {
-  return listEnabledSchoolPages().find((page) => page.id === id) || null;
+function getSchoolPageById(id, branchId) {
+  return listEnabledSchoolPages(branchId).find((page) => page.id === id) || null;
 }
 
-function getSchoolPageByUrl(url) {
-  return listEnabledSchoolPages().find((page) => page.url === url) || null;
+function getSchoolPageByUrl(url, branchId) {
+  return listEnabledSchoolPages(branchId).find((page) => page.url === url) || null;
 }
 
 module.exports = {

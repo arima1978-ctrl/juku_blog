@@ -35,12 +35,14 @@ async function buildPageContext(
 ) {
   if (!task.target_url) return notFetchedContext(task);
 
-  const schoolPage = getSchoolPage(task.target_url);
+  // 2026-07-17判明の一連の「branchId無しでconfig読込」バグと同種のため、ここでも
+  // task.branch_id(seo_tasksが持つ由来校舎)を明示的に渡す。
+  const schoolPage = getSchoolPage(task.target_url, task.branch_id);
   if (!schoolPage) return notFetchedContext(task);
 
-  const seoConfig = loadConfig().seo.competitor_analysis;
+  const seoConfig = loadConfig(task.branch_id).seo.competitor_analysis;
   // 許可リストはconfig/school_pages.yaml由来のみで作る(競合サイトの許可リストとは分離)。
-  const allowedBaseUrls = listSchoolPages().map((p) => p.url);
+  const allowedBaseUrls = listSchoolPages(task.branch_id).map((p) => p.url);
 
   return fetchPage(task.target_url, {
     allowedBaseUrls,

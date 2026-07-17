@@ -16,6 +16,7 @@ const path = require('node:path');
 const matter = require('gray-matter');
 const { validateExamFacts } = require('./lib/exam_research/fact_validator');
 const { loadExamSourcesConfig, ROOT } = require('./lib/config');
+const { getBranchContext } = require('./lib/branch_context');
 
 function main() {
   const relOrAbs = process.argv[2];
@@ -36,7 +37,8 @@ function main() {
     return;
   }
 
-  const sourcesConfig = loadExamSourcesConfig();
+  const ctx = getBranchContext();
+  const sourcesConfig = loadExamSourcesConfig(ctx.isLegacy ? undefined : ctx.branchId);
   const result = validateExamFacts({
     facts,
     articleTargetYear: fm.exam_target_year || null,

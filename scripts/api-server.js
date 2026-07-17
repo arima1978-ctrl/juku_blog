@@ -56,7 +56,7 @@ const ERRORS_PATH = process.env.JUKU_BLOG_ERRORS_PATH || path.join(ROOT, 'logs',
 // branchId: 予約枠・連続投稿の判定は校舎ごとに独立させる(他校舎の投稿ペースの
 // 影響を受けないようにするため)。
 function getNextScheduleSlot(branchId) {
-  const config = loadJukuConfig();
+  const config = loadJukuConfig(branchId);
   const runTime = (config.generation && config.generation.run_time) || '05:00';
   const latest = getLatestScheduleDate(branchId);
   return computeNextScheduleSlot(latest, runTime);
@@ -65,7 +65,7 @@ function getNextScheduleSlot(branchId) {
 // 承認時に実際に使う判定(予約日・公開期限超過・カテゴリー/対象読者の連続警告)を
 // 承認前プレビュー(GET /api/posts/:id/schedule-preview)とも共有する。
 function computeApprovalPreview(post) {
-  const config = loadJukuConfig();
+  const config = loadJukuConfig(post.branch_id);
   const slot = getNextScheduleSlot(post.branch_id);
   const scheduledDateLabel = slot.dateOnly;
   const withinWindow = isWithinPublishWindow(scheduledDateLabel, post.publish_window_end);

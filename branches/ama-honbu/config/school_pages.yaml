@@ -1,0 +1,19 @@
+# 自社の校舎ページ(固定ページ)レジストリ。あま本部教室(branch_id=2, slug=ama-honbu)向け。
+# フォーマット・フィールドの意味は共有config/school_pages.yamlと同一(README参照)。
+#
+# target_areas: 現在のseo_keyword_candidates(branch_id=2)はすべてtarget_area="あま市"だが、
+# 「甚目寺」「美和」「七宝」はいずれもjuku.yamlのarea.junior_high_schools/elementary_schoolsで
+# 使用している実在の校区・地域名(あま市内)であり、今後より粒度の細かいギャップキーワード
+# (例:「美和 塾」「甚目寺 個別指導」)が出た際にも一致できるよう、地域名として登録しておく。
+
+school_pages:
+  - id: ama-honbu
+    name: "あま本部教室"
+    url: "https://an-english.com/school/ama-honbu/"
+    page_type: "school_page"
+    target_areas:
+      - "あま市"
+      - "甚目寺"
+      - "美和"
+      - "七宝"
+    enabled: true
