@@ -5,13 +5,20 @@
 // 更新されたページのみを対象にする(content_hashが同じページはcrawl側で
 // last_analyzed_at < fetched_atにならないためここでは再解析されない)。
 //
-// 使い方: node scripts/seo_page_analyze.js [--dry-run]
+// 複数校舎対応(Keyword Gap Lite): 辞書生成に使うarea(地域名の集合)は校舎ごとの
+// target_area(branchesテーブル)を反映する必要があるため、branchIdは必須引数。
+// 引数なし実行時はscripts/lib/branches_db.jsの全校舎を1校舎ずつ処理する(main()参照)。
+//
+// 使い方:
+//   node scripts/seo_page_analyze.js [--dry-run]        # 全校舎を順に処理
+//   node scripts/seo_page_analyze.js --branch <id> [--dry-run]  # 指定校舎のみ(デバッグ用)
 
 const fs = require('node:fs');
 const path = require('node:path');
 const { loadJukuConfig } = require('./lib/config');
 const seoDb = require('./lib/seo_db');
 const branchesDb = require('./lib/branches_db');
+const { applyBranchArea } = require('./lib/branch_area');
 const { buildDictionaryEntries, extractKeywordCandidates } = require('./lib/seo/keyword_extractor');
 const { buildCompoundKeywords } = require('./lib/seo/compound_keyword_builder');
 const { GENERIC_EXCLUSION_TERMS } = require('./lib/seo/dictionaries');
@@ -52,17 +59,19 @@ function buildExclusionTerms() {
 }
 
 // コア処理(テスト容易性・API層からの呼び出しのため、process.exitを含まない形で分離)。
-// branchIdを指定すると、その校舎の競合(seo_competitors.branch_id)が保有するページのみを
-// 解析対象にする(未指定時は全校舎対象。CLI/cronの既存挙動を変えないためのデフォルト)。
-// 保存するテーマ・複合キーワードのbranch_idも、明示指定があればそれを使い、
-// 無ければ現在アクティブな校舎にフォールバックする。
+// branchIdは必須(applyBranchAreaが不正値なら即throwする)。その校舎の競合
+// (seo_competitors.branch_id)が保有するページのみを解析対象にし、辞書生成にも
+// その校舎のtarget_areaを反映したconfigを使う(校舎ごとに地域辞書が正しく切り替わる)。
 async function resolvePageAnalyze({ dryRun = false, branchId, seoDbImpl = seoDb, branchesDbImpl = branchesDb } = {}) {
-  const config = loadJukuConfig();
-  const feature = config.features && config.features.competitor_keyword_analysis;
+  const sharedConfig = loadJukuConfig();
+  const feature = sharedConfig.features && sharedConfig.features.competitor_keyword_analysis;
 
   if (!feature || !feature.enabled) {
     return { ok: false, reason: 'feature_disabled', stats: null };
   }
+
+  const { config, branch } = applyBranchArea(sharedConfig, branchId, branchesDbImpl);
+  console.log(`[seo_page_analyze] 辞書エリア: ${config.area.city}(${branch.name})`);
 
   const weights = config.seo.competitor_analysis.extraction_weights;
   const dictionaryEntries = buildDictionaryEntries(config);
@@ -74,13 +83,7 @@ async function resolvePageAnalyze({ dryRun = false, branchId, seoDbImpl = seoDb,
   }
 
   const nowIso = new Date().toISOString();
-  // 複数校舎管理: config自体はフェーズ3対象外(校舎別に分離しない)ため、
-  // 抽出したテーマ・複合キーワードは対象校舎(branchId、無ければ現在アクティブな校舎)に
-  // 紐づけて保存する。
-  const saveBranchId =
-    branchId !== undefined && branchId !== null
-      ? branchId
-      : ((branchesDbImpl.getActiveBranch() || {}).id ?? null);
+  const saveBranchId = branch.id;
   let topicsExtracted = 0;
   let compoundsExtracted = 0;
 
@@ -177,16 +180,43 @@ async function resolvePageAnalyze({ dryRun = false, branchId, seoDbImpl = seoDb,
   return { ok: true, dryRun, stats };
 }
 
-async function main() {
-  const dryRun = process.argv.includes('--dry-run');
-  const result = await resolvePageAnalyze({ dryRun });
+function parseArgs(argv) {
+  const dryRun = argv.includes('--dry-run');
+  const branchArgIndex = argv.indexOf('--branch');
+  const branchId = branchArgIndex !== -1 ? Number(argv[branchArgIndex + 1]) : null;
+  return { dryRun, branchId };
+}
 
-  if (result.reason === 'feature_disabled') {
-    console.log('[seo_page_analyze] competitor_keyword_analysis.enabled が false のため無処理で終了します');
-    process.exit(0);
+// 校舎ごとに独立したconfig(area辞書)で解析するため、全校舎を1校舎ずつ順に処理する。
+// --branch <id> 指定時はその校舎のみ処理する(デバッグ用)。1校舎の失敗は他校舎の処理を
+// 止めず、いずれかが失敗していればexit codeを非ゼロにする(cronでの検知用)。
+async function main() {
+  const { dryRun, branchId } = parseArgs(process.argv.slice(2));
+
+  const targets = branchId ? [branchesDb.getBranchById(branchId)].filter(Boolean) : branchesDb.listBranches();
+  if (branchId && targets.length === 0) {
+    console.error(`[seo_page_analyze] branch_id=${branchId} に該当する校舎が見つかりません`);
+    process.exitCode = 1;
+    return;
   }
-  if (result.reason === 'no_pages') {
-    console.log('[seo_page_analyze] 解析対象のページがありません');
+
+  for (const branch of targets) {
+    console.log(`=== ${branch.name} (branchId=${branch.id}, area=${branch.target_area || '未設定'}) ===`);
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      const result = await resolvePageAnalyze({ dryRun, branchId: branch.id });
+      if (result.reason === 'feature_disabled') {
+        console.log('[seo_page_analyze] competitor_keyword_analysis.enabled が false のため無処理で終了します');
+        return; // 全校舎共通の設定のため、これ以降のループも同じ結果になる
+      }
+      if (result.reason === 'no_pages') {
+        console.log(`[seo_page_analyze] ${branch.name}: 解析対象のページがありません`);
+      }
+    } catch (err) {
+      console.error(`[seo_page_analyze] ${branch.name}(branchId=${branch.id})で失敗しましたが他校舎の処理を継続します: ${err.message}`);
+      logError('seo_page_analyze', `branchId=${branch.id}: ${err.message}`, branch.id);
+      process.exitCode = 1;
+    }
   }
 }
 
