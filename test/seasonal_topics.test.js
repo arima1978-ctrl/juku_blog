@@ -57,11 +57,14 @@ test('findTopicById: 実際のconfig/seasonal_topics.yamlのfallback_topic_idが
   assert.deepEqual(missing, [], `存在しないfallback_topic_id参照: ${missing.join(', ')}`);
 });
 
-test('実際のconfig/seasonal_topics.yamlが読み込め、5期間・全52テーマが揃っている', () => {
+test('実際のconfig/seasonal_topics.yamlが読み込め、6期間・全52テーマが揃っている', () => {
   const topics = loadSeasonalTopics();
   assert.equal(topics.length, 52);
+  // 2026-07-20: 承認済み記事が公開可能期限超過で投稿保留になったインシデントを受け、
+  // junior-high-summer-study-hours/starting-juku-in-summer/summer-study-planの3件を
+  // 2026-07-11~07-20から2026-07-11~07-31へ延長したため、期間数が5→6になった。
   const windows = new Set(topics.map((t) => `${t.publish_window.start}~${t.publish_window.end}`));
-  assert.equal(windows.size, 5);
+  assert.equal(windows.size, 6);
 });
 
 test('実際のconfig/seasonal_topics.yamlのIDに重複がない', () => {

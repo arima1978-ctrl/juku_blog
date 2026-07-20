@@ -46,7 +46,10 @@ seasonal_topics:
     keywords:
       primary: "中学生 夏休み 勉強時間"
       secondary: ["中学生 夏休み 勉強法"]
-    publish_window: { start: "2026-07-11", end: "2026-07-20" }
+    # 2026-07-20: 承認済み記事の予約枠が公開可能期限を超過し投稿保留になったインシデントを
+    # 受けて延長(内容自体は夏休み開始後も引き続き有効なため、隣接する
+    # elementary-summer-study-habit(7/31まで)と揃える)。
+    publish_window: { start: "2026-07-11", end: "2026-07-31" }
     priority: 90
     locality_required: false
     school_name_required: false
@@ -78,7 +81,8 @@ seasonal_topics:
     keywords:
       primary: "夏休み 宿題 計画"
       secondary: ["夏休み スケジュール"]
-    publish_window: { start: "2026-07-11", end: "2026-07-20" }
+    # 2026-07-20延長(理由はjunior-high-summer-study-hoursと同じ)。
+    publish_window: { start: "2026-07-11", end: "2026-07-31" }
     priority: 80
     locality_required: false
     school_name_required: false
@@ -174,7 +178,8 @@ seasonal_topics:
     keywords:
       primary: "夏休み 塾 始める"
       secondary: ["塾 夏から"]
-    publish_window: { start: "2026-07-11", end: "2026-07-20" }
+    # 2026-07-20延長(理由はjunior-high-summer-study-hoursと同じ)。
+    publish_window: { start: "2026-07-11", end: "2026-07-31" }
     priority: 88
     locality_required: false
     school_name_required: false

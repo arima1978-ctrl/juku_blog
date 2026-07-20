@@ -108,7 +108,9 @@ seasonal_topics:
     keywords:
       primary: "あま市 夏期講習"
       secondary: ["あま市 塾", "甚目寺 夏期講習", "あま市 個別指導"]
-    publish_window: { start: "2026-07-11", end: "2026-07-20" }
+    # 2026-07-20: 承認済み記事の予約枠が公開可能期限を超過し投稿保留になったインシデントを
+    # 受けて延長(内容自体は夏休み開始後も引き続き有効なため)。共有config側の同種entryと揃える。
+    publish_window: { start: "2026-07-11", end: "2026-07-31" }
     priority: 95
     locality_required: true
     school_name_required: false
