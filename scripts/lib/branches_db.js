@@ -69,6 +69,18 @@ function getBranchById(id) {
   return toBranch(conn.prepare('SELECT * FROM branches WHERE id = ?').get(id));
 }
 
+// Phase 4: 複数校舎の日次自動オーケストレーション(daily_blog_all.sh)向け。
+// legacy(最も早く作成された校舎)はgeneration_enabledに関わらず常にdaily_blog.sh(引数無し)
+// 側で実行されるため対象から除外し、それ以外でgeneration_enabled=trueの校舎のみを返す
+// (daily_blog.sh <slug> を明示的に呼び出す対象)。純粋にDB状態のみで決定的に判定する
+// (LLM判断は介在しない)。
+function listAutoGenerationBranches(branchesOverride) {
+  const branches = branchesOverride || listBranches();
+  if (branches.length === 0) return [];
+  const earliest = branches.reduce((a, b) => (a.id < b.id ? a : b));
+  return branches.filter((b) => b.id !== earliest.id && b.generation_enabled);
+}
+
 // 記事生成パイプラインの複数校舎対応(Phase 1): branch_context.jsがJUKU_BRANCH_SLUG経由で
 // 校舎を解決するために使う。
 function getBranchBySlug(slug) {
@@ -203,6 +215,7 @@ module.exports = {
   getBranchBySlug,
   getActiveBranch,
   getEarliestBranch,
+  listAutoGenerationBranches,
   createBranch,
   updateBranch,
   activateBranch,
