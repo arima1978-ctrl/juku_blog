@@ -192,9 +192,11 @@ async function resolveCompetitorCrawl({ dryRun = false, competitorId, branchId, 
 
     if (!dryRun) {
       // 複数校舎管理: 「1競合は1校舎に紐づく」という単純化(config/seo_competitors.yaml
-      // 自体はフェーズ3対象外で校舎別に分離しないため、現在アクティブな校舎に紐づける)。
-      const activeBranch = branchesDbImpl.getActiveBranch();
-      targets.forEach((c) => seoDbImpl.upsertCompetitor({ ...c, branch_id: activeBranch ? activeBranch.id : null }, nowIso));
+      // 自体はフェーズ3対象外で校舎別に分離しないため、legacy校舎に紐づける)。
+      // 2026-07-20判明: getActiveBranch()(ダッシュボードの可変な表示校舎トグル)ではなく
+      // getEarliestBranch()を使う(sync_draft_to_db.jsと同じ実インシデントの回帰防止)。
+      const earliestBranch = branchesDbImpl.getEarliestBranch();
+      targets.forEach((c) => seoDbImpl.upsertCompetitor({ ...c, branch_id: earliestBranch ? earliestBranch.id : null }, nowIso));
     }
   }
 

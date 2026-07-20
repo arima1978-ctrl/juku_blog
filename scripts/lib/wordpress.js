@@ -16,7 +16,7 @@ const https = require('node:https');
 const { URL } = require('node:url');
 const { loadJukuConfig } = require('./config');
 const { validateAuthor, validateCategory, hasEditOthersPostsCapability } = require('./wordpress_validation');
-const { getActiveBranch, getBranchById } = require('./branches_db');
+const { getEarliestBranch, getBranchById } = require('./branches_db');
 
 // 2026-07-17判明(重要): 以前はbranchIdを一切受け取らず、常に「ダッシュボードで
 // 現在アクティブな校舎(branches.is_active=1、ユーザーが随時切り替えられるUIトグル)」を
@@ -30,7 +30,10 @@ const { getActiveBranch, getBranchById } = require('./branches_db');
 // (Phase 1で列だけ用意されていた)から校舎ごとに解決する。
 function resolveWpConf(branchId) {
   const staticWpConf = loadJukuConfig(branchId).wordpress || {};
-  const branch = branchId != null ? getBranchById(branchId) : getActiveBranch();
+  // 2026-07-20判明: branchId未指定時のフォールバックにgetActiveBranch()(ダッシュボードの
+  // 可変な表示校舎トグル)を使うと、他のlegacy解決箇所(sync_draft_to_db.js等)と同じ
+  // 実インシデントの再発リスクがあるため、getEarliestBranch()に統一する。
+  const branch = branchId != null ? getBranchById(branchId) : getEarliestBranch();
   if (!branch) return staticWpConf;
   return {
     ...staticWpConf,

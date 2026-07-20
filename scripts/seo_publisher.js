@@ -140,9 +140,11 @@ async function resolvePublisher({
   nowIso = new Date().toISOString(),
 } = {}) {
   // 複数校舎管理: config自体はフェーズ3対象外(校舎別に分離しない)ため、
-  // 現在アクティブな校舎の週次バンドルのみを対象にする。
-  const activeBranch = branchesDbImpl.getActiveBranch();
-  const activeBranchId = activeBranch ? activeBranch.id : null;
+  // legacy校舎(最も早く作成された校舎)の週次バンドルのみを対象にする。
+  // 2026-07-20判明: getActiveBranch()(ダッシュボードの可変な表示校舎トグル)ではなく
+  // getEarliestBranch()を使う(sync_draft_to_db.jsと同じ実インシデントの回帰防止)。
+  const earliestBranch = branchesDbImpl.getEarliestBranch();
+  const activeBranchId = earliestBranch ? earliestBranch.id : null;
   const rec = batchDate
     ? seoDbImpl.getWeeklyRecommendation(batchDate, activeBranchId)
     : seoDbImpl.getLatestApprovedWeeklyRecommendation(activeBranchId);

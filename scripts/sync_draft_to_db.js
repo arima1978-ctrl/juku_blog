@@ -66,8 +66,12 @@ function main() {
   // (CLI/cronの既存挙動を変えないためのデフォルト)。
   // 2026-07-17: 以前はこの解決を「新規登録」分岐の中だけで行っていたため、
   // 既存postの分岐では校舎の判定に一切使われていなかった(下記の衝突検知バグの一因)。
+  // 2026-07-20判明: legacy(校舎コンテキスト無し)実行時にgetActiveBranch()(ダッシュボードの
+  // 可変な表示校舎トグル)を使っていたため、表示校舎があま本部校のままだった数日間、
+  // 共有config(小幡校)で生成された毎朝の記事がbranch_id=2として誤って保存され続けた
+  // 実インシデントが発生した。legacyは常に最も早く作成された校舎(小幡校)を使う。
   const ctx = getBranchContext();
-  const branchId = ctx.isLegacy ? (branchesDb.getActiveBranch() || {}).id ?? null : ctx.branchId;
+  const branchId = ctx.isLegacy ? (branchesDb.getEarliestBranch() || {}).id ?? null : ctx.branchId;
 
   // db/schema.sql の posts.slug は全校舎共有の単一WordPressサイトへ投稿するため
   // 意図的にグローバルUNIQUE制約(NOT NULL UNIQUE)になっている。校舎ごとに別々の

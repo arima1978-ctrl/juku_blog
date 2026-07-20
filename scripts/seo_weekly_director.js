@@ -90,12 +90,14 @@ async function resolveWeeklyDirector({
   const stamp = nowIso || now.toISOString();
 
   // 複数校舎管理: branchIdが明示指定されればその校舎を対象にする(ダッシュボード/APIから
-  // 特定の校舎向けに生成する場合)。未指定時は従来通り現在アクティブな校舎にフォールバックする
-  // (CLI/cronの既存挙動を変えないためのデフォルト)。
+  // 特定の校舎向けに生成する場合)。未指定時はlegacy校舎(最も早く作成された校舎)へ
+  // フォールバックする(CLI/cronの既存挙動を変えないためのデフォルト)。
+  // 2026-07-20判明: getActiveBranch()(ダッシュボードの可変な表示校舎トグル)ではなく
+  // getEarliestBranch()を使う(sync_draft_to_db.jsと同じ実インシデントの回帰防止)。
   const activeBranchId =
     branchId !== undefined && branchId !== null
       ? branchId
-      : ((branchesDbImpl.getActiveBranch() || {}).id ?? null);
+      : ((branchesDbImpl.getEarliestBranch() || {}).id ?? null);
 
   const candidateTasks = seoDbImpl.listTasks({ status: 'proposed', branchId: activeBranchId });
   const curation = curateWeeklyTasksImpl(candidateTasks, curationOptions);

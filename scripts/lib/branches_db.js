@@ -85,6 +85,22 @@ function getActiveBranch() {
   return toBranch(conn.prepare('SELECT * FROM branches WHERE is_active = 1 ORDER BY id LIMIT 1').get());
 }
 
+// 2026-07-20判明(重要): is_active(現在アクティブな校舎)はダッシュボードの校舎切り替え
+// トグルで随時変わる可変なUI状態であり、「校舎コンテキストが明示されていない(legacy)
+// 処理が、どの校舎のデータとして扱われるべきか」の判定には使ってはいけない
+// (db.js resolveBackfillBranchId()の2026-07-16インシデントで既に判明していた原則だが、
+// sync_draft_to_db.js/seo_competitor_crawl.js/seo_publisher.js/seo_weekly_director.js/
+// wordpress.jsが同じ原則を守らずgetActiveBranch()をlegacy解決に使っていたため、
+// ダッシュボードの表示校舎をあま本部校のままにしていた数日間、共有config(小幡校の
+// 守山区コンテンツ)で生成された毎朝の記事が誤ってbranch_id=2で保存され続ける実害が
+// 発生した)。legacy(校舎コンテキスト無し)処理は、常に「最も早く作成された校舎」
+// (id最小、単一テナント時代から存在する唯一の校舎)を使うこと。
+function getEarliestBranch() {
+  ensureSeeded();
+  const conn = getDb();
+  return toBranch(conn.prepare('SELECT * FROM branches ORDER BY id ASC LIMIT 1').get());
+}
+
 function createBranch(fields, nowIsoOverride) {
   ensureSeeded();
   const conn = getDb();
@@ -186,6 +202,7 @@ module.exports = {
   getBranchById,
   getBranchBySlug,
   getActiveBranch,
+  getEarliestBranch,
   createBranch,
   updateBranch,
   activateBranch,
