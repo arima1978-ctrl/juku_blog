@@ -284,6 +284,30 @@ test('resolveStalePagePlanRegenerate: --save相当(save=true)で一時SQLiteへ�
   assert.equal(after.source_content_hash, NEW_HASH);
 });
 
+test('resolveStalePagePlanRegenerate: Task個別承認後(status=approved)でも実DBのbuildEnrichedTasks()既定providerで再生成できる(2026-07-27 本番no_primary_candidate障害の回帰)', async () => {
+  // 本番障害の再現条件: Page Planのprimary_task_idが指すTask自身が、Growth Directorダッシュボードの
+  // 個別承認(POST /api/growth/tasks/:id/approve)によりstatus='approved'へ遷移済みのケース。
+  // Page Plan承認とTask個別承認は別軸のため、Page Planがapprovedになった後もTaskが
+  // 'proposed'のままとは限らない。enrichedTasksProviderを注入せず、CLIの既定値
+  // (scripts/seo_page_task_group_preview.jsのbuildEnrichedTasks)をそのまま使うことで、
+  // 修正前は status:'proposed' 決め打ちフィルタに引っかからず no_primary_candidate になっていた。
+  const { planId, taskId, url } = seedTaskAndPlan('regen-cli-approved-task', { status: 'approved', sourceContentHash: OLD_HASH });
+  seoDb.updateTaskStatus(taskId, 'approved', nowIso);
+
+  const result = await resolveStalePagePlanRegenerate({
+    planId,
+    expectedStatus: 'approved',
+    actor: 'admin',
+    reason: '本文変更のため',
+    save: false,
+    pageContextDeps: fakePageContextDeps({ url, contentHash: NEW_HASH }),
+    // enrichedTasksProviderを注入しない = 本番と同じ既定のbuildEnrichedTasks()を使う
+  });
+
+  assert.equal(result.ok, true, `Task個別承認後にno_primary_candidateとなってはいけない: ${JSON.stringify(result)}`);
+  assert.equal(result.stale, true);
+});
+
 test('CLI --format=text: テキスト形式で出力できる', async () => {
   const result = { ok: true, pagePlanId: 1, currentStatus: 'approved', stale: true, saved: false, staleReason: 'content_hash_mismatch', previousContentHash: OLD_HASH, currentContentHash: NEW_HASH, changes: { primaryChanged: false, supportingChanged: false, excludedChanged: false } };
   const text = formatText(result);

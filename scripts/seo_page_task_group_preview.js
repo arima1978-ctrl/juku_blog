@@ -34,8 +34,16 @@ function parseArgs(argv) {
 
 // seo_tasks/seo_keyword_candidates/GSC実績から、page_task_grouper.jsが必要とする
 // 拡張Taskオブジェクトへ変換する(DBアクセスはここに閉じ込め、grouper自体は純粋関数に保つ)。
+// 2026-07-27修正: statusを'proposed'のみに決め打ちしていたため、Page Plan単位のstatusとは
+// 別軸のTask個別承認(POST /api/growth/tasks/:id/approve)を経た'approved'のTaskが、
+// stale Page Plan再生成(scripts/seo_page_plan_regenerate.js)で二度と拾えなくなる不具合が
+// あった(no_primary_candidate)。'rejected'/'reviewing'は依然として対象外(却下済み、
+// または人間の判断待ちで確定していないため)。
 function buildEnrichedTasks(branchId) {
-  const tasks = seoDb.listTasks({ status: 'proposed', taskType: 'improve_school_page', branchId });
+  const tasks = [
+    ...seoDb.listTasks({ status: 'proposed', taskType: 'improve_school_page', branchId }),
+    ...seoDb.listTasks({ status: 'approved', taskType: 'improve_school_page', branchId }),
+  ];
   return tasks.map((task) => {
     const candidate = task.source_candidate_id ? seoDb.getKeywordCandidateById(task.source_candidate_id) : null;
     const gsc = seoDb.getGscAggregateForKeyword(task.target_keyword);

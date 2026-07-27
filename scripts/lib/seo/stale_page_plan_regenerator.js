@@ -20,7 +20,11 @@ function regeneratePagePlanContent({ enrichedTasks, targetPageType, targetPageId
   const filtered = (enrichedTasks || []).filter(
     (t) => t.targetPageType === targetPageType && t.targetPageId === targetPageId
   );
-  const grouped = groupTasksByPage(filtered);
+  // Page Plan承認後は、対象TaskがGrowth Directorダッシュボードで個別に'approved'済みに
+  // なっているのが通常(Page Plan/Task statusは別軸のため)。'proposed'のみを対象にする
+  // 既定のgrouping対象条件のままだと、再生成のたびに対象Taskが1件も見つからなくなる
+  // (2026-07-27修正)。
+  const grouped = groupTasksByPage(filtered, { allowedStatuses: ['proposed', 'approved'] });
   const group = grouped.groups.find((g) => g.targetPageType === targetPageType && g.targetPageId === targetPageId);
   if (!group) return null;
 
