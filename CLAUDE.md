@@ -229,6 +229,37 @@ min-max正規化)が、`seo_tasks`へ`opportunity_score`とは独立した`roi_p
 (新規1枚のみ、`UNIQUE(batch_date)`)へ選定結果とPromptファイルパスの参照をまとめて保存する。
 詳細は`docs/growth_director.md`参照。
 
+## SEO効果測定 週次スナップショット(2026-07-27〜)
+
+小幡校の10/25プレゼン用エビデンス構築を目的に、`scripts/seo_metrics_snapshot_generate.js`が
+週次バッチ(`seo_weekly_analysis.sh`、Gap判定の直後)の末尾で校舎×週ぶんの実績を
+`seo_metrics_snapshots`(校舎合計。表示回数/クリック数の校舎ページ・ブログ内訳、
+Task status別生カウント、ギャップ充足率、公開記事数)と`seo_metrics_keyword_snapshots`
+(キーワード別。GSC実績+`is_implemented_as_of_week`で実施群/未実施群の週次推移比較が可能)
+の2テーブルへUPSERTする(既定dry-run、`--save`明示時のみ保存)。
+ギャップ充足率の分母は「`status='approved'` かつ `task_type NOT IN ('monitor','exclude')`」、
+分子は同条件かつ`implemented_at IS NOT NULL`(2026-07-27ユーザー承認の定義)。生カウントも
+別途保存するため、後から分母定義を変えても再計算できる。
+`seo_tasks.implemented_at`/`implementation_note`が実施済み管理の実体。`create_article`は
+候補statusの`article_created`遷移に連動して自動セットする想定(未実装、今後の課題)、
+`improve_school_page`等は`node scripts/seo_task_mark_implemented.js --task-id=<id>`で人間が
+手動確定する(ダッシュボードのボタン化はフェーズ2)。時系列グラフ出力スクリプトは未実装
+(10月頭に着手予定。上記2テーブルをSELECTするだけで済む設計にしてある)。
+詳細は`docs/seo_metrics_snapshot_proposal_DRAFT.md`参照。
+
+## バッチ監視(失敗通知・デッドマンスイッチ、2026-07-27〜)
+
+`daily_blog_all.sh`/`seo_weekly_analysis.sh`/`backup_db.sh`は、実行完了時に必ず
+`scripts/record_heartbeat.js <name> [--failed]`で`logs/heartbeats/<name>.json`を更新する
+(step単位の失敗有無に関わらず、スクリプト自体が最後まで走った時点で記録する)。
+一部stepが失敗した場合は`scripts/notify_telegram.js`で即座にTelegram通知する
+(既存の承認・投稿失敗通知と同じ`TELEGRAM_TOKEN`/`TELEGRAM_CHAT_ID`を再利用)。
+`scripts/check_batch_heartbeats.js`は上記3バッチのheartbeatの新しさを監視するデッドマン
+スイッチ本体で、cron自体が起動しない・処理が無応答になったまま終わらない、といった
+「失敗イベント自体が発火しないケース」を検知する。監視対象バッチの実行cronとは別枠
+(例: 4時間おき)で、この監視スクリプト自体を定期実行すること。異常時のみ1通にまとめて
+Telegram通知し、正常時は無音(通知しない)。
+
 ## ダッシュボード
 
 - `dashboard.html` + `scripts/api-server.js`(Express、既定ポート3013)
@@ -265,7 +296,7 @@ Phase 4(複数校舎の日次自動オーケストレーション)は未着手(�
 ## 診断・運用コマンド
 
 ```bash
-npm test                              # node:test。63件の単体・結合テスト
+npm test                              # node:test。単体・結合テスト一式
 node scripts/dry_run.js [YYYY-MM-DD]  # WordPress投稿・DB登録を一切行わず全項目を確認
 node scripts/sync_wordpress_status.js # WordPress公開状態を手動同期(通常はcronが毎朝実行)
 node scripts/check_similarity.js <draft>  # 類似度チェックを手動実行
@@ -277,6 +308,9 @@ node scripts/seo_candidates_list.js        # 競合キーワード候補の一�
 node scripts/seo_gsc_sync.js [--start=YYYY-MM-DD --end=YYYY-MM-DD] [--dry-run]  # Search Console実績の取得(features.competitor_keyword_analysis.search_console_enabled有効時のみ動作)
 node scripts/seo_gsc_reset.js --dry-run|--confirm  # 開発用: seo_gsc_queriesのみ安全に削除(posts・他のSEOテーブルは無変更)
 node scripts/seo_task_generate.js [--dry-run]  # SEO Task生成(features.growth_director有効時のみ動作)
+node scripts/seo_metrics_snapshot_generate.js --week=YYYY-MM-DD [--branch-id=<id>] [--baseline] [--dry-run|--save]  # SEO効果測定の週次スナップショット(seo_weekly_analysis.shの末尾で自動実行。既定dry-run)
+node scripts/seo_task_mark_implemented.js --task-id=<id> [--note=<text>] [--unset]  # improve_school_page等、自動検知できないTaskの実施済みを手動確定
+node scripts/check_batch_heartbeats.js  # バッチ監視(デッドマンスイッチ)を手動実行。異常時のみTelegram通知
 ```
 
 ## 運用パラメータ(`config/juku.yaml` の `generation`)

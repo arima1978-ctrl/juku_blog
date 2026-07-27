@@ -580,6 +580,79 @@ CREATE TABLE IF NOT EXISTS seo_weekly_recommendations (
 );
 CREATE INDEX IF NOT EXISTS idx_seo_weekly_recommendations_batch_date ON seo_weekly_recommendations(batch_date);
 
+-- SEO効果測定: 週次スナップショット(2026-07-27、小幡校10/25プレゼン用エビデンス構築)。
+-- scripts/seo_metrics_snapshot_generate.jsが週次バッチ(seo_weekly_analysis.sh、Gap判定後)
+-- の末尾で1校舎×1週ぶんをUPSERTする。校舎合計は本テーブル、キーワード別は
+-- seo_metrics_keyword_snapshotsに分離する(スコープごとにNULLが増えるワイドテーブルを
+-- 避け、時系列グラフ化(10月予定)のためのSELECTを単純に保つ)。
+-- 比率(gap_fulfillment_rate)だけでなく生カウントも保存するのは、後から分母の定義
+-- (例: rejectedの扱い・reviewingの扱い)を変えても再計算できるようにするため
+-- (2026-07-27ユーザー指示)。
+CREATE TABLE IF NOT EXISTS seo_metrics_snapshots (
+  id                          INTEGER PRIMARY KEY AUTOINCREMENT,
+  branch_id                   INTEGER NOT NULL,
+  week_start                  TEXT NOT NULL, -- 月曜日(YYYY-MM-DD)。GSC実績の集計対象週
+  week_end                    TEXT NOT NULL, -- 日曜日(YYYY-MM-DD)
+
+  impressions_total           INTEGER NOT NULL,
+  clicks_total                INTEGER NOT NULL,
+  impressions_school_page     INTEGER NOT NULL, -- config/school_pages.yaml登録ページ分
+  clicks_school_page          INTEGER NOT NULL,
+  impressions_blog            INTEGER NOT NULL, -- 校舎ページ以外(残差。個別記事URLの列挙はしない)
+  clicks_blog                 INTEGER NOT NULL,
+
+  -- seo_tasksのstatus別・生カウント(その週末時点のスナップショット)。
+  task_count_total            INTEGER NOT NULL,
+  task_count_proposed         INTEGER NOT NULL,
+  task_count_approved         INTEGER NOT NULL,
+  task_count_rejected         INTEGER NOT NULL,
+  task_count_reviewing        INTEGER NOT NULL,
+  task_count_monitor_exclude  INTEGER NOT NULL, -- task_type IN ('monitor','exclude')。statusに関わらず対象外カウント
+  task_count_implemented      INTEGER NOT NULL, -- implemented_at IS NOT NULL(その週末時点)
+
+  -- 表示用の参考値(定義: status='approved' AND task_type NOT IN ('monitor','exclude') を分母、
+  -- 同条件かつimplemented_at IS NOT NULLを分子。上記生カウントから再計算可能)。
+  gap_fulfilled_count         INTEGER NOT NULL,
+  gap_total_count             INTEGER NOT NULL,
+  gap_fulfillment_rate        REAL,
+
+  published_count_cumulative  INTEGER NOT NULL, -- posts.status='published'の累計(その週末時点)
+  published_count_week        INTEGER NOT NULL, -- 当週分の新規published
+
+  is_baseline                 INTEGER NOT NULL DEFAULT 0, -- 1=導入前バックフィルによる初回スナップショット
+  computed_at                 TEXT NOT NULL,
+
+  UNIQUE (branch_id, week_start)
+);
+CREATE INDEX IF NOT EXISTS idx_seo_metrics_snapshots_branch_week ON seo_metrics_snapshots(branch_id, week_start);
+
+-- キーワード単位の週次実績。is_implemented_as_of_weekにより、実施群/未実施群の週次推移を
+-- 実装タイミングをまたいで比較できる(10/25プレゼンで求められている「実施群だけが動いた」
+-- 比較の核)。
+CREATE TABLE IF NOT EXISTS seo_metrics_keyword_snapshots (
+  id                         INTEGER PRIMARY KEY AUTOINCREMENT,
+  branch_id                  INTEGER NOT NULL,
+  week_start                 TEXT NOT NULL,
+  week_end                   TEXT NOT NULL,
+
+  candidate_id               INTEGER,          -- seo_keyword_candidates.id(存在すれば。将来アーカイブされても系列が切れないようnormalized_keywordを別途保持)
+  normalized_keyword         TEXT NOT NULL,
+  source_task_id             INTEGER,          -- 実施済み判定の元になったseo_tasks.id(あれば)
+
+  avg_position                REAL,             -- GSC平均掲載順位(実績なしの週はNULL)
+  impressions                 INTEGER NOT NULL DEFAULT 0,
+  clicks                      INTEGER NOT NULL DEFAULT 0,
+
+  is_implemented_as_of_week   INTEGER NOT NULL, -- 0/1。その週末時点でsource_task_id.implemented_atが週末以前か
+  is_baseline                 INTEGER NOT NULL DEFAULT 0,
+  computed_at                 TEXT NOT NULL,
+
+  FOREIGN KEY (candidate_id) REFERENCES seo_keyword_candidates(id),
+  FOREIGN KEY (source_task_id) REFERENCES seo_tasks(id),
+  UNIQUE (branch_id, week_start, normalized_keyword)
+);
+CREATE INDEX IF NOT EXISTS idx_seo_metrics_keyword_snapshots_kw ON seo_metrics_keyword_snapshots(branch_id, normalized_keyword, week_start);
+
 -- 複数校舎管理(プランA: データベース化)。校舎ごとにWordPress投稿の著者アカウントが
 -- 異なるため、config/juku.yamlの静的なwordpress.author_id/author_display_nameに代わり、
 -- このテーブルの「現在アクティブな校舎」(is_active=1、常に1件のみ)からWordPress投稿者

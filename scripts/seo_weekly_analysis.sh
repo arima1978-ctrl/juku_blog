@@ -28,9 +28,23 @@ run_step() {
   return 0
 }
 
-run_step "seo_competitor_crawl" node scripts/seo_competitor_crawl.js
-run_step "seo_page_analyze" node scripts/seo_page_analyze.js
-run_step "seo_gap_calculate" node scripts/seo_gap_calculate.js
+FAILED_STEPS=""
+
+run_step "seo_competitor_crawl" node scripts/seo_competitor_crawl.js || FAILED_STEPS="${FAILED_STEPS}seo_competitor_crawl "
+run_step "seo_page_analyze" node scripts/seo_page_analyze.js || FAILED_STEPS="${FAILED_STEPS}seo_page_analyze "
+run_step "seo_gap_calculate" node scripts/seo_gap_calculate.js || FAILED_STEPS="${FAILED_STEPS}seo_gap_calculate "
+
+# SEO効果測定 週次スナップショット(2026-07-27): Gap判定の直後、対象週(今日を含む週の月曜)ぶんを保存する。
+WEEK_START=$(date -d "monday" +%Y-%m-%d 2>/dev/null || date +%Y-%m-%d)
+run_step "seo_metrics_snapshot_generate" node scripts/seo_metrics_snapshot_generate.js --week="${WEEK_START}" --save || FAILED_STEPS="${FAILED_STEPS}seo_metrics_snapshot_generate "
 
 log "=== 完了 ==="
+
+if [ -n "$FAILED_STEPS" ]; then
+  node scripts/record_heartbeat.js seo_weekly_analysis --failed --detail="失敗step: ${FAILED_STEPS}詳細は ${LOG}"
+  node scripts/notify_telegram.js "⚠️ 週次SEO分析(seo_weekly_analysis.sh)で一部stepが失敗しました: ${FAILED_STEPS}"
+else
+  node scripts/record_heartbeat.js seo_weekly_analysis
+fi
+
 exit 0

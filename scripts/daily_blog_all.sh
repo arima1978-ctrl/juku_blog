@@ -23,10 +23,13 @@ LOG="logs/daily_blog_all_${TODAY}.log"
 
 log() { echo "[$(date '+%H:%M:%S')] $*" | tee -a "$LOG"; }
 
+FAILED_TARGETS=""
+
 log "=== legacy(小幡校、共有config) ==="
 if ! ./scripts/daily_blog.sh >> "$LOG" 2>&1; then
   log "!!! legacyの実行が失敗しました(他校舎の実行は継続します)"
   node scripts/log_error.js "daily_blog_all_legacy" "./scripts/daily_blog.sh(legacy)が非ゼロ終了。詳細は ${LOG} を参照"
+  FAILED_TARGETS="${FAILED_TARGETS}legacy "
 fi
 
 # legacy(最も早く作成された校舎)以外で、generation_enabled=trueの校舎slugを列挙する
@@ -37,19 +40,27 @@ OTHER_SLUGS=$(node -e "
   listAutoGenerationBranches().forEach((b) => console.log(b.slug));
 ")
 
-if [ -z "$OTHER_SLUGS" ]; then
-  log "generation_enabled=trueの校舎(legacy以外)はありません。完了します"
-  exit 0
+if [ -n "$OTHER_SLUGS" ]; then
+  while IFS= read -r slug; do
+    [ -z "$slug" ] && continue
+    log "=== ${slug} ==="
+    if ! ./scripts/daily_blog.sh "$slug" >> "$LOG" 2>&1; then
+      log "!!! ${slug}の実行が失敗しました(他校舎の実行は継続します)"
+      node scripts/log_error.js "daily_blog_all_${slug}" "./scripts/daily_blog.sh ${slug} が非ゼロ終了。詳細は ${LOG} を参照"
+      FAILED_TARGETS="${FAILED_TARGETS}${slug} "
+    fi
+  done <<< "$OTHER_SLUGS"
+else
+  log "generation_enabled=trueの校舎(legacy以外)はありません"
 fi
 
-while IFS= read -r slug; do
-  [ -z "$slug" ] && continue
-  log "=== ${slug} ==="
-  if ! ./scripts/daily_blog.sh "$slug" >> "$LOG" 2>&1; then
-    log "!!! ${slug}の実行が失敗しました(他校舎の実行は継続します)"
-    node scripts/log_error.js "daily_blog_all_${slug}" "./scripts/daily_blog.sh ${slug} が非ゼロ終了。詳細は ${LOG} を参照"
-  fi
-done <<< "$OTHER_SLUGS"
-
 log "=== 全校舎の実行完了 ==="
+
+if [ -n "$FAILED_TARGETS" ]; then
+  node scripts/record_heartbeat.js daily_blog_all --failed --detail="失敗校舎: ${FAILED_TARGETS}詳細は ${LOG}"
+  node scripts/notify_telegram.js "⚠️ 日次記事生成(daily_blog_all.sh)で失敗した校舎があります: ${FAILED_TARGETS}"
+else
+  node scripts/record_heartbeat.js daily_blog_all
+fi
+
 exit 0

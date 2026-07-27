@@ -13,6 +13,7 @@ const path = require('node:path');
 const { ROOT } = require('../scripts/lib/config');
 
 const TMP_DB = path.join(os.tmpdir(), `juku_blog_seo_weekly_test_${process.pid}.sqlite`);
+const TMP_HEARTBEATS_DIR = path.join(os.tmpdir(), `juku_blog_seo_weekly_heartbeats_test_${process.pid}`);
 const LOG_PATH = path.join(ROOT, 'logs', `seo_weekly_${new Date().toISOString().slice(0, 10)}.log`);
 const logExistedBefore = fs.existsSync(LOG_PATH);
 let logContentBefore = null;
@@ -24,6 +25,7 @@ after(() => {
   } catch {
     // 既に無ければ無視
   }
+  fs.rmSync(TMP_HEARTBEATS_DIR, { recursive: true, force: true });
   // 週次ログは実運用のログと混ざらないよう、テスト実行前の状態に戻す
   if (logExistedBefore) {
     fs.writeFileSync(LOG_PATH, logContentBefore, 'utf8');
@@ -40,7 +42,7 @@ test('seo_weekly_analysis.sh: featureフラグOFFなら全stepが無処理で正
   const output = execFileSync('bash', [path.join(ROOT, 'scripts', 'seo_weekly_analysis.sh')], {
     cwd: ROOT,
     encoding: 'utf8',
-    env: { ...process.env, JUKU_BLOG_DB_PATH: TMP_DB },
+    env: { ...process.env, JUKU_BLOG_DB_PATH: TMP_DB, JUKU_BLOG_HEARTBEATS_DIR: TMP_HEARTBEATS_DIR },
   });
   assert.match(output, /完了/);
   assert.ok(!output.includes('が失敗しました'));

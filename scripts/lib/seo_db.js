@@ -1130,6 +1130,239 @@ function updateTaskStatus(id, toStatus, nowIso) {
   return { from: current.status, to: toStatus };
 }
 
+// SEO効果測定 週次スナップショット(2026-07-27)で追加。improve_school_page等、自動検知
+// できないTask種別の「実施済み」を人間が確定するための単純なUPDATE(ダッシュボード承認
+// のような複雑なstatus遷移バリデーションは不要。implemented_atはseo_tasks.statusとは
+// 別軸で、いつでも再設定・取り消し可能な単純フラグ)。
+function markTaskImplemented(id, { implementedAt, note } = {}) {
+  const conn = getDb();
+  const current = conn.prepare('SELECT id FROM seo_tasks WHERE id = ?').get(id);
+  if (!current) throw new Error(`markTaskImplemented: task id=${id} が見つかりません`);
+  conn
+    .prepare('UPDATE seo_tasks SET implemented_at = :implemented_at, implementation_note = :note, updated_at = :updated_at WHERE id = :id')
+    .run({ implemented_at: implementedAt, note: note || null, updated_at: implementedAt, id });
+  return getTaskById(id);
+}
+
+function unmarkTaskImplemented(id, nowIso) {
+  const conn = getDb();
+  const current = conn.prepare('SELECT id FROM seo_tasks WHERE id = ?').get(id);
+  if (!current) throw new Error(`unmarkTaskImplemented: task id=${id} が見つかりません`);
+  conn
+    .prepare('UPDATE seo_tasks SET implemented_at = NULL, implementation_note = NULL, updated_at = :updated_at WHERE id = :id')
+    .run({ updated_at: nowIso, id });
+  return getTaskById(id);
+}
+
+// branch_id別のTask status生カウント + monitor/exclude件数 + 実施済み件数(現時点)。
+// 週次スナップショット(seo_metrics_snapshot_generate.js)がそのままsnapshot行へ保存する。
+function getTaskStatusCounts(branchId) {
+  const conn = getDb();
+  const rows = conn
+    .prepare('SELECT status, task_type, implemented_at FROM seo_tasks WHERE branch_id IS :branch_id')
+    .all({ branch_id: branchId ?? null });
+  const counts = { total: rows.length, proposed: 0, approved: 0, rejected: 0, reviewing: 0, monitorExclude: 0, implemented: 0 };
+  for (const row of rows) {
+    if (row.status === 'proposed') counts.proposed += 1;
+    else if (row.status === 'approved') counts.approved += 1;
+    else if (row.status === 'rejected') counts.rejected += 1;
+    else if (row.status === 'reviewing') counts.reviewing += 1;
+    if (row.task_type === 'monitor' || row.task_type === 'exclude') counts.monitorExclude += 1;
+    if (row.implemented_at) counts.implemented += 1;
+  }
+  return counts;
+}
+
+// ギャップ充足率の分母定義(2026-07-27ユーザー承認): status='approved' かつ
+// task_type NOT IN ('monitor','exclude')が分母、同条件かつimplemented_at IS NOT NULLが分子。
+function getApprovedActionableTaskCounts(branchId) {
+  const conn = getDb();
+  const total = conn
+    .prepare("SELECT count(*) c FROM seo_tasks WHERE branch_id IS :branch_id AND status = 'approved' AND task_type NOT IN ('monitor','exclude')")
+    .get({ branch_id: branchId ?? null });
+  const implemented = conn
+    .prepare(
+      "SELECT count(*) c FROM seo_tasks WHERE branch_id IS :branch_id AND status = 'approved' AND task_type NOT IN ('monitor','exclude') AND implemented_at IS NOT NULL"
+    )
+    .get({ branch_id: branchId ?? null });
+  return { total: total.c, implemented: implemented.c };
+}
+
+// 表示回数で重み付けした平均順位・CTRを、日付範囲を絞って返す(週次スナップショット用)。
+// getGscAggregateForKeyword()は全期間集計のため、週単位の時系列には使えない。
+function getGscAggregateForKeywordInRange(query, { startDate, endDate } = {}) {
+  const { matchedQueries, matchType } = resolveMatchingGscQueries(query);
+  if (matchedQueries.length === 0) return null;
+  const conn = getDb();
+  const placeholders = matchedQueries.map(() => '?').join(',');
+  const rows = conn
+    .prepare(`SELECT * FROM seo_gsc_queries WHERE query IN (${placeholders}) AND date >= ? AND date <= ?`)
+    .all(...matchedQueries, startDate, endDate);
+  if (rows.length === 0) return { impressions: 0, clicks: 0, avgPosition: null, ctr: null, match_type: matchType, matched_queries: matchedQueries };
+  const impressions = rows.reduce((sum, r) => sum + (r.impressions || 0), 0);
+  const clicks = rows.reduce((sum, r) => sum + (r.clicks || 0), 0);
+  const weightDenom = rows.reduce((sum, r) => sum + (r.impressions || 1), 0);
+  const weightedPosition = rows.reduce((sum, r) => sum + (r.position || 0) * (r.impressions || 1), 0);
+  return {
+    impressions,
+    clicks,
+    avgPosition: weightDenom > 0 ? weightedPosition / weightDenom : null,
+    ctr: impressions > 0 ? clicks / impressions : null,
+    match_type: matchType,
+    matched_queries: matchedQueries,
+  };
+}
+
+// 日付範囲を絞った校舎合計(school_page/blog内訳込み)。pageUrlsが校舎ページ判定に使う
+// (config/school_pages.yaml由来。呼び出し側がbranch分の一覧を渡す)。
+function getGscTotalsInRange({ startDate, endDate, schoolPageUrls = [] }) {
+  const conn = getDb();
+  const rows = conn.prepare('SELECT page, impressions, clicks FROM seo_gsc_queries WHERE date >= ? AND date <= ?').all(startDate, endDate);
+  const schoolPageSet = new Set(schoolPageUrls);
+  let impressionsTotal = 0;
+  let clicksTotal = 0;
+  let impressionsSchoolPage = 0;
+  let clicksSchoolPage = 0;
+  for (const row of rows) {
+    impressionsTotal += row.impressions || 0;
+    clicksTotal += row.clicks || 0;
+    if (row.page && schoolPageSet.has(row.page)) {
+      impressionsSchoolPage += row.impressions || 0;
+      clicksSchoolPage += row.clicks || 0;
+    }
+  }
+  return {
+    impressionsTotal,
+    clicksTotal,
+    impressionsSchoolPage,
+    clicksSchoolPage,
+    impressionsBlog: impressionsTotal - impressionsSchoolPage,
+    clicksBlog: clicksTotal - clicksSchoolPage,
+  };
+}
+
+function getPublishedPostCounts(branchId, { weekStart, weekEnd } = {}) {
+  const conn = getDb();
+  const cumulative = conn
+    .prepare("SELECT count(*) c FROM posts WHERE branch_id IS :branch_id AND status = 'published' AND created_at <= :week_end")
+    .get({ branch_id: branchId ?? null, week_end: `${weekEnd}T23:59:59.999Z` });
+  const weekly = conn
+    .prepare(
+      "SELECT count(*) c FROM posts WHERE branch_id IS :branch_id AND status = 'published' AND created_at >= :week_start AND created_at <= :week_end"
+    )
+    .get({ branch_id: branchId ?? null, week_start: `${weekStart}T00:00:00.000Z`, week_end: `${weekEnd}T23:59:59.999Z` });
+  return { cumulative: cumulative.c, week: weekly.c };
+}
+
+function upsertSeoMetricsSnapshot(row, nowIso) {
+  const conn = getDb();
+  conn
+    .prepare(
+      `INSERT INTO seo_metrics_snapshots (
+        branch_id, week_start, week_end,
+        impressions_total, clicks_total, impressions_school_page, clicks_school_page, impressions_blog, clicks_blog,
+        task_count_total, task_count_proposed, task_count_approved, task_count_rejected, task_count_reviewing,
+        task_count_monitor_exclude, task_count_implemented,
+        gap_fulfilled_count, gap_total_count, gap_fulfillment_rate,
+        published_count_cumulative, published_count_week, is_baseline, computed_at
+      ) VALUES (
+        :branch_id, :week_start, :week_end,
+        :impressions_total, :clicks_total, :impressions_school_page, :clicks_school_page, :impressions_blog, :clicks_blog,
+        :task_count_total, :task_count_proposed, :task_count_approved, :task_count_rejected, :task_count_reviewing,
+        :task_count_monitor_exclude, :task_count_implemented,
+        :gap_fulfilled_count, :gap_total_count, :gap_fulfillment_rate,
+        :published_count_cumulative, :published_count_week, :is_baseline, :computed_at
+      )
+      ON CONFLICT (branch_id, week_start) DO UPDATE SET
+        week_end = excluded.week_end,
+        impressions_total = excluded.impressions_total, clicks_total = excluded.clicks_total,
+        impressions_school_page = excluded.impressions_school_page, clicks_school_page = excluded.clicks_school_page,
+        impressions_blog = excluded.impressions_blog, clicks_blog = excluded.clicks_blog,
+        task_count_total = excluded.task_count_total, task_count_proposed = excluded.task_count_proposed,
+        task_count_approved = excluded.task_count_approved, task_count_rejected = excluded.task_count_rejected,
+        task_count_reviewing = excluded.task_count_reviewing, task_count_monitor_exclude = excluded.task_count_monitor_exclude,
+        task_count_implemented = excluded.task_count_implemented,
+        gap_fulfilled_count = excluded.gap_fulfilled_count, gap_total_count = excluded.gap_total_count,
+        gap_fulfillment_rate = excluded.gap_fulfillment_rate,
+        published_count_cumulative = excluded.published_count_cumulative, published_count_week = excluded.published_count_week,
+        is_baseline = excluded.is_baseline, computed_at = excluded.computed_at`
+    )
+    .run({
+      branch_id: row.branchId,
+      week_start: row.weekStart,
+      week_end: row.weekEnd,
+      impressions_total: row.impressionsTotal,
+      clicks_total: row.clicksTotal,
+      impressions_school_page: row.impressionsSchoolPage,
+      clicks_school_page: row.clicksSchoolPage,
+      impressions_blog: row.impressionsBlog,
+      clicks_blog: row.clicksBlog,
+      task_count_total: row.taskCountTotal,
+      task_count_proposed: row.taskCountProposed,
+      task_count_approved: row.taskCountApproved,
+      task_count_rejected: row.taskCountRejected,
+      task_count_reviewing: row.taskCountReviewing,
+      task_count_monitor_exclude: row.taskCountMonitorExclude,
+      task_count_implemented: row.taskCountImplemented,
+      gap_fulfilled_count: row.gapFulfilledCount,
+      gap_total_count: row.gapTotalCount,
+      gap_fulfillment_rate: row.gapFulfillmentRate,
+      published_count_cumulative: row.publishedCountCumulative,
+      published_count_week: row.publishedCountWeek,
+      is_baseline: row.isBaseline ? 1 : 0,
+      computed_at: nowIso,
+    });
+  return conn.prepare('SELECT * FROM seo_metrics_snapshots WHERE branch_id = ? AND week_start = ?').get(row.branchId, row.weekStart);
+}
+
+function upsertSeoMetricsKeywordSnapshot(row, nowIso) {
+  const conn = getDb();
+  conn
+    .prepare(
+      `INSERT INTO seo_metrics_keyword_snapshots (
+        branch_id, week_start, week_end, candidate_id, normalized_keyword, source_task_id,
+        avg_position, impressions, clicks, is_implemented_as_of_week, is_baseline, computed_at
+      ) VALUES (
+        :branch_id, :week_start, :week_end, :candidate_id, :normalized_keyword, :source_task_id,
+        :avg_position, :impressions, :clicks, :is_implemented_as_of_week, :is_baseline, :computed_at
+      )
+      ON CONFLICT (branch_id, week_start, normalized_keyword) DO UPDATE SET
+        week_end = excluded.week_end, candidate_id = excluded.candidate_id, source_task_id = excluded.source_task_id,
+        avg_position = excluded.avg_position, impressions = excluded.impressions, clicks = excluded.clicks,
+        is_implemented_as_of_week = excluded.is_implemented_as_of_week, is_baseline = excluded.is_baseline,
+        computed_at = excluded.computed_at`
+    )
+    .run({
+      branch_id: row.branchId,
+      week_start: row.weekStart,
+      week_end: row.weekEnd,
+      candidate_id: row.candidateId ?? null,
+      normalized_keyword: row.normalizedKeyword,
+      source_task_id: row.sourceTaskId ?? null,
+      avg_position: row.avgPosition ?? null,
+      impressions: row.impressions || 0,
+      clicks: row.clicks || 0,
+      is_implemented_as_of_week: row.isImplementedAsOfWeek ? 1 : 0,
+      is_baseline: row.isBaseline ? 1 : 0,
+      computed_at: nowIso,
+    });
+}
+
+function listSeoMetricsSnapshots(branchId) {
+  const conn = getDb();
+  return conn.prepare('SELECT * FROM seo_metrics_snapshots WHERE branch_id = ? ORDER BY week_start').all(branchId);
+}
+
+function listSeoMetricsKeywordSnapshots(branchId, normalizedKeyword) {
+  const conn = getDb();
+  if (normalizedKeyword) {
+    return conn
+      .prepare('SELECT * FROM seo_metrics_keyword_snapshots WHERE branch_id = ? AND normalized_keyword = ? ORDER BY week_start')
+      .all(branchId, normalizedKeyword);
+  }
+  return conn.prepare('SELECT * FROM seo_metrics_keyword_snapshots WHERE branch_id = ? ORDER BY week_start').all(branchId);
+}
+
 // ---- seo_page_plans (Sprint 3.4) -----------------------------------------
 // seo_tasks(キーワード単位)とは別概念の「ページ単位の改善計画」。
 // このテーブルへの保存はTask statusを一切変更しない(seo_tasksは削除・書き換えしない)。
@@ -1966,6 +2199,17 @@ module.exports = {
   getTaskById,
   listTasks,
   updateTaskStatus,
+  markTaskImplemented,
+  unmarkTaskImplemented,
+  getTaskStatusCounts,
+  getApprovedActionableTaskCounts,
+  getGscAggregateForKeywordInRange,
+  getGscTotalsInRange,
+  getPublishedPostCounts,
+  upsertSeoMetricsSnapshot,
+  upsertSeoMetricsKeywordSnapshot,
+  listSeoMetricsSnapshots,
+  listSeoMetricsKeywordSnapshots,
   getSeoPagePlanById,
   getSeoPagePlanByPage,
   listSeoPagePlans,

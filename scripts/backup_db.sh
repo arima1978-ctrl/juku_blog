@@ -27,7 +27,12 @@ mkdir -p "$BACKUP_DIR"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 DEST="$BACKUP_DIR/posts_${TIMESTAMP}.sqlite"
 
-cp "$SRC" "$DEST"
+if ! cp "$SRC" "$DEST"; then
+  echo "[backup_db] バックアップの作成に失敗しました: $SRC -> $DEST"
+  node scripts/record_heartbeat.js backup_db --failed --detail="cp ${SRC} -> ${DEST} が失敗"
+  node scripts/notify_telegram.js "🚨 DB日次バックアップ(backup_db.sh)が失敗しました: ${SRC} -> ${DEST}"
+  exit 1
+fi
 echo "[backup_db] バックアップを作成しました: $DEST ($(du -h "$DEST" | cut -f1))"
 
 # 直近KEEP_GENERATIONS件のみ保持(更新日時の新しい順に数えて、それ以降を削除)
@@ -39,3 +44,4 @@ while IFS= read -r old; do
 done < <(cd "$BACKUP_DIR" && ls -1t posts_*.sqlite 2>/dev/null | tail -n "+$((KEEP_GENERATIONS + 1))")
 
 echo "[backup_db] 完了(保持: 直近${KEEP_GENERATIONS}世代、今回削除: ${DELETED}件)"
+node scripts/record_heartbeat.js backup_db

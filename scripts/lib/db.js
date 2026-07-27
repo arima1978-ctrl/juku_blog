@@ -239,6 +239,13 @@ function getDb() {
   ensureColumn(db, 'seo_tasks', 'roi_priority_score', 'INTEGER'); // 0〜100(バッチ内min-max正規化後)
   ensureColumn(db, 'seo_tasks', 'roi_score_computed_at', 'TEXT'); // 計算日時(ISO8601)
 
+  // SEO効果測定 週次スナップショット(2026-07-27)で追加。NULL=未実施。task_typeが
+  // create_articleの場合はsource_candidate_idのseo_keyword_candidates.statusが
+  // 'article_created'になった時点で自動セットする(sync_draft_to_db.js側)。
+  // improve_school_page等はダッシュボード/CLIでの手動確定のみ(自動検知不可)。
+  ensureColumn(db, 'seo_tasks', 'implemented_at', 'TEXT');
+  ensureColumn(db, 'seo_tasks', 'implementation_note', 'TEXT');
+
   // 記事生成パイプラインの複数校舎対応 Phase 1: 校舎別ディレクトリ・ログ名に使うslug
   // (ASCII、ダッシュボードの校舎編集フォームで変更可能)。日本語の校舎名から機械的に
   // ローマ字化はできないため、既存行への自動採番は「branch-<id>」という安全な仮値のみに
@@ -362,6 +369,8 @@ function getDb() {
       expected_impact_cv        REAL,
       roi_priority_score        INTEGER,
       roi_score_computed_at     TEXT,
+      implemented_at            TEXT,
+      implementation_note       TEXT,
       FOREIGN KEY (source_candidate_id) REFERENCES seo_keyword_candidates(id),
       FOREIGN KEY (target_post_id) REFERENCES posts(id),
       UNIQUE (target_keyword, task_type, source_candidate_id, branch_id)
