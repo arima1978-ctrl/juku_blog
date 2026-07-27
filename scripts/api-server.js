@@ -28,6 +28,8 @@ const { marked } = require('marked');
 const { listEpisodes, appendEpisode } = require('./lib/episodes');
 const { ROOT, loadJukuConfig } = require('./lib/config');
 const { publishPost } = require('./lib/wordpress');
+const { syncPostAsWordPressDraft } = require('./lib/post_sync');
+const { getBranchById } = require('./lib/branches_db');
 const { sendTelegram } = require('./lib/telegram');
 const { logError } = require('./log_error');
 const { computeNextScheduleSlot, isWithinPublishWindow, checkStreak } = require('./lib/schedule');
@@ -193,6 +195,26 @@ app.post('/api/posts/:id/approve', async (req, res) => {
   // 複数本公開されないよう、直近の予約枠の翌日を自動計算する。失敗しても承認自体は
   // 成立させ、ステータスはapprovedのまま残す(再度「承認」を押すとリトライできる)。
   const post = getPostById(id);
+
+  // あま本部校セルフ運用(branches.sync_mode='draft_review'、2026-07-27): 承認クリックは
+  // 予約投稿ではなくWordPress下書きへの同期を意味する(通常はsync_draft_to_db.jsが
+  // review_pending到達時に自動で同じ処理を行うため、ここは失敗時の手動リトライ経路)。
+  // 公開期限・入試ファクトチェックのブロックは「自動公開の最終防衛ライン」であり、
+  // 下書き(未公開)には適用しない(山口先生がWP側で内容を確認する前提のため)。
+  const branch = post && post.branch_id != null ? getBranchById(post.branch_id) : null;
+  if (branch && branch.sync_mode === 'draft_review') {
+    let wpDraftSynced = false;
+    try {
+      await syncPostAsWordPressDraft(post, new Date().toISOString());
+      wpDraftSynced = true;
+    } catch (err) {
+      logError('wordpress_draft_sync', `${post.title}: ${err.message}`, post.branch_id);
+      await sendTelegram(`⚠️ WordPress下書きへの同期に失敗しました(承認自体は完了。再度「承認」を押すとリトライできます)\n${post.title}\n${err.message}`);
+    }
+    res.json({ ok: true, published: false, wpDraftSynced });
+    return;
+  }
+
   const { slot, scheduledDateLabel, withinWindow, streakWarnings } = computeApprovalPreview(post);
 
   // 季節テーマ由来の記事(publish_window_endがある記事)が、計算された予約日には

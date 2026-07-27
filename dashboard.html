@@ -104,6 +104,7 @@
   .badge-approved { background: var(--green-bg); color: var(--green); }
   .badge-published { background: var(--green-bg); color: var(--green); }
   .badge-scheduled { background: var(--yellow-bg); color: var(--yellow); }
+  .badge-wp_draft_synced { background: var(--yellow-bg); color: var(--yellow); }
   .badge-rejected { background: var(--red-bg); color: var(--red); }
 
   .empty { color: var(--text-muted); text-align: center; padding: 40px 0; }
@@ -602,7 +603,14 @@ async function fetchJson(url, opts) {
 }
 
 function statusLabel(status) {
-  return { review_pending: '確認待ち', approved: '承認', rejected: '差し戻し', scheduled: '予約済み', published: '公開済み' }[status] || status;
+  return {
+    review_pending: '確認待ち',
+    approved: '承認',
+    rejected: '差し戻し',
+    scheduled: '予約済み',
+    wp_draft_synced: 'WP下書き同期済み(要WP確認)',
+    published: '公開済み',
+  }[status] || status;
 }
 
 function isPastDate(yyyyMmDd) {
@@ -781,6 +789,16 @@ async function openDetail(id) {
     ${simHtml}
     <div class="article-preview">${p.body_html}</div>
     <div id="schedulePreview" class="fact-check-box">予約予定日を確認中...</div>
+    ${p.status === 'wp_draft_synced' ? `
+    <div class="fact-check-box">
+      <strong>この校舎はWordPress下書きが直接レビューキューです</strong>
+      <div class="fact-check-item"><span></span><span>ダッシュボードでの承認は不要です。WordPress管理画面の下書き一覧で内容を確認し、そのまま公開/編集/ゴミ箱を判断してください。</span></div>
+    </div>
+    <div class="actions">
+      <button onclick="copyBody('html', ${p.id})">本文コピー(HTML)</button>
+      <button onclick="copyBody('text', ${p.id})">本文コピー(テキスト)</button>
+    </div>
+    ` : `
     <div class="actions">
       <button class="primary" onclick="approvePost(${p.id})">承認</button>
       <button class="danger" onclick="toggleRejectNote()">差し戻し</button>
@@ -792,6 +810,7 @@ async function openDetail(id) {
       <textarea id="rejectNote" placeholder="差し戻し理由を入力(翌日の企画で同じ失敗を避けるために使われます)"></textarea>
       <button class="danger" style="margin-top:8px;" onclick="rejectPost(${p.id})">差し戻しを確定</button>
     </div>
+    `}
     ${p.status === 'review_pending' ? `
     <div class="edit-form-area" id="editFormArea">
       <label>タイトル</label>

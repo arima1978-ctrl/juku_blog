@@ -255,6 +255,10 @@ function getDb() {
   ensureColumn(db, 'branches', 'wordpress_category_id', 'INTEGER');
   // Phase 4で使用: 日次自動生成の対象にするか。既定0(オプトイン)
   ensureColumn(db, 'branches', 'generation_enabled', 'INTEGER NOT NULL DEFAULT 0');
+  // あま本部校セルフ運用(2026-07-27)で追加。'scheduled'(既定、承認→WordPress予約投稿)
+  // または'draft_review'(検証済み記事を自動でWordPress下書きへ同期し、WPの下書き一覧を
+  // レビューキューとする。ダッシュボードの承認クリックは不要になる)。
+  ensureColumn(db, 'branches', 'sync_mode', "TEXT NOT NULL DEFAULT 'scheduled'");
   db.exec("UPDATE branches SET slug = 'branch-' || id WHERE slug IS NULL");
   db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_branches_slug ON branches(slug)');
 
@@ -610,6 +614,19 @@ function setScheduled(id, { wpPostId, wpLink, scheduledAt }) {
   return Number(result.changes);
 }
 
+// あま本部校セルフ運用(branches.sync_mode='draft_review')で追加。承認クリックを介さず、
+// 検証済み記事をWordPress下書きとして同期した直後に呼ぶ。statusは'scheduled'とは別の
+// 'wp_draft_synced'とし、sync_wordpress_status.jsが山口先生の公開操作を検知して
+// 'published'/'scheduled'/'rejected'へ遷移させる(draft→publish/future/trashが正常遷移)。
+function setWordPressDraftSynced(id, { wpPostId, wpLink, nowIso }) {
+  const conn = getDb();
+  const stmt = conn.prepare(
+    "UPDATE posts SET status = 'wp_draft_synced', wp_post_id = :wp_post_id, wp_link = :wp_link, wp_status = 'draft', wp_last_synced_at = :now WHERE id = :id"
+  );
+  const result = stmt.run({ wp_post_id: String(wpPostId), wp_link: wpLink, now: nowIso, id });
+  return Number(result.changes);
+}
+
 // 1日1本ペースを保つため、直近の予約済み/公開済み日時のうち最も新しいものを返す
 // (これに1日足した日を次の承認記事の予約先にする)
 function getLatestScheduleDate(branchId) {
@@ -645,7 +662,9 @@ function getRecentScheduledValues(column, limit, branchId) {
 // WordPress側の状態確認が必要な記事(予約済みでwp_post_idが分かっているもの)
 function listPostsNeedingWpSync() {
   const conn = getDb();
-  const stmt = conn.prepare("SELECT * FROM posts WHERE status = 'scheduled' AND wp_post_id IS NOT NULL");
+  // wp_draft_synced: あま本部校セルフ運用(2026-07-27)。draft→publish/future/trashの
+  // 検知にも同じ同期処理を使う(scripts/lib/wp_sync.jsのdecideSyncAction参照)。
+  const stmt = conn.prepare("SELECT * FROM posts WHERE status IN ('scheduled', 'wp_draft_synced') AND wp_post_id IS NOT NULL");
   return stmt.all();
 }
 
@@ -791,6 +810,7 @@ module.exports = {
   listTitlesSince,
   setStatus,
   setScheduled,
+  setWordPressDraftSynced,
   getLatestScheduleDate,
   getRecentScheduledValues,
   listPostsNeedingWpSync,

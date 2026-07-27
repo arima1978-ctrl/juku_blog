@@ -247,6 +247,27 @@ Task status別生カウント、ギャップ充足率、公開記事数)と`seo_
 (10月頭に着手予定。上記2テーブルをSELECTするだけで済む設計にしてある)。
 詳細は`docs/seo_metrics_snapshot_proposal_DRAFT.md`参照。
 
+## あま本部校セルフ運用(branches.sync_mode、2026-07-27〜)
+
+`branches.sync_mode`(既定`'scheduled'`)が`'draft_review'`の校舎(あま本部校)は、承認フローが
+小幡校(`'scheduled'`)と異なる。`sync_draft_to_db.js`が石橋の`verified`判定を受け取った際、
+`review_pending`のままダッシュボードの人間クリックを待たず、即座にWordPress下書き
+(`status:'draft'`、`scripts/lib/post_sync.js`の`syncPostAsWordPressDraft()`経由で
+`createDraftPost()`を呼ぶ)として同期し、ローカル`posts.status`を`wp_draft_synced`にする
+(`scripts/lib/db.js`の`setWordPressDraftSynced()`)。WP同期に失敗した場合は`review_pending`
+のまま残り、ダッシュボードの「承認」ボタン(`POST /api/posts/:id/approve`)が同じ経路への
+手動リトライになる(`api-server.js`が`post.branch_id`から校舎の`sync_mode`を見て分岐する。
+公開期限・入試ファクトチェックのブロックは自動"公開"の最終防衛ラインのため、下書き止まりの
+この経路には適用しない)。
+`sync_wordpress_status.js`は`wp_draft_synced`の記事も同期対象に含み
+(`scripts/lib/wp_sync.js`の`decideDraftReviewSyncAction()`)、`draft`のまま(無警告)/
+`publish`→`published`/`future`→`scheduled`/`trash`→`rejected`(意図的な運用結果として
+無警告)/`not_found`(要警告)を判定する。ダッシュボードは`wp_draft_synced`の記事には
+承認/差し戻しボタンを出さず、WP下書き確認を促す案内のみ表示する(形骸化した承認ボタンを
+残さない設計判断)。
+詳細・運用手順書は`docs/ama_honbu_self_operation_proposal_DRAFT.md`/
+`docs/ama_honbu_yamaguchi_manual_DRAFT.md`参照。
+
 ## バッチ監視(失敗通知・デッドマンスイッチ、2026-07-27〜)
 
 `daily_blog_all.sh`/`seo_weekly_analysis.sh`/`backup_db.sh`は、実行完了時に必ず

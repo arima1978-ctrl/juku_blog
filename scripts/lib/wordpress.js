@@ -200,15 +200,25 @@ async function publishPost(post, { date } = {}) {
 // 下書き(status:'draft')としてWordPressへ投稿する。publishPost()とは異なり、
 // 承認済み記事(data/posts.sqliteのposts行)ではなくseo_tasks/seo_weekly_recommendations
 // 由来の原稿を扱うため、引数の形も{title, bodyHtml, metaDescription}に絞っている
-// (slug/keywords/予約投稿日時は現時点では扱わない。人間がWordPress管理画面で
-// 下書きを確認してから公開する運用を前提とする)。
+// (予約投稿日時は下書きのため扱わない。人間がWordPress管理画面で下書きを確認してから
+// 公開する運用を前提とする)。
 // 2026-07-17追加: branchIdを渡すとその校舎のauthor_id/category_idを使う(publishPostと同様)。
-async function createDraftPost({ title, bodyHtml, metaDescription, branchId } = {}) {
+// 2026-07-27追加: あま本部校セルフ運用(sync_mode='draft_review')向けに、slug/keywordsを
+// 渡せば通常投稿(publishPost)と同じくカテゴリー・タグを設定する(下書きでもSEOタグ等は
+// システム側で設定済みにするため。手順書で山口先生に「気にしなくていい」と案内している)。
+async function createDraftPost({ title, bodyHtml, metaDescription, branchId, slug, keywords } = {}) {
   const config = getWpConfig();
   const wpConf = resolveWpConf(branchId);
   const categoryId = wpConf.category_id;
 
   await assertWordPressTargetIsValid(config, wpConf);
+
+  const tagNames = (keywords || '').split(',').map((k) => k.trim()).filter(Boolean);
+  const tagIds = [];
+  for (const name of tagNames) {
+    const id = await findTermId(config, 'tags', name);
+    if (id) tagIds.push(id);
+  }
 
   const body = {
     title,
@@ -216,8 +226,10 @@ async function createDraftPost({ title, bodyHtml, metaDescription, branchId } = 
     excerpt: metaDescription || '',
     status: 'draft',
   };
+  if (slug) body.slug = slug;
   if (wpConf.author_id) body.author = wpConf.author_id;
   if (categoryId) body.categories = [categoryId];
+  if (tagIds.length) body.tags = tagIds;
 
   const created = await wpRequest(config, 'POST', 'posts', body);
   return { wpPostId: created.id, link: created.link, status: created.status };

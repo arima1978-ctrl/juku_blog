@@ -153,6 +153,7 @@ const UPDATABLE_FIELDS = [
   'wordpress_api_token',
   'wordpress_category_id',
   'generation_enabled',
+  'sync_mode',
 ];
 
 function updateBranch(id, fields, nowIsoOverride) {

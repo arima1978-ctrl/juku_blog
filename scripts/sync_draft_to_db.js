@@ -10,11 +10,12 @@ const fs = require('node:fs');
 const path = require('node:path');
 const matter = require('gray-matter');
 const { marked } = require('marked');
-const { insertPost, updatePostBySlug, getPostBySlug } = require('./lib/db');
+const { insertPost, updatePostBySlug, getPostBySlug, getPostById } = require('./lib/db');
 const { ROOT } = require('./lib/config');
 const seoDb = require('./lib/seo_db');
 const branchesDb = require('./lib/branches_db');
 const { getBranchContext, toDbSlug } = require('./lib/branch_context');
+const { syncPostAsWordPressDraft } = require('./lib/post_sync');
 const { logError } = require('./log_error');
 
 // パイプライン内部のdraft frontmatter status → DB(posts.sqlite)のstatus対応表。
@@ -30,7 +31,7 @@ function toJsonTextOrNull(value) {
   return typeof value === 'string' ? value : JSON.stringify(value, null, 2);
 }
 
-function main() {
+async function main() {
   const relOrAbs = process.argv[2];
   if (!relOrAbs) {
     console.error('使い方: node scripts/sync_draft_to_db.js <draftファイルパス>');
@@ -179,7 +180,31 @@ function main() {
     }
   }
 
+  // あま本部校セルフ運用(2026-07-27): sync_mode='draft_review'の校舎は、ダッシュボードの
+  // 承認クリックを介さず、review_pending到達直後にWordPress下書きへ自動同期する
+  // (実質のレビューはWP下書き一覧1箇所に一本化する設計。docs/ama_honbu_self_operation_
+  // proposal_DRAFT.md参照)。失敗しても記事のDB同期自体(review_pending)は成立させ、
+  // ダッシュボードから通常の「承認」を押すことでも同じ経路(api-server.js)から
+  // リトライできるようにする。
+  if (dbStatus === 'review_pending') {
+    const branch = branchId != null ? branchesDb.getBranchById(branchId) : null;
+    if (branch && branch.sync_mode === 'draft_review') {
+      try {
+        const nowIso = new Date().toISOString();
+        const post = getPostById(postId);
+        const result = await syncPostAsWordPressDraft(post, nowIso);
+        console.log(`[sync_draft_to_db] あま本部校セルフ運用: WordPress下書きへ同期しました wpPostId=${result.wpPostId} link=${result.link}`);
+      } catch (err) {
+        logError('sync_draft_to_db_wp_draft_sync', `post_id=${postId} branch_id=${branchId}: ${err.message}`, branchId);
+        console.error(`[sync_draft_to_db] WordPress下書きへの同期に失敗しました(review_pendingのまま。ダッシュボードの「承認」で再試行できます): ${err.message}`);
+      }
+    }
+  }
+
   console.log('[sync_draft_to_db] 完了。data/recent_titles.json 等の更新は scripts/refresh_indexes.js を別途実行してください。');
 }
 
-main();
+main().catch((err) => {
+  console.error(`[sync_draft_to_db] 予期しないエラーで終了しました: ${err.message}`);
+  process.exit(1);
+});

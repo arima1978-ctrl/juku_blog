@@ -671,6 +671,7 @@ CREATE TABLE IF NOT EXISTS branches (
   wordpress_api_token              TEXT,
   wordpress_category_id           INTEGER, -- 校舎別WordPressカテゴリーID(Phase 2で使用。今回は列のみ)
   generation_enabled              INTEGER NOT NULL DEFAULT 0, -- 日次自動生成の対象にするか(Phase 4で使用。今回は列のみ)
+  sync_mode                       TEXT NOT NULL DEFAULT 'scheduled', -- 'scheduled'(承認→WP予約) | 'draft_review'(検証済み記事を自動でWP下書きへ同期。あま本部校セルフ運用、2026-07-27)
   is_active                       INTEGER NOT NULL DEFAULT 0,
   created_at                      TEXT NOT NULL,
   updated_at                      TEXT NOT NULL
