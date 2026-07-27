@@ -40,8 +40,12 @@ function gapTypeRank(gapType) {
 }
 
 // ページ単位グルーピングの対象条件。1つでも欠けばungroupedへ回す(理由付き)。
-function checkEligibility(task) {
-  if (task.status !== GROUPABLE_STATUS) return 'not_proposed';
+// allowedStatuses: 既定は[GROUPABLE_STATUS]('proposed'のみ、従来通り)。
+// stale Page Plan再生成(stale_page_plan_regenerator.js)は、Page Plan単位のstatusとは
+// 別軸のTask個別承認(approved)を経たTaskも対象に含める必要があるため、
+// ['proposed', 'approved']を明示的に渡す(2026-07-27修正。詳細はそちらのコメント参照)。
+function checkEligibility(task, allowedStatuses = [GROUPABLE_STATUS]) {
+  if (!allowedStatuses.includes(task.status)) return 'not_proposed';
   if (task.taskType !== GROUPABLE_TASK_TYPE) return 'not_improve_school_page';
   if (!task.targetPageType) return 'missing_target_page_type';
   if (!task.targetPageId) return 'missing_target_page_id';
@@ -163,13 +167,14 @@ function toDisplayTask(task) {
 //     targetKeyword, opportunityScore, sourceCandidateId,
 //     gapType, dataConfidence, searchIntent, templateType, keywordComponents,
 //     gscImpressions, gscAvgPosition }
+// options.allowedStatuses: checkEligibility()へ渡す許容status配列(既定['proposed'])。
 // 戻り値: { groups: [...], ungrouped: [...], warnings: [...] } (DB書き込み・LLM呼び出しなし)
-function groupTasksByPage(tasks) {
+function groupTasksByPage(tasks, { allowedStatuses } = {}) {
   const ungrouped = [];
   const byGroupKey = new Map();
 
   for (const task of tasks) {
-    const ineligibleReason = checkEligibility(task);
+    const ineligibleReason = checkEligibility(task, allowedStatuses);
     if (ineligibleReason) {
       ungrouped.push({ taskId: task.taskId, targetKeyword: task.targetKeyword, reason: ineligibleReason });
       continue;
