@@ -17,7 +17,7 @@
 
 ```
 GSC_AUTH_MODE=service_account
-GSC_PROPERTY_URL=https://an-english.com/
+GSC_PROPERTY_URL=sc-domain:an-english.com
 GSC_CLIENT_EMAIL=xxxxx@xxxxx.iam.gserviceaccount.com
 GSC_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
 ```
@@ -28,6 +28,8 @@ GSC_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
 `GSC_PROPERTY_URL`はSearch Console上でプロパティを登録した形式と一致させること
 (ドメインプロパティなら`sc-domain:an-english.com`、URLプレフィックスプロパティなら
 `https://an-english.com/`のようにスラッシュまで一致させる必要がある)。
+**an-english.comはドメインプロパティとして登録済み(2026-07-29確認)のため、
+`sc-domain:an-english.com`を使う。**
 
 ## 動作確認
 
