@@ -87,6 +87,9 @@ function buildBranchReport(branch) {
       rejected: latest.task_count_rejected,
       reviewing: latest.task_count_reviewing,
       implemented: latest.task_count_implemented,
+      // 前週からの増分(週次ダイジェストの「今週実施済みにした件数」用、2026-07-29追加)。
+      // 前週データが無ければ算出不能としてnull。
+      implementedWeekIncrement: previous ? latest.task_count_implemented - previous.task_count_implemented : null,
     },
     publishedCountCumulative: latest.published_count_cumulative,
     keywords,

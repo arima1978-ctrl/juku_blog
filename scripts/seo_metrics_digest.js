@@ -1,0 +1,93 @@
+'use strict';
+
+// 週次SEOダイジェスト(2026-07-29)。月曜07:30の専用cronで、直近のスナップショット
+// (対象週は常に「先週=完全な週」。seo_weekly_analysis.shが日曜01:00に記録する)を
+// 簡潔にTelegram通知する。異常時のみのバッチ監視アラート(🚨)とは完全に別枠とし、
+// 平常時も毎週必ず届く定期便として区別する(📊)。30秒で読める長さを維持することが
+// 絶対条件のため、フルレポート(node scripts/seo_metrics_report.js)への誘導のみ添える。
+//
+// 将来の拡張予約(2026-07-29ユーザー指示): キーワード順位データが十分に蓄積されたら
+// (9月頃想定)、「順位が動いたキーワード上位3件(キーワード名と順位変動のみ)」の
+// 1ブロックを追加すること。buildBranchReport()が返すkeywords配列(avgPosition等)と、
+// 前週のseo_metrics_keyword_snapshotsを突き合わせれば順位差分を計算できる
+// (現時点はキーワード単位の実績がまだ薄く、追加しても意味のある情報にならないため未実装)。
+//
+// 使い方: node scripts/seo_metrics_digest.js [--branch-id=<id>] [--dry-run]
+
+const path = require('node:path');
+try {
+  process.loadEnvFile(path.join(__dirname, '..', '.env'));
+} catch {
+  // .envが無い場合はスキップ
+}
+
+const { listBranches } = require('./lib/branches_db');
+const { buildBranchReport } = require('./seo_metrics_report');
+const { sendTelegram } = require('./lib/telegram');
+
+function parseArgs(argv) {
+  const has = (flag) => argv.includes(flag);
+  const get = (prefix) => {
+    const arg = argv.find((a) => a.startsWith(prefix));
+    return arg ? arg.slice(prefix.length) : undefined;
+  };
+  return {
+    branchId: get('--branch-id=') !== undefined ? Number(get('--branch-id=')) : undefined,
+    dryRun: has('--dry-run'),
+  };
+}
+
+function changeStr(pct) {
+  if (pct == null) return '';
+  const sign = pct >= 0 ? '+' : '';
+  return `(前週比${sign}${pct.toFixed(0)}%)`;
+}
+
+// 1校舎ぶんを3〜4行程度に収める(30秒で読める長さを維持するための制約)。
+function formatDigestBlock(r) {
+  if (!r.hasData) return null;
+  const rateStr = r.gapFulfillment.total > 0 ? `${(r.gapFulfillment.rate * 100).toFixed(0)}%` : 'N/A';
+  const increment = r.taskCounts.implementedWeekIncrement;
+  const incrementStr = increment == null ? '-' : `${increment}件`;
+  return [
+    `【${r.branchName}】`,
+    `表示回数 ${r.buckets.total.impressions.toLocaleString()}回${changeStr(r.buckets.total.impressionsChangePct)} / クリック${r.buckets.total.clicks}${changeStr(r.buckets.total.clicksChangePct)}`,
+    `  内訳: ブログ${r.buckets.blog.impressions} / 校舎ページ${r.buckets.schoolPage.impressions} / その他${r.buckets.other.impressions}`,
+    `ギャップ充足率 ${rateStr}(${r.gapFulfillment.fulfilled}/${r.gapFulfillment.total}) / 今週実施${incrementStr}`,
+  ].join('\n');
+}
+
+// reports: buildBranchReport()の結果配列。1件もhasDataが無ければnullを返す
+// (無意味な「データなし」通知を送らないため)。
+function formatDigest(reports) {
+  const blocks = reports.map(formatDigestBlock).filter(Boolean);
+  if (blocks.length === 0) return null;
+  const weekLabel = reports.find((r) => r.hasData).latestWeek;
+  return [`📊 週次SEOダイジェスト(${weekLabel.weekStart}〜${weekLabel.weekEnd}週)`, '', ...blocks, '', '詳細: node scripts/seo_metrics_report.js'].join('\n');
+}
+
+async function main() {
+  const { branchId, dryRun } = parseArgs(process.argv.slice(2));
+  const allBranches = listBranches();
+  const targetBranches = branchId ? allBranches.filter((b) => b.id === branchId) : allBranches;
+  const reports = targetBranches.map(buildBranchReport);
+
+  const text = formatDigest(reports);
+  if (!text) {
+    console.log('[seo_metrics_digest] スナップショットがまだ無いため、通知をスキップしました');
+    return;
+  }
+
+  console.log(text);
+  if (dryRun) {
+    console.log('[seo_metrics_digest] --dry-runのため送信しません');
+    return;
+  }
+  await sendTelegram(text);
+}
+
+if (require.main === module) {
+  main();
+}
+
+module.exports = { parseArgs, changeStr, formatDigestBlock, formatDigest, main };

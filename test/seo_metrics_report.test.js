@@ -131,11 +131,49 @@ test('buildBranchReport: 直近2週のスナップショットから前週比・
   assert.equal(report.gapFulfillment.total, 7);
   assert.ok(Math.abs(report.gapFulfillment.previousRate - 1 / 6) < 1e-9);
 
+  // implemented: 前週1件 -> 今週2件 = 週内増分+1件(2026-07-29追加、週次ダイジェスト用)
+  assert.equal(report.taskCounts.implementedWeekIncrement, 1);
+
   // キーワードは順位の良い順(数値が小さいほど上位)に並ぶ
   assert.equal(report.keywords.length, 2);
   assert.equal(report.keywords[0].keyword, 'レポート テスト キーワードA');
   assert.equal(report.keywords[0].implemented, true);
   assert.equal(report.keywords[1].keyword, 'レポート テスト キーワードB');
+});
+
+test('buildBranchReport: 前週データが無ければimplementedWeekIncrementはnull', () => {
+  const branch = branchesDb.createBranch({ name: '前週無し校', slug: '__test_report_no_previous__' });
+  seoDb.upsertSeoMetricsSnapshot(
+    {
+      branchId: branch.id,
+      weekStart: '2026-07-13',
+      weekEnd: '2026-07-19',
+      impressionsTotal: 100,
+      clicksTotal: 10,
+      impressionsSchoolPage: 10,
+      clicksSchoolPage: 1,
+      impressionsBlog: 5,
+      clicksBlog: 0,
+      impressionsOther: 85,
+      clicksOther: 9,
+      taskCountTotal: 5,
+      taskCountProposed: 1,
+      taskCountApproved: 3,
+      taskCountRejected: 1,
+      taskCountReviewing: 0,
+      taskCountMonitorExclude: 0,
+      taskCountImplemented: 1,
+      gapFulfilledCount: 1,
+      gapTotalCount: 3,
+      gapFulfillmentRate: 1 / 3,
+      publishedCountCumulative: 1,
+      publishedCountWeek: 1,
+      isBaseline: false,
+    },
+    nowIso
+  );
+  const report = buildBranchReport(branch);
+  assert.equal(report.taskCounts.implementedWeekIncrement, null);
 });
 
 test('formatText: hasData=falseの校舎はデータなしと表示する', () => {
