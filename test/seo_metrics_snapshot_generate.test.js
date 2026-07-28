@@ -15,6 +15,7 @@ const yaml = require('js-yaml');
 const { ROOT } = require('../scripts/lib/config');
 const { closeDb } = require('../scripts/lib/db');
 const seoDb = require('../scripts/lib/seo_db');
+const branchesDb = require('../scripts/lib/branches_db');
 const { computeSnapshotForBranch, computeKeywordSnapshotsForBranch, weekEndOf, main } = require('../scripts/seo_metrics_snapshot_generate');
 
 function writeDisabledConfig(tmpConfigPath) {
@@ -128,6 +129,18 @@ test('CLI: --saveで保存し、再実行するとUPSERT(重複行が増えな�
   const kwSnapshots = seoDb.listSeoMetricsKeywordSnapshots(BRANCH.id);
   const uniqueKeywords = new Set(kwSnapshots.map((r) => r.normalized_keyword));
   assert.equal(kwSnapshots.length, uniqueKeywords.size); // 重複行が無い
+});
+
+test('CLI: --branch-id省略時はis_activeに関わらず全校舎が対象になる(2026-07-28本番障害の回帰: is_active=falseのあま本部校が除外されていた)', () => {
+  const inactiveBranch = branchesDb.createBranch({ name: '非アクティブ校舎テスト', slug: '__test_inactive_branch__' });
+  // is_active=0のまま(createBranchの既定)。ダッシュボードの表示トグルであり分析対象とは無関係。
+
+  execFileSync('node', [path.join(ROOT, 'scripts', 'seo_metrics_snapshot_generate.js'), `--week=${WEEK_START}`, '--save', '--format=json'], {
+    env: process.env,
+  });
+
+  const snapshots = seoDb.listSeoMetricsSnapshots(inactiveBranch.id);
+  assert.equal(snapshots.length, 1, 'is_active=falseでも--branch-id省略時は分析対象に含まれるべき');
 });
 
 test('CLI: competitor_keyword_analysis.enabled=false のときは無処理で終了する(DB変更なし)', () => {

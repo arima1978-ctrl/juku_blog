@@ -119,7 +119,10 @@ function main() {
   }
 
   const weekEnd = weekEndOf(week);
-  const allBranches = listBranches().filter((b) => b.is_active || branchId === b.id);
+  // is_activeはダッシュボードが「今どの校舎を表示中か」を示すだけの可変なUIトグルであり、
+  // 「この校舎を分析対象に含めるか」とは無関係(過去に他スクリプトで同じ誤用による実インシデントが
+  // 複数回発生している)。既定では全校舎を対象にし、--branch-id指定時のみ絞り込む。
+  const allBranches = listBranches();
   const targetBranches = branchId ? allBranches.filter((b) => b.id === branchId) : allBranches;
 
   const results = targetBranches.map((branch) => {
