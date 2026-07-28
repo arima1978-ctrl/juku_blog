@@ -68,11 +68,12 @@ async function syncGscData({ provider, siteProperty, start, end, dryRun }) {
   }
 
   const nowIso = new Date().toISOString();
-  entries.forEach(({ row, dimensions: dims }) => {
-    // dateはAPIレスポンス自身の行ごとの日付を使う(toGscQueryRowがdimensionsの'date'から抽出する)。
-    // 取得期間の終端日を全行へ一律に設定する処理は行わない。
-    seoDb.upsertGscQueryRow(toGscQueryRow(row, { siteProperty, dimensions: dims }), nowIso);
-  });
+  // dateはAPIレスポンス自身の行ごとの日付を使う(toGscQueryRowがdimensionsの'date'から抽出する)。
+  // 取得期間の終端日を全行へ一律に設定する処理は行わない。
+  // 1件ずつではなく1トランザクションにまとめて書き込む(バックフィル時の大量行での
+  // 著しい速度低下を避けるため。2026-07-28対応)。
+  const dbRows = entries.map(({ row, dimensions: dims }) => toGscQueryRow(row, { siteProperty, dimensions: dims }));
+  seoDb.upsertGscQueryRows(dbRows, nowIso);
 
   console.log(`[seo_gsc_sync] 完了: 期間${start}〜${end} ${entries.length}行を反映しました(0行は正常な結果として扱います)`);
   return { entries: entries.length, upserted: entries.length };

@@ -477,6 +477,45 @@ function upsertGscQueryRow(row, nowIso) {
     });
 }
 
+// upsertGscQueryRow()を1件ずつ呼ぶと各行が自動コミットの個別トランザクションになり、
+// 大量行(GSCバックフィル時は1チャンクあたり数万行)ではSQLiteのfsyncコストで著しく遅くなる
+// (2026-07-28実測: 約7,000行/分。16ヶ月分の総量約104万行で2時間超かかる見込みだった)。
+// 複数行を1つのトランザクションにまとめてコミット回数を減らすことで大幅に高速化する
+// (ロジック自体はupsertGscQueryRow()と同一、書き込み方式のみ変更)。
+function upsertGscQueryRows(rows, nowIso) {
+  const conn = getDb();
+  const stmt = conn.prepare(
+    `INSERT INTO seo_gsc_queries (site_property, date, query, page, device, country, search_type, clicks, impressions, ctr, position, fetched_at)
+     VALUES (:site_property, :date, :query, :page, :device, :country, :search_type, :clicks, :impressions, :ctr, :position, :fetched_at)
+     ON CONFLICT (site_property, date, query, page, device, country, search_type)
+     DO UPDATE SET clicks = excluded.clicks, impressions = excluded.impressions, ctr = excluded.ctr,
+       position = excluded.position, fetched_at = excluded.fetched_at`
+  );
+  conn.exec('BEGIN');
+  try {
+    for (const row of rows) {
+      stmt.run({
+        site_property: row.site_property,
+        date: row.date,
+        query: row.query,
+        page: row.page || '',
+        device: row.device || '',
+        country: row.country || '',
+        search_type: row.search_type || '',
+        clicks: row.clicks ?? null,
+        impressions: row.impressions ?? null,
+        ctr: row.ctr ?? null,
+        position: row.position ?? null,
+        fetched_at: row.fetched_at || nowIso,
+      });
+    }
+    conn.exec('COMMIT');
+  } catch (err) {
+    conn.exec('ROLLBACK');
+    throw err;
+  }
+}
+
 function listGscQueriesForKeyword(query) {
   const conn = getDb();
   return conn.prepare('SELECT * FROM seo_gsc_queries WHERE query = ? ORDER BY date DESC').all(query);
@@ -2173,6 +2212,7 @@ module.exports = {
   upsertPageCompoundKeyword,
   listCompoundKeywordCoverage,
   upsertGscQueryRow,
+  upsertGscQueryRows,
   listGscQueriesForKeyword,
   getGscAggregateForKeyword,
   getGscPagesForQuery,

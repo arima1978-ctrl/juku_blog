@@ -172,6 +172,33 @@ test('upsertGscQueryRow: 同一キーの再取得は重複行を作らずupsert�
   assert.equal(rows[0].clicks, 5);
 });
 
+test('upsertGscQueryRows: 複数行を1トランザクションで一括upsertできる(2026-07-28: GSCバックフィル高速化のため追加)', () => {
+  const now = '2026-07-28T00:00:00.000Z';
+  const rows = [
+    { site_property: 'sc-domain:an-english.com', date: '2026-07-01', query: 'bulk テスト A', page: '/a', clicks: 1, impressions: 10 },
+    { site_property: 'sc-domain:an-english.com', date: '2026-07-01', query: 'bulk テスト B', page: '/b', clicks: 2, impressions: 20 },
+    { site_property: 'sc-domain:an-english.com', date: '2026-07-02', query: 'bulk テスト A', page: '/a', clicks: 3, impressions: 30 },
+  ];
+  seoDb.upsertGscQueryRows(rows, now);
+
+  const a = seoDb.listGscQueriesForKeyword('bulk テスト A');
+  const b = seoDb.listGscQueriesForKeyword('bulk テスト B');
+  assert.equal(a.length, 2);
+  assert.equal(b.length, 1);
+  assert.equal(b[0].clicks, 2);
+});
+
+test('upsertGscQueryRows: 同一キーの再取得はupsertGscQueryRow単体と同じく重複行を作らない', () => {
+  const now = '2026-07-28T00:00:00.000Z';
+  const row = { site_property: 'sc-domain:an-english.com', date: '2026-07-03', query: 'bulk テスト upsert', page: '/c', clicks: 1, impressions: 10 };
+  seoDb.upsertGscQueryRows([row], now);
+  seoDb.upsertGscQueryRows([{ ...row, clicks: 9, impressions: 90 }], now);
+
+  const rows = seoDb.listGscQueriesForKeyword('bulk テスト upsert');
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].clicks, 9);
+});
+
 test('upsertKeywordMetric/upsertSerpRanking: CSV取込のupsertが重複行を作らない', () => {
   const now = '2026-07-13T00:00:00.000Z';
   seoDb.upsertKeywordMetric({ keyword: '守山区 塾', normalized_keyword: '守山区 塾', average_monthly_searches: 10, source: 'keyword_planner_csv' }, now);
