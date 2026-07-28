@@ -1252,32 +1252,80 @@ function getGscAggregateForKeywordInRange(query, { startDate, endDate } = {}) {
   };
 }
 
-// 日付範囲を絞った校舎合計(school_page/blog内訳込み)。pageUrlsが校舎ページ判定に使う
-// (config/school_pages.yaml由来。呼び出し側がbranch分の一覧を渡す)。
-function getGscTotalsInRange({ startDate, endDate, schoolPageUrls = [] }) {
+// posts.wp_post_id(校舎別・null以外)の一覧を返す。GSCのpage URLをこのIDで照合する
+// (2026-07-29: wp_linkは予約作成時点の"?p=<id>"形式のまま更新されず、GSCが記録する
+// 実際の日付ベースパーマリンクと一致しないため、wp_link文字列ではなくIDで照合する設計)。
+function getPostWpIdsForBranch(branchId) {
+  const conn = getDb();
+  const rows = conn.prepare('SELECT wp_post_id FROM posts WHERE branch_id IS :branch_id AND wp_post_id IS NOT NULL').all({ branch_id: branchId ?? null });
+  return rows.map((r) => Number(r.wp_post_id)).filter((n) => Number.isFinite(n));
+}
+
+// 日付範囲のGSC実績を、校舎別ブログ/校舎ページ/「その他(どの校舎にも属さない、
+// トップページ・brand・LP等)」へ1回のスキャンで分解する(2026-07-29)。
+// 「その他」はどちらかの校舎へ無理に割り当てず、独立した値として返す
+// (ブログ自体の寄与を正直に示すため。ユーザー指示)。
+// branches: [{ branchId, postIds: number[], schoolPageUrls: string[] }]
+// 戻り値: { perBranch: { [branchId]: {impressionsBlog,clicksBlog,impressionsSchoolPage,clicksSchoolPage} },
+//           impressionsOther, clicksOther, impressionsTotal, clicksTotal }
+function getGscAttributionInRange({ startDate, endDate, branches }) {
+  const { normalizeUrl, pathEndsWithId } = require('./seo/gsc_url_match');
   const conn = getDb();
   const rows = conn.prepare('SELECT page, impressions, clicks FROM seo_gsc_queries WHERE date >= ? AND date <= ?').all(startDate, endDate);
-  const schoolPageSet = new Set(schoolPageUrls);
+
+  const branchInfos = (branches || []).map((b) => ({
+    branchId: b.branchId,
+    postIds: b.postIds || [],
+    schoolPageUrlSet: new Set((b.schoolPageUrls || []).map(normalizeUrl).filter(Boolean)),
+  }));
+
+  const perBranch = {};
+  branchInfos.forEach((b) => {
+    perBranch[b.branchId] = { impressionsBlog: 0, clicksBlog: 0, impressionsSchoolPage: 0, clicksSchoolPage: 0 };
+  });
+
+  let impressionsOther = 0;
+  let clicksOther = 0;
   let impressionsTotal = 0;
   let clicksTotal = 0;
-  let impressionsSchoolPage = 0;
-  let clicksSchoolPage = 0;
+
   for (const row of rows) {
-    impressionsTotal += row.impressions || 0;
-    clicksTotal += row.clicks || 0;
-    if (row.page && schoolPageSet.has(row.page)) {
-      impressionsSchoolPage += row.impressions || 0;
-      clicksSchoolPage += row.clicks || 0;
+    const impressions = row.impressions || 0;
+    const clicks = row.clicks || 0;
+    impressionsTotal += impressions;
+    clicksTotal += clicks;
+
+    const normalized = normalizeUrl(row.page);
+    let matchedBranchId = null;
+    let matchedBucket = null;
+    for (const b of branchInfos) {
+      if (b.postIds.some((id) => pathEndsWithId(normalized, id))) {
+        matchedBranchId = b.branchId;
+        matchedBucket = 'blog';
+        break;
+      }
+      if (normalized && b.schoolPageUrlSet.has(normalized)) {
+        matchedBranchId = b.branchId;
+        matchedBucket = 'school_page';
+        break;
+      }
+    }
+
+    if (matchedBranchId != null) {
+      if (matchedBucket === 'blog') {
+        perBranch[matchedBranchId].impressionsBlog += impressions;
+        perBranch[matchedBranchId].clicksBlog += clicks;
+      } else {
+        perBranch[matchedBranchId].impressionsSchoolPage += impressions;
+        perBranch[matchedBranchId].clicksSchoolPage += clicks;
+      }
+    } else {
+      impressionsOther += impressions;
+      clicksOther += clicks;
     }
   }
-  return {
-    impressionsTotal,
-    clicksTotal,
-    impressionsSchoolPage,
-    clicksSchoolPage,
-    impressionsBlog: impressionsTotal - impressionsSchoolPage,
-    clicksBlog: clicksTotal - clicksSchoolPage,
-  };
+
+  return { perBranch, impressionsOther, clicksOther, impressionsTotal, clicksTotal };
 }
 
 function getPublishedPostCounts(branchId, { weekStart, weekEnd } = {}) {
@@ -1300,6 +1348,7 @@ function upsertSeoMetricsSnapshot(row, nowIso) {
       `INSERT INTO seo_metrics_snapshots (
         branch_id, week_start, week_end,
         impressions_total, clicks_total, impressions_school_page, clicks_school_page, impressions_blog, clicks_blog,
+        impressions_other, clicks_other,
         task_count_total, task_count_proposed, task_count_approved, task_count_rejected, task_count_reviewing,
         task_count_monitor_exclude, task_count_implemented,
         gap_fulfilled_count, gap_total_count, gap_fulfillment_rate,
@@ -1307,6 +1356,7 @@ function upsertSeoMetricsSnapshot(row, nowIso) {
       ) VALUES (
         :branch_id, :week_start, :week_end,
         :impressions_total, :clicks_total, :impressions_school_page, :clicks_school_page, :impressions_blog, :clicks_blog,
+        :impressions_other, :clicks_other,
         :task_count_total, :task_count_proposed, :task_count_approved, :task_count_rejected, :task_count_reviewing,
         :task_count_monitor_exclude, :task_count_implemented,
         :gap_fulfilled_count, :gap_total_count, :gap_fulfillment_rate,
@@ -1317,6 +1367,7 @@ function upsertSeoMetricsSnapshot(row, nowIso) {
         impressions_total = excluded.impressions_total, clicks_total = excluded.clicks_total,
         impressions_school_page = excluded.impressions_school_page, clicks_school_page = excluded.clicks_school_page,
         impressions_blog = excluded.impressions_blog, clicks_blog = excluded.clicks_blog,
+        impressions_other = excluded.impressions_other, clicks_other = excluded.clicks_other,
         task_count_total = excluded.task_count_total, task_count_proposed = excluded.task_count_proposed,
         task_count_approved = excluded.task_count_approved, task_count_rejected = excluded.task_count_rejected,
         task_count_reviewing = excluded.task_count_reviewing, task_count_monitor_exclude = excluded.task_count_monitor_exclude,
@@ -1336,6 +1387,8 @@ function upsertSeoMetricsSnapshot(row, nowIso) {
       clicks_school_page: row.clicksSchoolPage,
       impressions_blog: row.impressionsBlog,
       clicks_blog: row.clicksBlog,
+      impressions_other: row.impressionsOther ?? 0,
+      clicks_other: row.clicksOther ?? 0,
       task_count_total: row.taskCountTotal,
       task_count_proposed: row.taskCountProposed,
       task_count_approved: row.taskCountApproved,
@@ -2244,7 +2297,8 @@ module.exports = {
   getTaskStatusCounts,
   getApprovedActionableTaskCounts,
   getGscAggregateForKeywordInRange,
-  getGscTotalsInRange,
+  getPostWpIdsForBranch,
+  getGscAttributionInRange,
   getPublishedPostCounts,
   upsertSeoMetricsSnapshot,
   upsertSeoMetricsKeywordSnapshot,

@@ -10,7 +10,7 @@ const TMP_DB = path.join(os.tmpdir(), `juku_blog_seo_db_test_${process.pid}.sqli
 process.env.JUKU_BLOG_DB_PATH = TMP_DB;
 
 const seoDb = require('../scripts/lib/seo_db');
-const { closeDb, insertPost } = require('../scripts/lib/db');
+const { closeDb, insertPost, setScheduled } = require('../scripts/lib/db');
 
 after(() => {
   closeDb();
@@ -197,6 +197,79 @@ test('upsertGscQueryRows: 同一キーの再取得はupsertGscQueryRow単体と�
   const rows = seoDb.listGscQueriesForKeyword('bulk テスト upsert');
   assert.equal(rows.length, 1);
   assert.equal(rows[0].clicks, 9);
+});
+
+test('getPostWpIdsForBranch: branch_idごとのwp_post_id一覧を返す(nullは除外)', () => {
+  const now = '2026-07-29T00:00:00.000Z';
+  const id1 = insertPost({ created_at: now, slug: 'gsc-attr-b1-p1', branch_id: 901, title: 't1', category: 'c', body_md: 'x', body_html: 'x' });
+  const id2 = insertPost({ created_at: now, slug: 'gsc-attr-b1-p2', branch_id: 901, title: 't2', category: 'c', body_md: 'x', body_html: 'x' });
+  insertPost({ created_at: now, slug: 'gsc-attr-b1-p3-nowp', branch_id: 901, title: 't3', category: 'c', body_md: 'x', body_html: 'x' }); // wp_post_id無し
+  setScheduled(id1, { wpPostId: 20001, wpLink: 'https://an-english.com/?p=20001', scheduledAt: now });
+  setScheduled(id2, { wpPostId: 20002, wpLink: 'https://an-english.com/?p=20002', scheduledAt: now });
+
+  const ids = seoDb.getPostWpIdsForBranch(901);
+  assert.deepEqual([...ids].sort((a, b) => a - b), [20001, 20002]);
+});
+
+test('getGscAttributionInRange: 2026-07-29追加。校舎別ブログ/校舎ページ/その他の4区分に正しく分解する(残差をどちらの校舎にも割り当てない)', () => {
+  const now = '2026-07-29T00:00:00.000Z';
+  // 校舎A(id=911)のブログ記事(wp_post_id=30001)
+  const postA = insertPost({ created_at: now, slug: 'gsc-attr-a-blog', branch_id: 911, title: 'A blog', category: 'c', body_md: 'x', body_html: 'x' });
+  setScheduled(postA, { wpPostId: 30001, wpLink: 'https://an-english.com/?p=30001', scheduledAt: now });
+  // 校舎B(id=912)のブログ記事(wp_post_id=30002)
+  const postB = insertPost({ created_at: now, slug: 'gsc-attr-b-blog', branch_id: 912, title: 'B blog', category: 'c', body_md: 'x', body_html: 'x' });
+  setScheduled(postB, { wpPostId: 30002, wpLink: 'https://an-english.com/?p=30002', scheduledAt: now });
+
+  seoDb.upsertGscQueryRows(
+    [
+      // 校舎Aのブログ記事(日付ベースパーマリンク。末尾がwp_post_idと一致)
+      { site_property: 'sc-domain:an-english.com', date: '2026-07-13', query: 'q-a-blog', page: 'https://an-english.com/2026/07/30001/', clicks: 5, impressions: 100 },
+      // 校舎Bのブログ記事
+      { site_property: 'sc-domain:an-english.com', date: '2026-07-13', query: 'q-b-blog', page: 'https://an-english.com/2026/07/30002/', clicks: 3, impressions: 60 },
+      // 校舎Aの校舎ページ(www/末尾スラッシュ無しの表記揺れ込み)
+      { site_property: 'sc-domain:an-english.com', date: '2026-07-13', query: 'q-a-school', page: 'https://www.an-english.com/school/attr-a', clicks: 2, impressions: 40 },
+      // どちらの校舎にも属さない(トップページ)
+      { site_property: 'sc-domain:an-english.com', date: '2026-07-13', query: 'q-other', page: 'https://an-english.com/', clicks: 1, impressions: 20 },
+    ],
+    now
+  );
+
+  const result = seoDb.getGscAttributionInRange({
+    startDate: '2026-07-13',
+    endDate: '2026-07-19',
+    branches: [
+      { branchId: 911, postIds: seoDb.getPostWpIdsForBranch(911), schoolPageUrls: ['https://an-english.com/school/attr-a/'] },
+      { branchId: 912, postIds: seoDb.getPostWpIdsForBranch(912), schoolPageUrls: [] },
+    ],
+  });
+
+  assert.equal(result.perBranch[911].impressionsBlog, 100);
+  assert.equal(result.perBranch[911].clicksBlog, 5);
+  assert.equal(result.perBranch[911].impressionsSchoolPage, 40);
+  assert.equal(result.perBranch[911].clicksSchoolPage, 2);
+
+  assert.equal(result.perBranch[912].impressionsBlog, 60);
+  assert.equal(result.perBranch[912].clicksBlog, 3);
+  assert.equal(result.perBranch[912].impressionsSchoolPage, 0);
+
+  // 校舎Aのブログにも校舎Bのブログにも吸収されず、独立した値として残る
+  assert.equal(result.impressionsOther, 20);
+  assert.equal(result.clicksOther, 1);
+
+  // サイト全体の合計(4区分の合計と一致する)
+  assert.equal(result.impressionsTotal, 100 + 60 + 40 + 20);
+  assert.equal(result.clicksTotal, 5 + 3 + 2 + 1);
+});
+
+test('getGscAttributionInRange: branchesを渡さなければ全件がその他になる', () => {
+  const now = '2026-07-29T00:00:00.000Z';
+  seoDb.upsertGscQueryRows(
+    [{ site_property: 'sc-domain:an-english.com', date: '2026-07-14', query: 'q-no-branches', page: 'https://an-english.com/2026/07/40001/', clicks: 1, impressions: 10 }],
+    now
+  );
+  const result = seoDb.getGscAttributionInRange({ startDate: '2026-07-14', endDate: '2026-07-14', branches: [] });
+  assert.equal(result.impressionsOther, 10);
+  assert.deepEqual(result.perBranch, {});
 });
 
 test('upsertKeywordMetric/upsertSerpRanking: CSV取込のupsertが重複行を作らない', () => {

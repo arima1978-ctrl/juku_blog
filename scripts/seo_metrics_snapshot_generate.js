@@ -39,28 +39,49 @@ function weekEndOf(weekStartStr) {
   return d.toISOString().slice(0, 10);
 }
 
-function computeSnapshotForBranch({ branch, weekStart, weekEnd, isBaseline }) {
+// allBranches(システム上の全校舎、--branch-id絞り込みの影響を受けない)から、
+// GSC実績照合に必要な情報(校舎別の投稿ID一覧・校舎ページURL一覧)を組み立てる。
+// 「その他」を正しく求めるには、出力対象に含まれない校舎の投稿も「その校舎のブログ」として
+// 認識できていなければならない(さもないと他校舎の記事が誤って「その他」に混入する)。
+function buildBranchUrlInfos(allBranches) {
+  return allBranches.map((branch) => ({
+    branchId: branch.id,
+    postIds: seoDb.getPostWpIdsForBranch(branch.id),
+    schoolPageUrls: listEnabledSchoolPages(branch.id).map((p) => p.url),
+  }));
+}
+
+// 週次スナップショット生成1回につき1度だけ呼ぶ(全校舎ぶんをまとめて1回のGSCスキャンで
+// 分解する。校舎ごとに個別実行すると「その他」の判定に他校舎の情報が使えず不正確になる)。
+function computeGscAttribution({ weekStart, weekEnd, allBranches }) {
+  const branches = buildBranchUrlInfos(allBranches);
+  return seoDb.getGscAttributionInRange({ startDate: weekStart, endDate: weekEnd, branches });
+}
+
+function computeSnapshotForBranch({ branch, weekStart, weekEnd, isBaseline, gscAttribution }) {
   const counts = seoDb.getTaskStatusCounts(branch.id);
   // ギャップ充足率の分母定義(2026-07-27ユーザー承認): status='approved' かつ
   // task_type NOT IN ('monitor','exclude')。分子は同条件かつimplemented_at IS NOT NULL。
   // 生カウント(taskCount*)も別途保存するため、この定義自体は後から変更しても再計算できる。
   const { total: gapTotal, implemented: gapFulfilled } = seoDb.getApprovedActionableTaskCounts(branch.id);
 
-  const schoolPages = listEnabledSchoolPages(branch.id);
-  const schoolPageUrls = schoolPages.map((p) => p.url);
-  const totals = seoDb.getGscTotalsInRange({ startDate: weekStart, endDate: weekEnd, schoolPageUrls });
+  const branchGsc = gscAttribution.perBranch[branch.id] || { impressionsBlog: 0, clicksBlog: 0, impressionsSchoolPage: 0, clicksSchoolPage: 0 };
   const published = seoDb.getPublishedPostCounts(branch.id, { weekStart, weekEnd });
 
   return {
     branchId: branch.id,
     weekStart,
     weekEnd,
-    impressionsTotal: totals.impressionsTotal,
-    clicksTotal: totals.clicksTotal,
-    impressionsSchoolPage: totals.impressionsSchoolPage,
-    clicksSchoolPage: totals.clicksSchoolPage,
-    impressionsBlog: totals.impressionsBlog,
-    clicksBlog: totals.clicksBlog,
+    // サイト全体の値(全校舎で同じ値になる。2026-07-29: impressionsOther/clicksOtherも同様)
+    impressionsTotal: gscAttribution.impressionsTotal,
+    clicksTotal: gscAttribution.clicksTotal,
+    impressionsOther: gscAttribution.impressionsOther,
+    clicksOther: gscAttribution.clicksOther,
+    // この校舎のみの値(2026-07-29修正: 以前はimpressionsBlogがサイト全体の残差だった)
+    impressionsSchoolPage: branchGsc.impressionsSchoolPage,
+    clicksSchoolPage: branchGsc.clicksSchoolPage,
+    impressionsBlog: branchGsc.impressionsBlog,
+    clicksBlog: branchGsc.clicksBlog,
     taskCountTotal: counts.total,
     taskCountProposed: counts.proposed,
     taskCountApproved: counts.approved,
@@ -125,8 +146,12 @@ function main() {
   const allBranches = listBranches();
   const targetBranches = branchId ? allBranches.filter((b) => b.id === branchId) : allBranches;
 
+  // 「その他」を正しく求めるため、常に全校舎(allBranches)を対象にGSC分解を1回だけ行う
+  // (--branch-id絞り込みは出力対象を絞るだけで、分類そのものには影響させない)。
+  const gscAttribution = computeGscAttribution({ weekStart: week, weekEnd, allBranches });
+
   const results = targetBranches.map((branch) => {
-    const snapshot = computeSnapshotForBranch({ branch, weekStart: week, weekEnd, isBaseline: baseline });
+    const snapshot = computeSnapshotForBranch({ branch, weekStart: week, weekEnd, isBaseline: baseline, gscAttribution });
     const keywordSnapshots = computeKeywordSnapshotsForBranch({ branch, weekStart: week, weekEnd, isBaseline: baseline });
     return { branch, snapshot, keywordSnapshots };
   });
@@ -165,4 +190,4 @@ if (require.main === module) {
   main();
 }
 
-module.exports = { parseArgs, weekEndOf, computeSnapshotForBranch, computeKeywordSnapshotsForBranch, main };
+module.exports = { parseArgs, weekEndOf, computeGscAttribution, computeSnapshotForBranch, computeKeywordSnapshotsForBranch, main };

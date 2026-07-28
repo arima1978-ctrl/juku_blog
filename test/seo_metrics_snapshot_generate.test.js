@@ -13,10 +13,10 @@ const assert = require('node:assert/strict');
 const { execFileSync } = require('node:child_process');
 const yaml = require('js-yaml');
 const { ROOT } = require('../scripts/lib/config');
-const { closeDb } = require('../scripts/lib/db');
+const { closeDb, insertPost, setScheduled } = require('../scripts/lib/db');
 const seoDb = require('../scripts/lib/seo_db');
 const branchesDb = require('../scripts/lib/branches_db');
-const { computeSnapshotForBranch, computeKeywordSnapshotsForBranch, weekEndOf, main } = require('../scripts/seo_metrics_snapshot_generate');
+const { computeGscAttribution, computeSnapshotForBranch, computeKeywordSnapshotsForBranch, weekEndOf, main } = require('../scripts/seo_metrics_snapshot_generate');
 
 function writeDisabledConfig(tmpConfigPath) {
   const config = yaml.load(fs.readFileSync(path.join(ROOT, 'config', 'juku.yaml'), 'utf8'));
@@ -72,7 +72,8 @@ test('computeSnapshotForBranch: Task status別カウント・ギャップ充足�
   );
   seoDb.updateTaskStatus(taskD.id, 'approved', nowIso); // monitorは分母から除外されるべき
 
-  const snapshot = computeSnapshotForBranch({ branch: BRANCH, weekStart: WEEK_START, weekEnd: WEEK_END, isBaseline: false });
+  const gscAttribution = computeGscAttribution({ weekStart: WEEK_START, weekEnd: WEEK_END, allBranches: [BRANCH] });
+  const snapshot = computeSnapshotForBranch({ branch: BRANCH, weekStart: WEEK_START, weekEnd: WEEK_END, isBaseline: false, gscAttribution });
 
   assert.equal(snapshot.taskCountTotal, 4);
   assert.equal(snapshot.taskCountProposed, 1);
@@ -95,9 +96,37 @@ test('computeSnapshotForBranch: GSC実績を対象週の範囲だけで集計す
     nowIso
   );
 
-  const snapshot = computeSnapshotForBranch({ branch: BRANCH, weekStart: WEEK_START, weekEnd: WEEK_END, isBaseline: false });
+  const gscAttribution = computeGscAttribution({ weekStart: WEEK_START, weekEnd: WEEK_END, allBranches: [BRANCH] });
+  const snapshot = computeSnapshotForBranch({ branch: BRANCH, weekStart: WEEK_START, weekEnd: WEEK_END, isBaseline: false, gscAttribution });
   assert.equal(snapshot.impressionsTotal, 100);
   assert.equal(snapshot.clicksTotal, 10);
+});
+
+test('computeGscAttribution/computeSnapshotForBranch: 校舎別ブログ・その他へ正しく分解される(2026-07-29、残差を校舎へ割り当てない)', () => {
+  const branchB = branchesDb.createBranch({ name: '別校舎テスト', slug: '__test_snapshot_branch_b__' });
+  const postA = insertPost({ created_at: nowIso, slug: 'snap-attr-a', branch_id: BRANCH.id, title: 'A', category: 'c', body_md: 'x', body_html: 'x' });
+  setScheduled(postA, { wpPostId: 50001, wpLink: 'https://an-english.com/?p=50001', scheduledAt: nowIso });
+  const postB = insertPost({ created_at: nowIso, slug: 'snap-attr-b', branch_id: branchB.id, title: 'B', category: 'c', body_md: 'x', body_html: 'x' });
+  setScheduled(postB, { wpPostId: 50002, wpLink: 'https://an-english.com/?p=50002', scheduledAt: nowIso });
+
+  seoDb.upsertGscQueryRows(
+    [
+      { site_property: 'sc-domain:an-english.com', date: WEEK_START, query: 'snap-a', page: 'https://an-english.com/2026/07/50001/', impressions: 200, clicks: 20 },
+      { site_property: 'sc-domain:an-english.com', date: WEEK_START, query: 'snap-b', page: 'https://an-english.com/2026/07/50002/', impressions: 150, clicks: 15 },
+      { site_property: 'sc-domain:an-english.com', date: WEEK_START, query: 'snap-other', page: 'https://an-english.com/recruit/', impressions: 30, clicks: 1 },
+    ],
+    nowIso
+  );
+
+  const gscAttribution = computeGscAttribution({ weekStart: WEEK_START, weekEnd: WEEK_END, allBranches: [BRANCH, branchB] });
+  const snapshotA = computeSnapshotForBranch({ branch: BRANCH, weekStart: WEEK_START, weekEnd: WEEK_END, isBaseline: false, gscAttribution });
+  const snapshotB = computeSnapshotForBranch({ branch: branchB, weekStart: WEEK_START, weekEnd: WEEK_END, isBaseline: false, gscAttribution });
+
+  assert.equal(snapshotA.impressionsBlog, 200);
+  assert.equal(snapshotB.impressionsBlog, 150);
+  // 「その他」はどちらの校舎の値を見ても同じ(校舎へ割り当てない共有値)
+  assert.equal(snapshotA.impressionsOther, 30);
+  assert.equal(snapshotB.impressionsOther, 30);
 });
 
 test('computeKeywordSnapshotsForBranch: implemented_atが週末以前なら実施済みフラグが立つ', () => {

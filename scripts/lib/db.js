@@ -246,6 +246,11 @@ function getDb() {
   ensureColumn(db, 'seo_tasks', 'implemented_at', 'TEXT');
   ensureColumn(db, 'seo_tasks', 'implementation_note', 'TEXT');
 
+  // GSC実績の4区分分解(2026-07-29)で追加。既存行はNULLのまま残るため、
+  // 呼び出し側(seo_metrics_snapshot_generate.js)の再実行で上書きする想定。
+  ensureColumn(db, 'seo_metrics_snapshots', 'impressions_other', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn(db, 'seo_metrics_snapshots', 'clicks_other', 'INTEGER NOT NULL DEFAULT 0');
+
   // 記事生成パイプラインの複数校舎対応 Phase 1: 校舎別ディレクトリ・ログ名に使うslug
   // (ASCII、ダッシュボードの校舎編集フォームで変更可能)。日本語の校舎名から機械的に
   // ローマ字化はできないため、既存行への自動採番は「branch-<id>」という安全な仮値のみに

@@ -594,12 +594,18 @@ CREATE TABLE IF NOT EXISTS seo_metrics_snapshots (
   week_start                  TEXT NOT NULL, -- 月曜日(YYYY-MM-DD)。GSC実績の集計対象週
   week_end                    TEXT NOT NULL, -- 日曜日(YYYY-MM-DD)
 
+  -- impressions_total/clicks_totalはサイト全体の合計(全校舎で同じ値。複数校舎が同一
+  -- WordPressサイトを共有するため)。impressions_other/clicks_otherも同様にサイト全体の
+  -- 値で、どの校舎のブログ記事にも校舎ページにも属さないURL(トップページ・brand・LP等)の
+  -- 実績を指す。どちらかの校舎へ無理に割り当てず、独立した値として扱う(2026-07-29)。
   impressions_total           INTEGER NOT NULL,
   clicks_total                INTEGER NOT NULL,
-  impressions_school_page     INTEGER NOT NULL, -- config/school_pages.yaml登録ページ分
+  impressions_school_page     INTEGER NOT NULL, -- config/school_pages.yaml登録ページ分(この校舎のみ)
   clicks_school_page          INTEGER NOT NULL,
-  impressions_blog            INTEGER NOT NULL, -- 校舎ページ以外(残差。個別記事URLの列挙はしない)
+  impressions_blog            INTEGER NOT NULL, -- この校舎のブログ記事分のみ(posts.wp_post_idで照合。2026-07-29修正: 以前は校舎ページ以外の残差=他校舎分も含んでいた)
   clicks_blog                 INTEGER NOT NULL,
+  impressions_other           INTEGER NOT NULL DEFAULT 0, -- サイト全体で、どの校舎のブログ/校舎ページにも属さない分(全校舎の行で同じ値)
+  clicks_other                INTEGER NOT NULL DEFAULT 0,
 
   -- seo_tasksのstatus別・生カウント(その週末時点のスナップショット)。
   task_count_total            INTEGER NOT NULL,
