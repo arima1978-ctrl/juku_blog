@@ -35,7 +35,10 @@ run_step "seo_page_analyze" node scripts/seo_page_analyze.js || FAILED_STEPS="${
 run_step "seo_gap_calculate" node scripts/seo_gap_calculate.js || FAILED_STEPS="${FAILED_STEPS}seo_gap_calculate "
 
 # SEO効果測定 週次スナップショット(2026-07-27): Gap判定の直後、対象週(今日を含む週の月曜)ぶんを保存する。
-WEEK_START=$(date -d "monday" +%Y-%m-%d 2>/dev/null || date +%Y-%m-%d)
+# 2026-07-28修正: `date -d monday`はGNU dateの「次のmonday」解釈のため、日曜(このバッチの
+# 実行曜日)に実行すると6日後の月曜(未来の日付)を返してしまい、対象週がずれるバグがあった。
+# ISO week番号(%u、月曜=1)を使い、今日を含む週の月曜(未来にならない)を確実に計算する。
+WEEK_START=$(date -d "-$(($(date +%u)-1)) days" +%Y-%m-%d 2>/dev/null || date +%Y-%m-%d)
 run_step "seo_metrics_snapshot_generate" node scripts/seo_metrics_snapshot_generate.js --week="${WEEK_START}" --save || FAILED_STEPS="${FAILED_STEPS}seo_metrics_snapshot_generate "
 
 log "=== 完了 ==="
