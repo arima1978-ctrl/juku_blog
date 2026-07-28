@@ -34,4 +34,39 @@ function readHeartbeat(name) {
   }
 }
 
-module.exports = { recordHeartbeat, readHeartbeat, HEARTBEATS_DIR };
+// 監視導入直後の猶予(2026-07-28)。あるバッチのheartbeatがまだ一度も記録されていない場合、
+// 「本当に一度も実行されていない」のか「監視導入がそのバッチの実行周期より後だっただけ」かを
+// 区別できない。前者は警告すべきだが後者は誤報になる(seo_weekly_analysisが週次のため、
+// 監視導入直後の数日間は必ず誤報になっていた実インシデントの再発防止)。
+// このJSONファイルは、あるバッチ名を監視対象としてcheck_batch_heartbeats.jsが「初めて
+// heartbeat無しの状態を観測した時刻」を1回だけ記録し、以降は上書きしない(=そのバッチの
+// 監視が実質的に開始された時刻の代理指標)。
+const FIRST_SEEN_PATH = path.join(HEARTBEATS_DIR, '_first_seen.json');
+
+function readFirstSeenMap() {
+  if (!fs.existsSync(FIRST_SEEN_PATH)) return {};
+  try {
+    return JSON.parse(fs.readFileSync(FIRST_SEEN_PATH, 'utf8'));
+  } catch {
+    return {};
+  }
+}
+
+// 既に記録済みのバッチ名は上書きしない(冪等)。新規に観測したバッチ名だけをmapへ追加する。
+function recordFirstSeenIfAbsent(names, nowIso) {
+  const map = readFirstSeenMap();
+  let changed = false;
+  for (const name of names) {
+    if (!Object.prototype.hasOwnProperty.call(map, name)) {
+      map[name] = nowIso;
+      changed = true;
+    }
+  }
+  if (changed) {
+    fs.mkdirSync(HEARTBEATS_DIR, { recursive: true });
+    fs.writeFileSync(FIRST_SEEN_PATH, JSON.stringify(map, null, 2), 'utf8');
+  }
+  return map;
+}
+
+module.exports = { recordHeartbeat, readHeartbeat, readFirstSeenMap, recordFirstSeenIfAbsent, HEARTBEATS_DIR };

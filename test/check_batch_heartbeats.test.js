@@ -7,7 +7,7 @@ process.env.JUKU_BLOG_HEARTBEATS_DIR = path.join(os.tmpdir(), `juku_blog_check_h
 
 const { test, after } = require('node:test');
 const assert = require('node:assert/strict');
-const { recordHeartbeat } = require('../scripts/lib/heartbeat');
+const { recordHeartbeat, recordFirstSeenIfAbsent, readFirstSeenMap } = require('../scripts/lib/heartbeat');
 const { checkBatches, formatAlertText } = require('../scripts/check_batch_heartbeats');
 
 after(() => {
@@ -16,9 +16,40 @@ after(() => {
 
 const NOW = new Date('2026-07-27T12:00:00.000Z').getTime();
 
-test('checkBatches: 記録が無いバッチはnever_recorded', () => {
-  const results = checkBatches([{ name: 'unknown_batch', label: '未記録バッチ', maxAgeHours: 24 }], NOW);
+// 監視導入直後の猶予(2026-07-28、実インシデント回帰テスト): 週次バッチのように実行周期が
+// maxAgeHoursと同程度長いバッチは、監視導入直後にheartbeatが1件も無い状態がしばらく続く。
+// firstSeenMapを渡さない(まだ一度もこのバッチ名を観測したことがない)場合は
+// pending_first_runとし、いきなりnever_recordedで警告してはいけない。
+
+test('checkBatches: firstSeenMapに無い(初めて観測した)バッチはpending_first_run(警告しない)', () => {
+  const results = checkBatches([{ name: 'unknown_batch', label: '未記録バッチ', maxAgeHours: 24 }], NOW, {});
+  assert.equal(results[0].status, 'pending_first_run');
+});
+
+test('checkBatches: firstSeenMapにあり猶予(maxAgeHours)以内ならpending_first_run', () => {
+  const results = checkBatches(
+    [{ name: 'unknown_batch', label: '未記録バッチ', maxAgeHours: 24 }],
+    NOW,
+    { unknown_batch: '2026-07-27T00:00:00.000Z' } // 12時間前、猶予24時間以内
+  );
+  assert.equal(results[0].status, 'pending_first_run');
+});
+
+test('checkBatches: firstSeenMapにあり猶予(maxAgeHours)を過ぎればnever_recorded', () => {
+  const results = checkBatches(
+    [{ name: 'unknown_batch', label: '未記録バッチ', maxAgeHours: 24 }],
+    NOW,
+    { unknown_batch: '2026-07-25T00:00:00.000Z' } // 60時間前、猶予24時間を超過
+  );
   assert.equal(results[0].status, 'never_recorded');
+});
+
+test('recordFirstSeenIfAbsent: 既存のバッチ名は上書きしない(冪等)', () => {
+  const dir = process.env.JUKU_BLOG_HEARTBEATS_DIR;
+  fs.mkdirSync(dir, { recursive: true });
+  recordFirstSeenIfAbsent(['batch_x'], '2026-07-01T00:00:00.000Z');
+  recordFirstSeenIfAbsent(['batch_x'], '2026-07-20T00:00:00.000Z'); // 後から呼んでも上書きされない
+  assert.equal(readFirstSeenMap().batch_x, '2026-07-01T00:00:00.000Z');
 });
 
 test('checkBatches: maxAgeHours以内かつok=trueならok', () => {
