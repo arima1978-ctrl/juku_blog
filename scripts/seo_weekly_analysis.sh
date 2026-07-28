@@ -30,6 +30,16 @@ run_step() {
 
 FAILED_STEPS=""
 
+# Search Console実績の定期取得(2026-07-28追加): このstep以前は同期を行うcron設定が無く、
+# features.competitor_keyword_analysis.search_console_enabled=trueにしても実績が全く更新
+# されないままだった(初回バックフィル後、次週以降もimpressions/clicksが0のままになる
+# バグとして発覚)。--start/--endを指定しない既定(直近3日)だと週次(7日おき)実行では
+# 間が抜けるため、前回実行分との重なりを持たせた8日前〜3日前(GSCの反映遅延を考慮)を
+# 明示的に指定する。feature flag無効時は無処理で終了するため他stepへの影響はない。
+GSC_SYNC_START=$(date -d "-8 days" +%Y-%m-%d 2>/dev/null || date +%Y-%m-%d)
+GSC_SYNC_END=$(date -d "-3 days" +%Y-%m-%d 2>/dev/null || date +%Y-%m-%d)
+run_step "seo_gsc_sync" node scripts/seo_gsc_sync.js --start="${GSC_SYNC_START}" --end="${GSC_SYNC_END}" || FAILED_STEPS="${FAILED_STEPS}seo_gsc_sync "
+
 run_step "seo_competitor_crawl" node scripts/seo_competitor_crawl.js || FAILED_STEPS="${FAILED_STEPS}seo_competitor_crawl "
 run_step "seo_page_analyze" node scripts/seo_page_analyze.js || FAILED_STEPS="${FAILED_STEPS}seo_page_analyze "
 run_step "seo_gap_calculate" node scripts/seo_gap_calculate.js || FAILED_STEPS="${FAILED_STEPS}seo_gap_calculate "
