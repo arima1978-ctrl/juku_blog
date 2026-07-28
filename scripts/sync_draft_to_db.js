@@ -6,8 +6,14 @@
 //
 // 使い方: node scripts/sync_draft_to_db.js data/drafts/2026-07-06-slug.md
 
-const fs = require('node:fs');
 const path = require('node:path');
+try {
+  process.loadEnvFile(path.join(__dirname, '..', '.env'));
+} catch {
+  // .envが無い場合はスキップ(WordPress自動投稿・Telegram通知は未設定として動作)
+}
+
+const fs = require('node:fs');
 const matter = require('gray-matter');
 const { marked } = require('marked');
 const { insertPost, updatePostBySlug, getPostBySlug, getPostById } = require('./lib/db');

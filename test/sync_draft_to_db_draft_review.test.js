@@ -71,6 +71,48 @@ test('sync_draft_to_db.js: sync_mode=draft_reviewの校舎はWordPress下書き�
   );
 });
 
+test('sync_draft_to_db.js: process.loadEnvFile()で.envを読み込んでいる(2026-07-28本番障害の回帰。子プロセスとして実行されるため.env読み込みが無いとWP_URL等が常にundefinedになる)', () => {
+  const source = fs.readFileSync(path.join(ROOT, 'scripts', 'sync_draft_to_db.js'), 'utf8');
+  assert.match(source, /process\.loadEnvFile\(/, '.envを読み込む処理が無いと、cron経由の子プロセス実行時にWP_URL等が読み込まれない');
+});
+
+test('sync_draft_to_db.js: WP_URL等が環境変数にあれば(.env読み込み後を想定)実際にWordPressへ接続を試みる(2026-07-28本番障害の回帰: あま本部初回のWP下書き同期が「.envに設定されていません」で失敗していた)', () => {
+  const branch = branchesDb.createBranch({ name: 'あま本部(envロード確認テスト)', slug: '__test_sync_env_load__' });
+  branchesDb.updateBranch(branch.id, { sync_mode: 'draft_review' });
+
+  const draftPath = path.join(TMP_DRAFTS_DIR, '2026-07-28-env-load-check.md');
+  fs.writeFileSync(
+    draftPath,
+    `---\ntitle: "envロード確認テスト記事"\nslug: "env-load-check"\ncategory: "地域情報"\nstatus: "verified"\n---\n本文。\n`,
+    'utf8'
+  );
+
+  closeDb();
+
+  const env = {
+    ...process.env,
+    JUKU_BRANCH_ID: String(branch.id),
+    JUKU_BRANCH_SLUG: branch.slug,
+    JUKU_BLOG_ERRORS_PATH: TMP_ERRORS,
+    // .env読み込み後に相当する状態を再現する(誰もlistenしていないポート = 確実に接続失敗するが、
+    // 「未設定」エラーとは別の実際の接続試行が発生することを確認する)
+    WP_URL: 'http://127.0.0.1:1',
+    WP_USERNAME: 'dummy',
+    WP_APP_PASSWORD: 'dummy',
+  };
+
+  const result = spawnSync('node', [path.join(ROOT, 'scripts', 'sync_draft_to_db.js'), draftPath], {
+    cwd: ROOT,
+    encoding: 'utf8',
+    env,
+  });
+  const combined = `${result.stdout}${result.stderr}`;
+
+  assert.equal(result.status, 0);
+  assert.ok(!combined.includes('.envに設定されていません'), `WP_URL等が環境変数にあるのに「未設定」エラーになってはいけない: ${combined}`);
+  assert.match(combined, /WordPress下書きへの同期に失敗しました/, '実際の接続試行(失敗)が発生しているべき');
+});
+
 test('sync_draft_to_db.js: sync_mode=scheduled(既定)の校舎は従来通りreview_pendingのままWordPress呼び出しをしない', () => {
   const branch = branchesDb.createBranch({ name: '小幡(scheduledテスト)', slug: '__test_sync_scheduled__' });
   // sync_modeは既定のまま(scheduled)
