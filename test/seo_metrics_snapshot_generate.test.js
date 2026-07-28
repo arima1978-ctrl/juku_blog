@@ -137,6 +137,44 @@ test('computeKeywordSnapshotsForBranch: implemented_atが週末以前なら実�
   assert.equal(notImplementedRow.isImplementedAsOfWeek, false);
 });
 
+function yesterdayAsWeekStart() {
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const y = yesterday.getFullYear();
+  const m = String(yesterday.getMonth() + 1).padStart(2, '0');
+  const d = String(yesterday.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`; // 昨日を「対象週の月曜」として渡す(週末はさらに6日後の未来)
+}
+
+test('CLI: 週末から3日経っていない対象週はbaseline無しだと保存を拒否する(2026-07-29、実インシデント回帰テスト)', () => {
+  const { spawnSync } = require('node:child_process');
+  const guardBranch = branchesDb.createBranch({ name: 'ガードテスト校A', slug: '__test_snapshot_guard_a__' });
+  const recentWeek = yesterdayAsWeekStart();
+
+  const result = spawnSync(
+    'node',
+    [path.join(ROOT, 'scripts', 'seo_metrics_snapshot_generate.js'), `--week=${recentWeek}`, `--branch-id=${guardBranch.id}`, '--save'],
+    { encoding: 'utf8', env: process.env }
+  );
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /まだ完全ではない可能性/);
+  assert.equal(seoDb.listSeoMetricsSnapshots(guardBranch.id).length, 0);
+});
+
+test('CLI: --baselineを指定すれば直近週でも防御チェックを回避して保存できる', () => {
+  const { spawnSync } = require('node:child_process');
+  const guardBranch = branchesDb.createBranch({ name: 'ガードテスト校B', slug: '__test_snapshot_guard_b__' });
+  const recentWeek = yesterdayAsWeekStart();
+
+  const result = spawnSync(
+    'node',
+    [path.join(ROOT, 'scripts', 'seo_metrics_snapshot_generate.js'), `--week=${recentWeek}`, `--branch-id=${guardBranch.id}`, '--baseline', '--save'],
+    { encoding: 'utf8', env: process.env }
+  );
+  assert.equal(result.status, 0, result.stderr);
+  assert.ok(seoDb.listSeoMetricsSnapshots(guardBranch.id).find((s) => s.week_start === recentWeek));
+});
+
 test('CLI: --dry-run(既定)ではDBへ保存しない', () => {
   execFileSync('node', [path.join(ROOT, 'scripts', 'seo_metrics_snapshot_generate.js'), `--week=${WEEK_START}`, `--branch-id=${BRANCH.id}`, '--dry-run'], {
     env: process.env,

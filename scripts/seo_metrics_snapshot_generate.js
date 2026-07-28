@@ -16,6 +16,10 @@ const seoDb = require('./lib/seo_db');
 const { listBranches } = require('./lib/branches_db');
 const { listEnabledSchoolPages } = require('./lib/seo/school_page_registry');
 
+// GSCの反映遅延(2〜3日)を安全に上回るための最小マージン(2026-07-29)。
+// 対象週の週末からこの日数未満しか経っていない非baseline実行は保存を拒否する。
+const MIN_DAYS_SINCE_WEEK_END = 3;
+
 function parseArgs(argv) {
   const has = (flag) => argv.includes(flag);
   const get = (prefix) => {
@@ -140,6 +144,26 @@ function main() {
   }
 
   const weekEnd = weekEndOf(week);
+
+  // 不完全な週の記録を防ぐ防御チェック(2026-07-29、実インシデント再発防止)。
+  // GSCの反映遅延(2〜3日)を考慮し、対象週の週末から最低MIN_DAYS_SINCE_WEEK_END日
+  // 経っていない場合は保存を拒否する(この欠陥が再発しても検知できるように)。
+  // --baselineは導入前の過去データバックフィル用であり、常に十分に過去の週のため対象外。
+  if (!baseline) {
+    const today = new Date();
+    const weekEndDate = new Date(`${weekEnd}T00:00:00`);
+    const daysSinceWeekEnd = Math.floor((today - weekEndDate) / (1000 * 60 * 60 * 24));
+    if (daysSinceWeekEnd < MIN_DAYS_SINCE_WEEK_END) {
+      console.error(
+        `[seo_metrics_snapshot_generate] 対象週(${week}〜${weekEnd})はまだ完全ではない可能性があります` +
+          `(週末から${daysSinceWeekEnd}日しか経っておらず、GSCの反映遅延を考慮すると不足しています。最低${MIN_DAYS_SINCE_WEEK_END}日必要)。` +
+          '--baselineを明示するか、より過去の週を指定してください。'
+      );
+      process.exitCode = 1;
+      return;
+    }
+  }
+
   // is_activeはダッシュボードが「今どの校舎を表示中か」を示すだけの可変なUIトグルであり、
   // 「この校舎を分析対象に含めるか」とは無関係(過去に他スクリプトで同じ誤用による実インシデントが
   // 複数回発生している)。既定では全校舎を対象にし、--branch-id指定時のみ絞り込む。

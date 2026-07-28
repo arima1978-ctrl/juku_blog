@@ -44,11 +44,12 @@ run_step "seo_competitor_crawl" node scripts/seo_competitor_crawl.js || FAILED_S
 run_step "seo_page_analyze" node scripts/seo_page_analyze.js || FAILED_STEPS="${FAILED_STEPS}seo_page_analyze "
 run_step "seo_gap_calculate" node scripts/seo_gap_calculate.js || FAILED_STEPS="${FAILED_STEPS}seo_gap_calculate "
 
-# SEO効果測定 週次スナップショット(2026-07-27): Gap判定の直後、対象週(今日を含む週の月曜)ぶんを保存する。
-# 2026-07-28修正: `date -d monday`はGNU dateの「次のmonday」解釈のため、日曜(このバッチの
-# 実行曜日)に実行すると6日後の月曜(未来の日付)を返してしまい、対象週がずれるバグがあった。
-# ISO week番号(%u、月曜=1)を使い、今日を含む週の月曜(未来にならない)を確実に計算する。
-WEEK_START=$(date -d "-$(($(date +%u)-1)) days" +%Y-%m-%d 2>/dev/null || date +%Y-%m-%d)
+# SEO効果測定 週次スナップショット(2026-07-27): Gap判定の直後、対象週ぶんを保存する。
+# 2026-07-29修正: 「今日を含む週」を対象にすると、GSCの反映遅延(2〜3日)により
+# その週の後半3日分のデータが記録時点で必ず欠けたまま保存されてしまう欠陥があった。
+# scripts/lib/seo/week_math.jsのgetLastCompleteWeekStart()で「先週(完全に終わっている週)」
+# を対象にする(常に7日分のGSC実績が反映遅延込みで揃っている状態で記録するため)。
+WEEK_START=$(node -e "console.log(require('./scripts/lib/seo/week_math').getLastCompleteWeekStart())" 2>/dev/null || date +%Y-%m-%d)
 run_step "seo_metrics_snapshot_generate" node scripts/seo_metrics_snapshot_generate.js --week="${WEEK_START}" --save || FAILED_STEPS="${FAILED_STEPS}seo_metrics_snapshot_generate "
 
 log "=== 完了 ==="
