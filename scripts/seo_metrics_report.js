@@ -39,6 +39,21 @@ function bucketReport(latest, previous, prefix) {
   };
 }
 
+// 校舎に帰属する実績(ブログ+校舎ページ)のみを合算する。「その他」(サイト共通の
+// トップページ・brand・LP等)は校舎の数字に混ぜない(2026-07-29ユーザー指示)。
+function attributedBucketReport(latest, previous) {
+  const impressions = latest.impressions_blog + latest.impressions_school_page;
+  const clicks = latest.clicks_blog + latest.clicks_school_page;
+  const previousImpressions = previous ? previous.impressions_blog + previous.impressions_school_page : null;
+  const previousClicks = previous ? previous.clicks_blog + previous.clicks_school_page : null;
+  return {
+    impressions,
+    clicks,
+    impressionsChangePct: previous ? pctChange(impressions, previousImpressions) : null,
+    clicksChangePct: previous ? pctChange(clicks, previousClicks) : null,
+  };
+}
+
 function buildBranchReport(branch) {
   const snapshots = seoDb.listSeoMetricsSnapshots(branch.id); // week_start昇順
   if (snapshots.length === 0) {
@@ -74,6 +89,9 @@ function buildBranchReport(branch) {
       schoolPage: bucketReport(latest, previous, 'school_page'),
       other: bucketReport(latest, previous, 'other'),
       total: bucketReport(latest, previous, 'total'),
+      // 校舎に帰属する実績(ブログ+校舎ページ)のみの合算。サイト共通の「その他」は含めない
+      // (2026-07-29ユーザー指示: 校舎別の見出しは校舎に帰属する数字だけにする)
+      attributed: attributedBucketReport(latest, previous),
     },
     gapFulfillment: {
       rate: latest.gap_fulfillment_rate,

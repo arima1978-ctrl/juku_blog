@@ -127,6 +127,11 @@ test('buildBranchReport: 直近2週のスナップショットから前週比・
   // 校舎ページ: 120 vs 100 -> +20%
   assert.equal(report.buckets.schoolPage.impressionsChangePct, 20);
 
+  // 校舎帰属分(ブログ+校舎ページ、その他は含めない): 220 vs 150 -> +46.67%
+  assert.equal(report.buckets.attributed.impressions, 220);
+  assert.equal(report.buckets.attributed.clicks, 18);
+  assert.ok(Math.abs(report.buckets.attributed.impressionsChangePct - (220 - 150) / 150 * 100) < 1e-9);
+
   assert.equal(report.gapFulfillment.fulfilled, 2);
   assert.equal(report.gapFulfillment.total, 7);
   assert.ok(Math.abs(report.gapFulfillment.previousRate - 1 / 6) < 1e-9);

@@ -43,27 +43,34 @@ function changeStr(pct) {
   return `(前週比${sign}${pct.toFixed(0)}%)`;
 }
 
-// 1校舎ぶんを3〜4行程度に収める(30秒で読める長さを維持するための制約)。
+// 1校舎ぶんは1〜2行に収める(30秒で読める長さを維持するための制約)。校舎に帰属する
+// 実績(ブログ+校舎ページ)のみを使い、サイト共通の「その他」は含めない
+// (2026-07-29ユーザー指示: 校舎別の見出しは校舎に帰属する数字だけにする)。
 function formatDigestBlock(r) {
   if (!r.hasData) return null;
   const rateStr = r.gapFulfillment.total > 0 ? `${(r.gapFulfillment.rate * 100).toFixed(0)}%` : 'N/A';
   const increment = r.taskCounts.implementedWeekIncrement;
   const incrementStr = increment == null ? '-' : `${increment}件`;
-  return [
-    `【${r.branchName}】`,
-    `表示回数 ${r.buckets.total.impressions.toLocaleString()}回${changeStr(r.buckets.total.impressionsChangePct)} / クリック${r.buckets.total.clicks}${changeStr(r.buckets.total.clicksChangePct)}`,
-    `  内訳: ブログ${r.buckets.blog.impressions} / 校舎ページ${r.buckets.schoolPage.impressions} / その他${r.buckets.other.impressions}`,
-    `ギャップ充足率 ${rateStr}(${r.gapFulfillment.fulfilled}/${r.gapFulfillment.total}) / 今週実施${incrementStr}`,
-  ].join('\n');
+  const a = r.buckets.attributed;
+  return (
+    `【${r.branchName}】${a.impressions.toLocaleString()}回/${a.clicks}クリック${changeStr(a.impressionsChangePct)}` +
+    `(内訳: ブログ${r.buckets.blog.impressions}・校舎ページ${r.buckets.schoolPage.impressions}) / ` +
+    `充足率${rateStr}(${r.gapFulfillment.fulfilled}/${r.gapFulfillment.total}) / 実施${incrementStr}`
+  );
 }
 
 // reports: buildBranchReport()の結果配列。1件もhasDataが無ければnullを返す
-// (無意味な「データなし」通知を送らないため)。
+// (無意味な「データなし」通知を送らないため)。サイト共通の「その他」を含む
+// サイト全体の数字は校舎ごとに繰り返さず、独立した1行として1回だけ表示する
+// (2026-07-29ユーザー指示)。
 function formatDigest(reports) {
   const blocks = reports.map(formatDigestBlock).filter(Boolean);
   if (blocks.length === 0) return null;
-  const weekLabel = reports.find((r) => r.hasData).latestWeek;
-  return [`📊 週次SEOダイジェスト(${weekLabel.weekStart}〜${weekLabel.weekEnd}週)`, '', ...blocks, '', '詳細: node scripts/seo_metrics_report.js'].join('\n');
+  const withData = reports.find((r) => r.hasData);
+  const weekLabel = withData.latestWeek;
+  const t = withData.buckets.total;
+  const siteLine = `🌐 サイト全体: ${t.impressions.toLocaleString()}回/${t.clicks}クリック${changeStr(t.impressionsChangePct)}`;
+  return [`📊 週次SEOダイジェスト(${weekLabel.weekStart}〜${weekLabel.weekEnd}週)`, siteLine, ...blocks, '', '詳細: node scripts/seo_metrics_report.js'].join('\n');
 }
 
 async function main() {

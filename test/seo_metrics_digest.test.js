@@ -30,7 +30,7 @@ test('formatDigestBlock: hasData=falseはnullを返す(通知に含めない)', 
   assert.equal(formatDigestBlock({ hasData: false }), null);
 });
 
-test('formatDigestBlock: 4行程度の簡潔なブロックを生成する', () => {
+test('formatDigestBlock: 校舎に帰属する数字(ブログ+校舎ページ)のみの簡潔な1行を生成する', () => {
   const block = formatDigestBlock({
     hasData: true,
     branchName: 'ダイジェストテスト校',
@@ -39,16 +39,20 @@ test('formatDigestBlock: 4行程度の簡潔なブロックを生成する', () 
       schoolPage: { impressions: 20, clicks: 2 },
       other: { impressions: 970, clicks: 90 },
       total: { impressions: 1000, clicks: 93, impressionsChangePct: 20, clicksChangePct: -5 },
+      attributed: { impressions: 30, clicks: 3, impressionsChangePct: 50, clicksChangePct: -10 },
     },
     gapFulfillment: { rate: 2 / 7, fulfilled: 2, total: 7 },
     taskCounts: { implementedWeekIncrement: 1 },
   });
   assert.match(block, /ダイジェストテスト校/);
-  assert.match(block, /1,000回\(前週比\+20%\)/);
+  // 校舎帰属分(30回)を使い、サイト全体の数字(1,000回)は使わない
+  assert.match(block, /30回\/3クリック\(前週比\+50%\)/);
+  assert.match(block, /ブログ10・校舎ページ20/);
+  assert.doesNotMatch(block, /その他/);
   assert.match(block, /2\/7/);
-  assert.match(block, /今週実施1件/);
-  // 30秒で読める長さを維持する制約: 1校舎ぶんは4行以内
-  assert.ok(block.split('\n').length <= 4, `1校舎ぶんが長すぎる(${block.split('\n').length}行)`);
+  assert.match(block, /実施1件/);
+  // 30秒で読める長さを維持する制約: 1校舎ぶんは1行
+  assert.equal(block.split('\n').length, 1, `1校舎ぶんが長すぎる(${block.split('\n').length}行)`);
 });
 
 test('formatDigestBlock: implementedWeekIncrementがnullなら"-"表示', () => {
@@ -60,18 +64,19 @@ test('formatDigestBlock: implementedWeekIncrementがnullなら"-"表示', () => 
       schoolPage: { impressions: 0, clicks: 0 },
       other: { impressions: 0, clicks: 0 },
       total: { impressions: 0, clicks: 0, impressionsChangePct: null, clicksChangePct: null },
+      attributed: { impressions: 0, clicks: 0, impressionsChangePct: null, clicksChangePct: null },
     },
     gapFulfillment: { rate: 0, fulfilled: 0, total: 0 },
     taskCounts: { implementedWeekIncrement: null },
   });
-  assert.match(block, /今週実施-/);
+  assert.match(block, /実施-/);
 });
 
 test('formatDigest: 全校舎hasData=falseならnullを返す(無意味な通知を送らない)', () => {
   assert.equal(formatDigest([{ hasData: false }, { hasData: false }]), null);
 });
 
-test('formatDigest: 見出し・複数校舎ブロック・フルレポート誘導を含む', () => {
+test('formatDigest: 見出し・サイト全体行(1回だけ)・複数校舎ブロック・フルレポート誘導を含む', () => {
   const r = {
     hasData: true,
     branchName: 'Y校',
@@ -80,13 +85,17 @@ test('formatDigest: 見出し・複数校舎ブロック・フルレポート誘
       blog: { impressions: 1, clicks: 0 },
       schoolPage: { impressions: 2, clicks: 0 },
       other: { impressions: 3, clicks: 0 },
-      total: { impressions: 6, clicks: 0, impressionsChangePct: null, clicksChangePct: null },
+      total: { impressions: 6, clicks: 0, impressionsChangePct: -10, clicksChangePct: null },
+      attributed: { impressions: 3, clicks: 0, impressionsChangePct: null, clicksChangePct: null },
     },
     gapFulfillment: { rate: 0, fulfilled: 0, total: 1 },
     taskCounts: { implementedWeekIncrement: 0 },
   };
   const text = formatDigest([r]);
   assert.match(text, /週次SEOダイジェスト\(2026-07-13〜2026-07-19週\)/);
+  assert.match(text, /🌐 サイト全体: 6回\/0クリック\(前週比-10%\)/);
+  // サイト全体行は1回だけ(校舎ブロックには繰り返さない)
+  assert.equal((text.match(/サイト全体/g) || []).length, 1);
   assert.match(text, /Y校/);
   assert.match(text, /node scripts\/seo_metrics_report\.js/);
 });
