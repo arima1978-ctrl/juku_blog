@@ -290,6 +290,14 @@ CTA(`soroban_trial`等)で各ブランドページへ誘導する「記事ファ
   ジャンルにも貯まった段階でpriority・下限を実測データに基づき再調整する。
 - `scripts/lib/theme_calendar.js`(ダッシュボード「テーマカレンダー」タブのプレビュー)も同じ
   `locked_category`絞り込みを再現しており、実際の生成結果とプレビューが食い違わない。
+- **あま本部校には適用しない**(2026-07-29ユーザー決定、当面は塾記事のみに集中)。
+  `branches/ama-honbu/config/calendar.yaml`が校舎専用ファイルとして既に存在するため、
+  `scripts/lib/config.js`のbranch-aware解決(校舎別ファイルが存在すれば完全に上書きし、
+  共有ファイルとのフィールド単位マージは行わない)により、共有`config/calendar.yaml`の
+  `locked_category`は自動的にあま本部へ波及しない。この非波及は`test/branch_aware_config.test.js`
+  で固定済み。将来あま本部にも導入する場合は、同ファイルへの`locked_category`追加に加え、
+  `branches/ama-honbu/config/seasonal_topics.yaml`(現状naraigoto系0件)へあま市版の
+  エントリを新規に用意する必要がある。
 
 ## SEO効果測定 週次スナップショット(2026-07-27〜)
 

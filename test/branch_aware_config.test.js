@@ -107,3 +107,30 @@ test('loadCalendarConfig/loadSchoolPagesConfig等: branchId未指定は従来通
   const calendar = config.loadCalendarConfig();
   assert.ok(calendar && calendar.weekdays, '既存の共有config/calendar.yamlの内容が返るべき');
 });
+
+// 習い事の年間バランス構造化(2026-07-29)は小幡校(共有config)限定の機能で、あま本部校
+// (branches/ama-honbu)には当面適用しない、というユーザー決定を固定する回帰テスト。
+// 実ファイル(branches/ama-honbu/config/calendar.yaml)を実際のbranch-aware解決経由で
+// 読み込み、locked_categoryが一切波及していないことを検証する(テストDBは一時ファイルだが、
+// 参照先のbranches/ama-honbu/config/はテスト用に作った一時ディレクトリではなく実ファイル)。
+test('あま本部校: 共有config/calendar.yamlのlocked_category(習い事枠)が波及していないことを固定する(2026-07-29ユーザー決定: 当面は塾記事のみに集中)', () => {
+  const branch = branchesDb.createBranch({ name: 'あま本部(テスト)', slug: 'ama-honbu' });
+
+  const source = config.resolveYamlSource('config/calendar.yaml', branch.id);
+  assert.equal(source.isSharedFallback, false, 'あま本部専用のcalendar.yamlを読んでいるべき(共有へのフォールバックではない)');
+  assert.equal(source.absPath, path.join(config.ROOT, 'branches', 'ama-honbu', 'config', 'calendar.yaml'));
+
+  const calendar = config.loadCalendarConfig(branch.id);
+  for (const [day, entry] of Object.entries(calendar.weekdays)) {
+    assert.equal(entry.locked_category, undefined, `あま本部のcalendar.yaml「${day}」にlocked_categoryが設定されている(習い事枠は当面小幡校限定のはず)`);
+  }
+});
+
+test('小幡校(共有config): locked_categoryが設定されている曜日は「習い事紹介」カテゴリと一致する(あま本部との対照確認)', () => {
+  const sharedCalendar = config.loadCalendarConfig(); // branchId未指定 = 共有config
+  const lockedDays = Object.entries(sharedCalendar.weekdays).filter(([, entry]) => entry.locked_category);
+  assert.ok(lockedDays.length > 0, '共有config側にはlocked_categoryが設定された曜日が存在するはず(小幡校では習い事枠を運用中)');
+  for (const [, entry] of lockedDays) {
+    assert.equal(entry.locked_category, '習い事紹介');
+  }
+});
