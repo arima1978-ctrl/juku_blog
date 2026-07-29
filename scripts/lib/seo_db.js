@@ -108,10 +108,16 @@ function listCompetitors({ crawlEnabledOnly, branchId } = {}) {
   return conn.prepare(query).all(params);
 }
 
+// last_error_at/last_error_messageもここで必ずクリアする(2026-07-29修正)。以前は成功時に
+// クリアしておらず、一度でもクロールエラーが起きた競合は、その後何度成功していても
+// ダッシュボードに「⚠️エラーあり」が表示され続ける不具合があった(実インシデント:
+// 2026-07-17のbranch_id移行時エラーが、2026-07-25時点の複数回の成功後も表示されたまま)。
 function recordCompetitorCrawlSuccess(id, atIso) {
   const conn = getDb();
   conn
-    .prepare('UPDATE seo_competitors SET last_crawled_at = :at, last_success_at = :at, updated_at = :at WHERE id = :id')
+    .prepare(
+      'UPDATE seo_competitors SET last_crawled_at = :at, last_success_at = :at, last_error_at = NULL, last_error_message = NULL, updated_at = :at WHERE id = :id'
+    )
     .run({ at: atIso, id });
 }
 
