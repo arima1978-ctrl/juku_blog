@@ -93,7 +93,10 @@ async function resolveGroupPreview({ pageType, pageId, pageContextDeps } = {}) {
   if (pageType) enrichedTasks = enrichedTasks.filter((t) => t.targetPageType === pageType);
   if (pageId) enrichedTasks = enrichedTasks.filter((t) => t.targetPageId === pageId);
 
-  const result = groupTasksByPage(enrichedTasks);
+  // 2026-07-29修正: allowedStatuses省略時の既定はGROUPABLE_STATUS('proposed'のみ)のため、
+  // buildEnrichedTasks()が取得したapproved Taskがここで弾かれ、ungroupedになってしまう
+  // バグがあった(stale_page_plan_regenerator.jsと揃える)。
+  const result = groupTasksByPage(enrichedTasks, { allowedStatuses: ['proposed', 'approved'] });
 
   const factCheckedGroups = [];
   for (const group of result.groups) {

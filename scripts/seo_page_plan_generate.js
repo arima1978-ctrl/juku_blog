@@ -42,7 +42,11 @@ async function resolvePagePlans({ pageType, pageId, save = false, pageContextDep
   if (pageType) enrichedTasks = enrichedTasks.filter((t) => t.targetPageType === pageType);
   if (pageId) enrichedTasks = enrichedTasks.filter((t) => t.targetPageId === pageId);
 
-  const grouped = groupTasksByPage(enrichedTasks);
+  // 2026-07-29修正: allowedStatuses省略時の既定はGROUPABLE_STATUS('proposed'のみ)のため、
+  // Page Plan生成前に個別承認済み(approved)になっていたTaskが初回生成から静かに漏れる
+  // バグがあった(stale_page_plan_regenerator.jsは既に['proposed','approved']を明示していたが、
+  // 初回生成側の更新が漏れていた。過去のno_primary_candidateバグと同型)。
+  const grouped = groupTasksByPage(enrichedTasks, { allowedStatuses: ['proposed', 'approved'] });
   const stamp = nowIso || new Date().toISOString();
 
   const plans = [];

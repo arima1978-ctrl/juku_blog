@@ -21,6 +21,13 @@ AI Growth Directorが生成する`improve_school_page`/`improve_brand_page`タ�
 例外承認フローを通ること**。Page Plan/Page Draftの生成・DB保存自体はWordPressへの
 書き込みを伴わないため通常の運用で問題ない(承認が必要なのは最終の反映ステップのみ)。
 
+## status等のenumフィールドに新しい値を追加する際の注意(2026-07-29)
+
+`status`(またはそれに類するenum的な状態フィールド)に新しい値を追加・使用する場合、そのフィールドを
+条件にDBを読んでいる箇所を全数確認し、新しい値が意図せず除外されないか確認すること(過去に
+`seo_tasks.status`・`seo_keyword_candidates.status`で同型バグが複数回発生している。値の除外は
+コメント等で意図を明記し、単なる書き漏れと区別できるようにする)。
+
 ## 本番環境での破壊的操作は事前承認必須(厳守)
 
 2026-07-17、本番サーバー(`data/posts.sqlite`)上で試行錯誤中に `rm data/posts.sqlite` が直接実行され、

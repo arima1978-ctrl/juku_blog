@@ -72,6 +72,20 @@ async function resolveApply(
   const draft = seoDbImpl.getSeoPageDraftById(draftId);
   if (!draft) return { ok: false, error: 'draft_not_found', message: `Page Draft id=${draftId} が見つかりません` };
 
+  // 2026-07-29修正: draft.statusを一切見ていなかったため、既にapplied(反映済み)の
+  // Draftを再度--draft-id指定するだけで無警告に再反映できてしまっていた(二重反映防止漏れ)。
+  // 'generated'にはPage Draft専用のレビュー承認機構が現状無い(seo_page_plans側と異なり
+  // generated→approvedへ遷移させる仕組みが未実装)ため、'approved'必須にはせず、
+  // 既にapplied状態であることのみを拒否する(反映自体の可否判断はCLAUDE.mdの承認フロー
+  // ——差分提示→人間の明示承認→1件ずつ--confirm実行——に委ねる)。
+  if (draft.status === 'applied') {
+    return {
+      ok: false,
+      error: 'draft_already_applied',
+      message: `Page Draft id=${draftId} は既にapplied状態です(${draft.applied_at}に反映済み)。再反映が必要な場合は新しいDraftを生成してください。`,
+    };
+  }
+
   const plan = seoDbImpl.getSeoPagePlanById(draft.page_plan_id);
   if (!plan) {
     return { ok: false, error: 'page_plan_not_found', message: `Page Draft id=${draftId} に対応するPage Plan(id=${draft.page_plan_id})が見つかりません` };

@@ -44,6 +44,17 @@ function fakeFetchImpl({ currentContent = '古い導入文です。', applyOk = 
   return impl;
 }
 
+test('resolveApply: 既にapplied状態のDraftは再反映を拒否する(2026-07-29、二重反映防止漏れの回帰テスト)', async () => {
+  const appliedDraft = { ...DRAFT, status: 'applied', applied_at: '2026-07-29T00:00:00.000Z' };
+  const seoDbImpl = makeSeoDbImpl({ draft: appliedDraft });
+  const result = await resolveApply(
+    { draftId: 1, confirm: true },
+    { seoDbImpl, getBrandPageByIdImpl: () => BRAND_PAGE, fetchImpl: async () => { throw new Error('呼ばれてはいけない'); }, env: FAKE_ENV }
+  );
+  assert.equal(result.ok, false);
+  assert.equal(result.error, 'draft_already_applied');
+});
+
 test('resolveApply: Draftが見つからなければdraft_not_found', async () => {
   const seoDbImpl = makeSeoDbImpl({ draft: null });
   const result = await resolveApply({ draftId: 999, confirm: false }, { seoDbImpl, fetchImpl: fakeFetchImpl() });

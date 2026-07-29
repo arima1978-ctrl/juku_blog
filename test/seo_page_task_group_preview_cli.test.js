@@ -152,6 +152,20 @@ test('resolveGroupPreview: page-type/page-id指定で対象を絞り込める', 
   assert.equal(preview.groups[0].groupKey, 'school_page:another-fixture');
 });
 
+test('resolveGroupPreview: 個別承認済み(approved)単独のTaskもgroupされる(2026-07-29回帰テスト、allowedStatuses省略バグ)', async () => {
+  // POST /api/growth/tasks/:id/approveでPage Plan生成前にTaskだけがapprovedになったケースを
+  // 再現(proposedの兄弟Taskが無い単独ケース)。allowedStatuses省略でgroupTasksByPage()を
+  // 呼ぶと既定['proposed']のみが対象になり、approved単独のこのTaskがungrouped('not_proposed'/
+  // 'not_groupable_task_type'相当ではなく'not_proposed'系理由)扱いになる不具合があった。
+  const task = seedTask({ keyword: '事前承認済みテスト 塾', pageId: 'preapproved-fixture', gapType: 'weak', dataConfidence: 90 });
+  seoDb.updateTaskStatus(task.id, 'approved', nowIso);
+
+  const preview = await resolveGroupPreview({ pageType: 'school_page', pageId: 'preapproved-fixture', pageContextDeps: unfetchablePageContextDeps() });
+  assert.equal(preview.groupCount, 1, 'approved単独のTaskがgroupされるはず');
+  assert.equal(preview.ungrouped.length, 0);
+  assert.equal(preview.groups[0].primaryTask.taskId, task.id);
+});
+
 test('resolveGroupPreview: 出力JSONが有効なJSONである', async () => {
   const preview = await resolveGroupPreview({ pageContextDeps: unfetchablePageContextDeps() });
   const json = JSON.stringify(preview, null, 2);

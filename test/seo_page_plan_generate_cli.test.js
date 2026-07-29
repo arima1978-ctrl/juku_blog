@@ -136,6 +136,20 @@ test('resolvePagePlans: page-type/page-id指定で対象を絞り込める', asy
   assert.equal(result.plans[0].plan.targetPageId, 'plan-another');
 });
 
+test('resolvePagePlans: Page Plan生成前に個別承認済み(approved)になったTaskも初回生成対象になる(2026-07-29回帰テスト)', async () => {
+  // ダッシュボードのPOST /api/growth/tasks/:id/approveでPage Plan生成前にTaskだけが
+  // approvedになったケースを再現(proposedの兄弟Taskが無い単独ケース)。
+  // allowedStatuses省略でgroupTasksByPage()を呼ぶと'proposed'のみが対象になり、
+  // approved単独のこのTaskがungrouped扱いになりPage Planが永遠に生成されない不具合があった。
+  const task = seedTask({ keyword: 'Planテスト 塾 事前承認済み', pageId: 'plan-preapproved' });
+  seoDb.updateTaskStatus(task.id, 'approved', nowIso);
+
+  const result = await resolvePagePlans({ pageType: 'school_page', pageId: 'plan-preapproved', save: false, pageContextDeps: unfetchablePageContextDeps() });
+  assert.equal(result.planCount, 1, 'approved単独のTaskからPage Planが生成されるはず');
+  assert.equal(result.ungrouped.length, 0);
+  assert.equal(result.plans[0].plan.primaryTaskId, task.id);
+});
+
 test('resolvePagePlans: approved Planはsave=trueでもlockedとして扱われ更新されない', async () => {
   seedTask({ keyword: 'Planテスト 塾 approved-lock', pageId: 'plan-approved-lock' });
   const first = await resolvePagePlans({ pageType: 'school_page', pageId: 'plan-approved-lock', save: true, pageContextDeps: unfetchablePageContextDeps() });
