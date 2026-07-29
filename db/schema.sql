@@ -545,12 +545,13 @@ CREATE TABLE IF NOT EXISTS seo_page_drafts (
   validation_result       TEXT NOT NULL, -- JSON({valid,errors,warnings})
   validation_status       TEXT NOT NULL, -- 'valid'/'invalid'
 
-  status                  TEXT NOT NULL DEFAULT 'generated', -- generated/reviewing/approved/rejected
+  status                  TEXT NOT NULL DEFAULT 'generated', -- generated/reviewing/approved/rejected/applied
 
   edited_text             TEXT, -- 人間編集用(今回は常にNULL。編集UIは未実装)
 
   generated_at            TEXT NOT NULL,
   updated_at              TEXT NOT NULL,
+  applied_at              TEXT, -- scripts/seo_brand_page_draft_apply.jsでWordPress本文へ反映した日時(2026-07-29)
 
   UNIQUE (page_plan_id, draft_version),
   FOREIGN KEY (page_plan_id) REFERENCES seo_page_plans(id)

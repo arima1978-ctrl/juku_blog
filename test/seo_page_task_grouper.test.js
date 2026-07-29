@@ -139,10 +139,18 @@ test('グループ化: status!=proposedは対象外', () => {
   assert.equal(ungrouped[0].reason, 'not_proposed');
 });
 
-test('グループ化: task_type!=improve_school_pageは対象外', () => {
+test('グループ化: task_type!=improve_school_page/improve_brand_pageは対象外', () => {
   const tasks = [makeTask({ taskId: 1, taskType: 'create_article' })];
   const { ungrouped } = groupTasksByPage(tasks);
-  assert.equal(ungrouped[0].reason, 'not_improve_school_page');
+  assert.equal(ungrouped[0].reason, 'not_groupable_task_type');
+});
+
+test('グループ化: improve_brand_pageもimprove_school_pageと同様にグループ化対象(2026-07-29)', () => {
+  const tasks = [makeTask({ taskId: 1, taskType: 'improve_brand_page', targetPageType: 'brand_page', targetPageId: 'eikaiwa' })];
+  const { groups, ungrouped } = groupTasksByPage(tasks);
+  assert.equal(ungrouped.length, 0);
+  assert.equal(groups.length, 1);
+  assert.equal(groups[0].groupKey, 'brand_page:eikaiwa');
 });
 
 test('checkEligibility: 全条件を満たせばnull(対象)を返す', () => {

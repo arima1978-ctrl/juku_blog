@@ -253,6 +253,7 @@ function getDb() {
   ensureColumn(db, 'seo_metrics_snapshots', 'impressions_other', 'INTEGER NOT NULL DEFAULT 0');
   ensureColumn(db, 'seo_metrics_snapshots', 'clicks_other', 'INTEGER NOT NULL DEFAULT 0');
   ensureColumn(db, 'seo_metrics_keyword_snapshots', 'content_category', 'TEXT'); // juku/naraigoto/null(2026-07-29)
+  ensureColumn(db, 'seo_page_drafts', 'applied_at', 'TEXT'); // WordPress反映日時(2026-07-29、statusに'applied'を追加)
 
   // 記事生成パイプラインの複数校舎対応 Phase 1: 校舎別ディレクトリ・ログ名に使うslug
   // (ASCII、ダッシュボードの校舎編集フォームで変更可能)。日本語の校舎名から機械的に

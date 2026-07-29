@@ -15,6 +15,7 @@ const { getPostById } = require('./lib/db');
 const seoDb = require('./lib/seo_db');
 const { allocateUrl } = require('./lib/seo/url_allocator');
 const { findSchoolPageByArea } = require('./lib/seo/school_page_registry');
+const { findBrandPageByKeyword } = require('./lib/seo/brand_page_registry');
 const { isLowIntentKeyword } = require('./lib/seo/priority_scorer');
 const {
   computeOpportunityScore,
@@ -79,6 +80,7 @@ function buildTaskForCandidate(
     opportunityWeights,
     totalCompetitorsConsidered,
     findSchoolPage = findSchoolPageByArea,
+    findBrandPage = findBrandPageByKeyword,
     competitorTypeCountsByKeyword = new Map(),
   }
 ) {
@@ -89,6 +91,8 @@ function buildTaskForCandidate(
   // 見ておらず、あま本部校の候補が校舎ページ未登録(no_registered_school_page_or_landing_page)
   // としてmonitor止まりになっていた。
   const schoolPage = findSchoolPage(candidate.target_area, candidate.branch_id);
+  // ブランドページはbranch_idを持たない(サイト全体共通)ため、校舎に関わらず同じレジストリを見る。
+  const brandPage = findBrandPage(candidate.normalized_keyword);
 
   const allocation = allocateUrl({
     normalizedKeyword: candidate.normalized_keyword,
@@ -100,6 +104,9 @@ function buildTaskForCandidate(
     existingSchoolPageUrl: schoolPage ? schoolPage.url : null,
     existingSchoolPageId: schoolPage ? schoolPage.id : null,
     existingSchoolPageName: schoolPage ? schoolPage.name : null,
+    existingBrandPageUrl: brandPage ? brandPage.url : null,
+    existingBrandPageId: brandPage ? brandPage.id : null,
+    existingBrandPageName: brandPage ? brandPage.name : null,
   });
 
   const estimatedEffortMinutes = effortMinutesByTaskType[allocation.taskType] ?? null;
@@ -125,9 +132,9 @@ function buildTaskForCandidate(
     candidate.competitor_count != null ? `競合${candidate.competitor_count}社` : null,
   ].filter(Boolean);
 
-  // 校舎ページ一致(allocation.targetUrl)を優先し、無ければ既存記事のURLを解決する。
+  // 校舎ページ/ブランドページ一致(allocation.targetUrl)を優先し、無ければ既存記事のURLを解決する。
   const targetUrl = allocation.targetUrl || resolveTargetUrl(candidate.existing_post_id);
-  const targetPageType = allocation.targetUrl ? 'school_page' : null;
+  const targetPageType = allocation.taskType === 'improve_brand_page' ? 'brand_page' : allocation.targetUrl ? 'school_page' : null;
 
   // Sprint 3.8: Impact(期待流入・CV増)とDifficulty(1〜100)を算出する。
   // 既存のopportunity_score(加算式)とは完全に別軸の指標であり、置き換えない。

@@ -21,7 +21,8 @@ const path = require('node:path');
 const { buildDraftPreview } = require('./draft_generator');
 const { resolveDraftPreview: resolvePageDraftPreview } = require('../../seo_page_draft_preview');
 
-const SCHOOL_PAGE_TYPE = 'school_page';
+// 2026-07-29: improve_brand_page(そろばん/英会話/習字等)もPage Plan経由の振り分け対象に追加。
+const PAGE_PLAN_ELIGIBLE_TYPES = new Set(['school_page', 'brand_page']);
 
 function promptFilePath(outputDir, batchDate, taskId) {
   return path.join(outputDir, `weekly_${batchDate}_task_${taskId}.prompt.json`);
@@ -48,7 +49,7 @@ function blockedItem(task, draftStatus, { pagePlanId = null, pagePlanStatus = nu
 // pageContextDeps: buildPageContext/fetchPageContextへの依存注入(テスト用、実通信回避)。
 // outputDir: Promptファイルの出力先ディレクトリ(テストでは一時ディレクトリを指定する)。
 async function dispatchOneTask(task, batchDate, { seoDbImpl, pageContextDeps, outputDir, resolvePageDraftPreviewImpl = resolvePageDraftPreview, buildDraftPreviewImpl = buildDraftPreview }) {
-  if (task.target_page_type === SCHOOL_PAGE_TYPE) {
+  if (PAGE_PLAN_ELIGIBLE_TYPES.has(task.target_page_type)) {
     const pagePlan = seoDbImpl.getSeoPagePlanByPage(task.target_page_type, task.target_page_id);
 
     if (!pagePlan) {

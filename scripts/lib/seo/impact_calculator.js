@@ -17,6 +17,7 @@ const CTR_CURVE = [
 // 未登録のtask_type(monitor/excludeなど)は目標順位なし(=Impactは常に0)。
 const DEFAULT_TARGET_POSITION_BY_TASK_TYPE = {
   improve_school_page: 5,
+  improve_brand_page: 5,
   add_faq: 5,
   add_internal_links: 5,
   improve_existing_article: 6,
@@ -45,9 +46,10 @@ function resolveTargetPosition(taskType, currentPosition) {
   return defaultTarget;
 }
 
-// targetPageType: 'school_page'ならCVR高め、それ以外(null/ブログ等)は低め。
+// targetPageType: 'school_page'/'brand_page'(いずれも申込・体験を訴求するLP)ならCVR高め、
+// それ以外(null/ブログ等)は低め(2026-07-29: ブランドページも同じ扱いに追加)。
 function resolveCvr(targetPageType) {
-  return targetPageType === 'school_page' ? CVR_SCHOOL_PAGE : CVR_DEFAULT;
+  return targetPageType === 'school_page' || targetPageType === 'brand_page' ? CVR_SCHOOL_PAGE : CVR_DEFAULT;
 }
 
 // searchDemand: seo_keyword_candidates.search_demand相当(月間検索数、null可)。

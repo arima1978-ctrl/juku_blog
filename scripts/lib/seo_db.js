@@ -1976,6 +1976,18 @@ function getSeoPageDraftById(id) {
   return row ? parsePageDraftJsonFields(row) : null;
 }
 
+// scripts/seo_brand_page_draft_apply.jsがWordPress本文への反映(REST PATCH)成功後にのみ呼ぶ。
+// statusをapplied・applied_atを記録するだけで、他のカラム(生成文面等)は一切変更しない。
+function markSeoPageDraftApplied(id, appliedAt) {
+  const conn = getDb();
+  const current = conn.prepare('SELECT id FROM seo_page_drafts WHERE id = ?').get(id);
+  if (!current) throw new Error(`markSeoPageDraftApplied: page draft id=${id} が見つかりません`);
+  conn
+    .prepare("UPDATE seo_page_drafts SET status = 'applied', applied_at = :applied_at, updated_at = :applied_at WHERE id = :id")
+    .run({ applied_at: appliedAt, id });
+  return getSeoPageDraftById(id);
+}
+
 function getLatestSeoPageDraftByPlan(pagePlanId) {
   const conn = getDb();
   const row = conn
@@ -2372,6 +2384,7 @@ module.exports = {
   transitionSeoPagePlanStatus,
   regenerateStaleSeoPagePlan,
   getSeoPageDraftById,
+  markSeoPageDraftApplied,
   getLatestSeoPageDraftByPlan,
   listSeoPageDrafts,
   getNextSeoPageDraftVersion,

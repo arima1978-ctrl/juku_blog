@@ -4,7 +4,9 @@
 // seo_page_draftsへ保存可能なプレーンオブジェクトを組み立てる決定的処理。
 // DB書き込みは一切行わない(このモジュールはオブジェクトを組み立てるだけ)。
 
-const ALLOWED_PAGE_DRAFT_STATUSES = new Set(['generated', 'reviewing', 'approved', 'rejected']);
+// 'applied': scripts/seo_brand_page_draft_apply.jsがWordPress本文へ実際に反映した後の終端状態
+// (2026-07-29追加。反映は必ず人間の明示承認[--confirm]後、1件ずつ)。
+const ALLOWED_PAGE_DRAFT_STATUSES = new Set(['generated', 'reviewing', 'approved', 'rejected', 'applied']);
 const SHA256_HEX_PATTERN = /^[0-9a-f]{64}$/i;
 
 // pagePlan: scripts/lib/seo_db.jsのgetSeoPagePlanById()相当(snake_case)。

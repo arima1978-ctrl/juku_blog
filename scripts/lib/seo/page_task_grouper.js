@@ -11,7 +11,9 @@ const { evaluateSupportingTaskFact } = require('./supporting_task_fact_checker')
 
 // V1のグルーピング対象。create_article(target_url=nullが前提)は「まだページが存在しない
 // 記事企画」であり、ページ単位グルーピングの対象外とする(意図的な設計判断)。
-const GROUPABLE_TASK_TYPE = 'improve_school_page';
+// 2026-07-29: improve_brand_page(そろばん/英会話/習字等のブランドページ)を追加。
+// 校舎ページと同じ「既存ページの本文改善」という性質のため、同じグルーピング機構に乗せる。
+const GROUPABLE_TASK_TYPES = new Set(['improve_school_page', 'improve_brand_page']);
 const GROUPABLE_STATUS = 'proposed';
 
 // gap_classifier.jsの意味と整合させた優先順位(数値が小さいほど優先度が高い)。
@@ -46,7 +48,7 @@ function gapTypeRank(gapType) {
 // ['proposed', 'approved']を明示的に渡す(2026-07-27修正。詳細はそちらのコメント参照)。
 function checkEligibility(task, allowedStatuses = [GROUPABLE_STATUS]) {
   if (!allowedStatuses.includes(task.status)) return 'not_proposed';
-  if (task.taskType !== GROUPABLE_TASK_TYPE) return 'not_improve_school_page';
+  if (!GROUPABLE_TASK_TYPES.has(task.taskType)) return 'not_groupable_task_type';
   if (!task.targetPageType) return 'missing_target_page_type';
   if (!task.targetPageId) return 'missing_target_page_id';
   if (!task.targetUrl) return 'missing_target_url';
@@ -341,7 +343,7 @@ module.exports = {
   compareRepresentativeCandidates,
   toDisplayTask,
   gapTypeRank,
-  GROUPABLE_TASK_TYPE,
+  GROUPABLE_TASK_TYPES,
   GROUPABLE_STATUS,
   GAP_TYPE_PRIORITY,
   UNKNOWN_GAP_TYPE_RANK,

@@ -43,6 +43,11 @@ function buildEnrichedTasks(branchId) {
   const tasks = [
     ...seoDb.listTasks({ status: 'proposed', taskType: 'improve_school_page', branchId }),
     ...seoDb.listTasks({ status: 'approved', taskType: 'improve_school_page', branchId }),
+    // 2026-07-29: improve_brand_page(そろばん/英会話/習字等)もPage Plan対象に追加。
+    // ブランドページはbranch_idを持たないため、branchId絞り込みの影響を受けないよう
+    // 校舎ページと同じ呼び出し形にしている(branchId未指定時は従来通り全校舎対象)。
+    ...seoDb.listTasks({ status: 'proposed', taskType: 'improve_brand_page', branchId }),
+    ...seoDb.listTasks({ status: 'approved', taskType: 'improve_brand_page', branchId }),
   ];
   return tasks.map((task) => {
     const candidate = task.source_candidate_id ? seoDb.getKeywordCandidateById(task.source_candidate_id) : null;

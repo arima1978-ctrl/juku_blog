@@ -111,6 +111,13 @@ function loadSchoolPagesConfig(branchId) {
   return loadYaml('config/school_pages.yaml', branchId);
 }
 
+// 自社のブランドページ(そろばん・英会話・習字等)レジストリ。校舎ページとは異なり
+// branch_idを持たないサイト全体共通の設定のため、通常branchIdを渡さずに呼ぶ
+// (詳細はscripts/lib/seo/brand_page_registry.js参照)。
+function loadBrandPagesConfig(branchId) {
+  return loadYaml('config/brand_pages.yaml', branchId);
+}
+
 module.exports = {
   ROOT,
   loadYaml,
@@ -120,4 +127,5 @@ module.exports = {
   loadExamSourcesConfig,
   loadSeoCompetitorsConfig,
   loadSchoolPagesConfig,
+  loadBrandPagesConfig,
 };

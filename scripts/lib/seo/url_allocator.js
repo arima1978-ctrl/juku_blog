@@ -31,6 +31,8 @@ const SCHOOL_PAGE_ELIGIBLE_TEMPLATES = new Set(['area_juku', 'area_teaching_styl
 //     判定元データが無いため呼び出し側は常にnullを渡す想定。将来の拡張ポイント)
 //   existingSchoolPageUrl/existingSchoolPageId/existingSchoolPageName: target_areaに一致する
 //     自社校舎ページ(school_page_registry.js)。無ければnull
+//   existingBrandPageUrl/existingBrandPageId/existingBrandPageName: キーワードに一致する
+//     自社ブランドページ(brand_page_registry.js、そろばん/英会話/習字等)。無ければnull
 //
 // 戻り値: { taskType, targetUrl, targetPageId, targetPageName, reasons }
 function allocateUrl(input) {
@@ -44,6 +46,9 @@ function allocateUrl(input) {
     existingSchoolPageUrl = null,
     existingSchoolPageId = null,
     existingSchoolPageName = null,
+    existingBrandPageUrl = null,
+    existingBrandPageId = null,
+    existingBrandPageName = null,
   } = input;
 
   if (isLowIntent) {
@@ -52,6 +57,19 @@ function allocateUrl(input) {
 
   if (containsFaqTerm(normalizedKeyword)) {
     return { taskType: 'add_faq', targetUrl: null, targetPageId: null, targetPageName: null, reasons: ['faq_term_detected'] };
+  }
+
+  // ブランドページ対応(そろばん/英会話/習字/プログラミング/将棋等、2026-07-29)。校舎ページと
+  // 同様、gap_type(優先度)より前に判定する(割当自体をmonitorへ変更しない)。校舎ページの
+  // テンプレート判定(area_juku等)とは独立に、キーワード自体でマッチするため単独で先に見る。
+  if (existingBrandPageUrl) {
+    return {
+      taskType: 'improve_brand_page',
+      targetUrl: existingBrandPageUrl,
+      targetPageId: existingBrandPageId,
+      targetPageName: existingBrandPageName,
+      reasons: ['brand_page_keyword_match'],
+    };
   }
 
   // 校舎ページ対応テンプレートは、gap_type(優先度)より前に判定する。
