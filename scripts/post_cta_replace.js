@@ -52,6 +52,7 @@ function parseArgs(argv) {
     postId: get('--post-id=') !== undefined ? Number(get('--post-id=')) : undefined,
     all: has('--all'),
     confirm: has('--confirm'),
+    insert: has('--insert'),
   };
 }
 
@@ -104,7 +105,20 @@ function planReplacement(currentContent, newCta) {
   return { status: 'ok', oldAnchor: matches[0], newAnchor, newContent };
 }
 
-async function resolveOnePost(postId, { confirm, dbImpl = db, loadConfig = loadJukuConfig, fetchImpl = fetch, env = process.env } = {}) {
+// 2026-07-29追加: あま本部校の一部記事はWordPress editor側でCTAリンクが失われており
+// (生成・DB保存・WP下書き作成の時点ではbody_htmlに正しく含まれていたことを確認済み。
+// WPのリビジョン履歴から、人間による編集保存後に失われたと判明)、置換対象となる
+// 旧CTAが存在しない。この場合はplanReplacement()のno_matchで自動処理を止め、
+// 明示的に--insertを指定した場合のみ、末尾に新CTAを追記する案を組み立てる。
+function planInsertion(currentContent, newCta) {
+  const newAnchor = `<a href="${newCta.url}">${newCta.label}</a>`;
+  // 末尾の"&nbsp;"のみの空段落(あま本部の記事に共通して残っている痕跡)を除去してから追記する。
+  const trimmed = currentContent.replace(/(\r?\n)*&nbsp;\s*$/, '').replace(/\s+$/, '');
+  const newContent = `${trimmed}\r\n\r\n<p>${newAnchor}</p>`;
+  return { status: 'ok', oldAnchor: null, newAnchor, newContent };
+}
+
+async function resolveOnePost(postId, { confirm, insert = false, dbImpl = db, loadConfig = loadJukuConfig, fetchImpl = fetch, env = process.env } = {}) {
   const post = dbImpl.getPostById(postId);
   if (!post) return { ok: false, error: 'post_not_found', message: `posts.id=${postId} が見つかりません` };
   if (!post.wp_post_id) return { ok: false, error: 'wp_post_id_missing', message: `posts.id=${postId} にwp_post_idがありません` };
@@ -115,7 +129,7 @@ async function resolveOnePost(postId, { confirm, dbImpl = db, loadConfig = loadJ
 
   const newCta = resolveNewCta(post.branch_id, loadConfig);
   const currentContent = await fetchCurrentContent(wpUrl, post.wp_post_id, authHeader, fetchImpl);
-  const plan = planReplacement(currentContent, newCta);
+  const plan = insert ? planInsertion(currentContent, newCta) : planReplacement(currentContent, newCta);
 
   if (plan.status !== 'ok') {
     return { ok: false, error: plan.status, message: plan.reason, post, currentContent };
@@ -135,15 +149,15 @@ function printResult(result) {
     return;
   }
   console.log(`=== posts.id=${result.post.id}(branch=${result.post.branch_id}) ${result.post.title} ===`);
-  console.log(`  旧: ${result.oldAnchor}`);
+  console.log(`  旧: ${result.oldAnchor || '(既存CTAリンクなし。末尾に新規追記)'}`);
   console.log(`  新: ${result.newAnchor}`);
   console.log(result.applied ? '  → 反映しました' : '  → --confirmが無いためプレビューのみです');
 }
 
 async function main() {
-  const { postId, all, confirm } = parseArgs(process.argv.slice(2));
+  const { postId, all, confirm, insert } = parseArgs(process.argv.slice(2));
   if (!postId && !all) {
-    console.error('使い方: node scripts/post_cta_replace.js --post-id=<id> [--confirm] | --all [--confirm]');
+    console.error('使い方: node scripts/post_cta_replace.js --post-id=<id> [--insert] [--confirm] | --all [--confirm]');
     process.exitCode = 1;
     return;
   }
@@ -152,7 +166,7 @@ async function main() {
 
   let hadError = false;
   for (const id of targetIds) {
-    const result = await resolveOnePost(id, { confirm });
+    const result = await resolveOnePost(id, { confirm, insert });
     printResult(result);
     if (!result.ok) hadError = true;
   }
@@ -166,4 +180,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { parseArgs, buildOldCtaPattern, planReplacement, resolveNewCta, resolveOnePost, OLD_CTA_LABELS, main };
+module.exports = { parseArgs, buildOldCtaPattern, planReplacement, planInsertion, resolveNewCta, resolveOnePost, OLD_CTA_LABELS, main };

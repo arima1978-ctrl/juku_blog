@@ -5,7 +5,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { planReplacement, resolveOnePost, buildOldCtaPattern, OLD_CTA_LABELS } = require('../scripts/post_cta_replace');
+const { planReplacement, planInsertion, resolveOnePost, buildOldCtaPattern, OLD_CTA_LABELS } = require('../scripts/post_cta_replace');
 
 const NEW_CTA_OBATA = {
   label: 'お子さまに合う学び方、無料相談で一緒に考えませんか?(0561-54-4449)',
@@ -67,6 +67,32 @@ test('planReplacement: 旧CTAらしきリンクが複数あればmultiple_matche
     '<p><a href="https://an-english.com/school/obata/">体験授業のお申込みはこちら</a></p>';
   const plan = planReplacement(content, NEW_CTA_OBATA);
   assert.equal(plan.status, 'multiple_matches');
+});
+
+test('planInsertion: 既存CTAが無い記事の末尾に新CTAを追記する(あま本部のWP編集消失ケース回帰)', () => {
+  const content = '<p>本文の続き。</p>\r\n\r\n&nbsp;';
+  const plan = planInsertion(content, NEW_CTA_AMA);
+  assert.equal(plan.status, 'ok');
+  assert.equal(plan.oldAnchor, null);
+  assert.match(plan.newContent, /free_consultation_ama/);
+  assert.doesNotMatch(plan.newContent, /&nbsp;\s*$/, '末尾の空段落は除去されているはず');
+  assert.match(plan.newContent, /本文の続き。/, '既存本文は保持されるはず');
+});
+
+test('resolveOnePost: insert=trueは既存CTAの有無に関わらず末尾に追記する', async () => {
+  const dbImpl = makeDbImpl();
+  const fetchImpl = fakeFetchImpl({ currentContent: '<p>CTAリンクが無い本文</p>\r\n\r\n&nbsp;' });
+  const result = await resolveOnePost(17, {
+    confirm: true,
+    insert: true,
+    dbImpl,
+    loadConfig: () => ({ juku: { cta_types: { free_consultation: NEW_CTA_OBATA } } }),
+    fetchImpl,
+    env: FAKE_ENV,
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.applied, true);
+  assert.equal(result.oldAnchor, null);
 });
 
 test('resolveOnePost: confirm=falseはプレビューのみ(POSTは呼ばれない)', async () => {
