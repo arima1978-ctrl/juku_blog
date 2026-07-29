@@ -23,6 +23,7 @@ const branchesDb = require('./lib/branches_db');
 const { getBranchContext, toDbSlug } = require('./lib/branch_context');
 const { syncPostAsWordPressDraft } = require('./lib/post_sync');
 const { logError } = require('./log_error');
+const { toGutenbergBlocks } = require('./lib/gutenberg_blocks');
 
 // パイプライン内部のdraft frontmatter status → DB(posts.sqlite)のstatus対応表。
 // 中間状態(written/edited/revision_needed)のドラフトは同期対象外(パイプライン継続中のため)。
@@ -65,7 +66,19 @@ async function main() {
   }
 
   const bodyMd = content.trim();
-  const bodyHtml = marked.parse(bodyMd);
+  // 2026-07-29: WordPressのブロックエディタで人間が編集・保存すると、ブロックコメント
+  // (<!-- wp:xxx -->)を含まない素のHTMLは内部のHTML正規化処理で段落・CTAリンク等が
+  // 失われることがある(あま本部校のセルフ運用で実際に発生したインシデントの恒久対策)。
+  // 想定外のHTML構造(変換対象外のタグ等)を検出した場合は例外を投げ、パイプラインを止めて
+  // 人間の確認を促す(黙って未変換のまま同期しない)。
+  let bodyHtml;
+  try {
+    bodyHtml = toGutenbergBlocks(marked.parse(bodyMd));
+  } catch (err) {
+    logError('sync_draft_to_db_gutenberg_blocks', `${filePath}: ${err.message}`);
+    console.error(`[sync_draft_to_db] Gutenbergブロック変換に失敗しました: ${err.message}`);
+    process.exit(1);
+  }
 
   // 記事生成パイプラインの複数校舎対応Phase 1: 校舎コンテキスト(JUKU_BRANCH_ID)が
   // 明示されていればそれを使う(daily_blog.shがbranch引数付きで実行された場合)。
