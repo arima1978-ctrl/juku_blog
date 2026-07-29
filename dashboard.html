@@ -367,6 +367,7 @@
       <button data-tab="seo">競合キーワード分析</button>
       <button data-tab="growth">Growth Director</button>
       <button class="tab-button" data-tab="weekly-recommendation">今週の提案</button>
+      <button data-tab="metrics">SEO効果測定</button>
       <button data-tab="branches">校舎・塾長設定</button>
     </div>
 
@@ -513,6 +514,35 @@
       <div class="card-list" id="weeklyRecTaskList"></div>
     </div>
 
+    <div id="metricsTab" class="tab-content" style="display:none;">
+      <p style="color:var(--text-muted); margin: 0 0 12px; font-size:0.9rem;">
+        週次スナップショット(毎週日曜01:00実行)を元にした時系列グラフです。対象週は常に
+        「先週(完全な週)」のみ(進行中の週は不完全なため含みません)。校舎ビューはこの校舎に
+        帰属する実績(ブログ＋校舎ページ)のみを合算し、サイト共通の「その他」(トップページ・
+        ブランドページ等)は含みません。サイト全体の推移は下部に独立したグラフとして表示します
+        (週次Telegramダイジェストと同じ集計原則で、数字が食い違わないようにしています)。
+      </p>
+      <div id="metricsEmptyState" class="empty" style="display:none;"></div>
+      <div id="metricsCharts" style="display:none;">
+        <div class="fact-check-box">
+          <strong>校舎ビュー: 表示回数(ブログ＋校舎ページ、積み上げ)</strong>
+          <canvas id="metricsImpressionsChart" height="220"></canvas>
+        </div>
+        <div class="fact-check-box" style="margin-top:14px;">
+          <strong>校舎ビュー: クリック数(ブログ＋校舎ページ、積み上げ)</strong>
+          <canvas id="metricsClicksChart" height="220"></canvas>
+        </div>
+        <div class="fact-check-box" style="margin-top:14px;">
+          <strong>ギャップ充足率</strong>
+          <canvas id="metricsGapChart" height="180"></canvas>
+        </div>
+        <div class="fact-check-box" style="margin-top:14px;">
+          <strong>🌐 サイト全体(その他込み、校舎ビューとは独立したグラフ)</strong>
+          <canvas id="metricsSiteWideChart" height="220"></canvas>
+        </div>
+      </div>
+    </div>
+
     <div id="branchesTab" class="tab-content" style="display:none;">
       <p style="color:var(--text-muted); margin: 0 0 12px;">
         複数の校舎を登録・管理できます。「有効化」した校舎(常に1件のみ)が、WordPress投稿時の
@@ -579,6 +609,7 @@
   </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script>
 const API = '';
 
@@ -1545,6 +1576,103 @@ async function approveWeeklyRecommendation() {
   }
 }
 
+// --- SEO効果測定(週次スナップショットの時系列グラフ、フェーズ1-2、2026-07-29) ---
+// 帰属原則(週次Telegramダイジェストと同じ、数字が食い違わないようにする):
+// 校舎ビューはこの校舎に帰属する実績(ブログ+校舎ページ)のみを積み上げグラフで示し、
+// サイト共通の「その他」を含むサイト全体の推移は、独立した別グラフとして表示する
+// (校舎の数字に「その他」を混ぜない)。
+let metricsCharts = { impressions: null, clicks: null, gap: null, siteWide: null };
+
+function destroyMetricsCharts() {
+  Object.values(metricsCharts).forEach((chart) => chart && chart.destroy());
+  metricsCharts = { impressions: null, clicks: null, gap: null, siteWide: null };
+}
+
+function metricsWeekLabel(snapshot) {
+  const [, m, d] = snapshot.weekStart.split('-');
+  return `${Number(m)}/${Number(d)}週`;
+}
+
+async function loadSeoMetrics() {
+  const params = withBranchId(new URLSearchParams());
+  const data = await fetchJson('api/seo/metrics-snapshots?' + params.toString());
+  const snapshots = data.snapshots || [];
+
+  const emptyEl = document.getElementById('metricsEmptyState');
+  const chartsEl = document.getElementById('metricsCharts');
+  destroyMetricsCharts();
+
+  if (snapshots.length === 0) {
+    emptyEl.textContent = `${currentBranchLabel()}のスナップショットはまだありません(週次バッチの初回実行後に表示されます)`;
+    emptyEl.style.display = 'block';
+    chartsEl.style.display = 'none';
+    return;
+  }
+  emptyEl.style.display = 'none';
+  chartsEl.style.display = 'block';
+
+  const labels = snapshots.map(metricsWeekLabel);
+
+  metricsCharts.impressions = new Chart(document.getElementById('metricsImpressionsChart'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label: 'ブログ', data: snapshots.map((s) => s.impressionsBlog), backgroundColor: '#2563eb', stack: 'attributed' },
+        { label: '校舎ページ', data: snapshots.map((s) => s.impressionsSchoolPage), backgroundColor: '#16a34a', stack: 'attributed' },
+      ],
+    },
+    options: { responsive: true, scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true } } },
+  });
+
+  metricsCharts.clicks = new Chart(document.getElementById('metricsClicksChart'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label: 'ブログ', data: snapshots.map((s) => s.clicksBlog), backgroundColor: '#2563eb', stack: 'attributed' },
+        { label: '校舎ページ', data: snapshots.map((s) => s.clicksSchoolPage), backgroundColor: '#16a34a', stack: 'attributed' },
+      ],
+    },
+    options: { responsive: true, scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true } } },
+  });
+
+  metricsCharts.gap = new Chart(document.getElementById('metricsGapChart'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'ギャップ充足率(%)',
+          data: snapshots.map((s) => (s.gapFulfillmentRate != null ? Math.round(s.gapFulfillmentRate * 1000) / 10 : null)),
+          borderColor: '#16a34a',
+          backgroundColor: '#16a34a',
+          tension: 0.2,
+        },
+      ],
+    },
+    options: { responsive: true, scales: { y: { beginAtZero: true, max: 100, ticks: { callback: (v) => v + '%' } } } },
+  });
+
+  metricsCharts.siteWide = new Chart(document.getElementById('metricsSiteWideChart'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        { label: '表示回数(サイト全体)', data: snapshots.map((s) => s.impressionsTotal), borderColor: '#2563eb', backgroundColor: '#2563eb', yAxisID: 'y', tension: 0.2 },
+        { label: 'クリック数(サイト全体)', data: snapshots.map((s) => s.clicksTotal), borderColor: '#f5a623', backgroundColor: '#f5a623', yAxisID: 'y1', tension: 0.2 },
+      ],
+    },
+    options: {
+      responsive: true,
+      scales: {
+        y: { type: 'linear', position: 'left', beginAtZero: true, title: { display: true, text: '表示回数' } },
+        y1: { type: 'linear', position: 'right', beginAtZero: true, grid: { drawOnChartArea: false }, title: { display: true, text: 'クリック数' } },
+      },
+    },
+  });
+}
+
 // --- 校舎・塾長設定(複数校舎管理、プランA) ---
 let currentBranches = [];
 
@@ -1657,6 +1785,7 @@ document.querySelectorAll('.tabbar button').forEach(btn => {
     document.getElementById('seoTab').style.display = tab === 'seo' ? 'block' : 'none';
     document.getElementById('growthTab').style.display = tab === 'growth' ? 'block' : 'none';
     document.getElementById('weeklyRecommendationTab').style.display = tab === 'weekly-recommendation' ? 'block' : 'none';
+    document.getElementById('metricsTab').style.display = tab === 'metrics' ? 'block' : 'none';
     document.getElementById('branchesTab').style.display = tab === 'branches' ? 'block' : 'none';
     if (tab === 'episodes') loadEpisodes();
     if (tab === 'calendar' && !calendarLoaded) {
@@ -1669,6 +1798,7 @@ document.querySelectorAll('.tabbar button').forEach(btn => {
     }
     if (tab === 'growth') loadGrowthTasks();
     if (tab === 'weekly-recommendation') loadWeeklyRecommendation();
+    if (tab === 'metrics') loadSeoMetrics();
     if (tab === 'branches') loadBranches();
   });
 });
@@ -1729,6 +1859,8 @@ function switchDisplayBranch(newBranchId) {
   document.getElementById('weeklyRecWarningBar').innerHTML = '';
   document.getElementById('calendarFallbackBanner').innerHTML = '';
   document.getElementById('calendarList').innerHTML = '<p>読み込み中...</p>';
+  document.getElementById('metricsEmptyState').style.display = 'none';
+  document.getElementById('metricsCharts').style.display = 'none';
 
   calendarLoaded = true;
   return Promise.all([
@@ -1739,6 +1871,7 @@ function switchDisplayBranch(newBranchId) {
     loadGrowthTasks(),
     loadWeeklyRecommendation(),
     loadThemeCalendar(),
+    loadSeoMetrics(),
   ]);
 }
 

@@ -723,6 +723,75 @@ app.get('/api/seo/page-plans/:id', (req, res) => {
   });
 });
 
+// --- SEO効果測定 週次スナップショット(ダッシュボード「SEO効果測定」タブ、2026-07-29) ---
+// 既存のseo_metrics_report.js/seo_metrics_digest.jsと同じテーブル(seo_metrics_snapshots/
+// seo_metrics_keyword_snapshots)を読むだけの読み取り専用API(DB書き込みなし)。
+// 候補/Task一覧と同じ既存方針(features.growth_director.enabledに関わらず閲覧可能)を踏襲し、
+// featureフラグでは404にしない。データが無い週はスナップショット自体が存在しないため、
+// 単に空配列が返るだけで安全(承認前のTaskや候補データを露出させる心配が無い集計値のみ)。
+
+// 帰属原則(2026-07-29ユーザー指示、週次ダイジェストと同じ数字を保つ): impressions_total/
+// impressions_otherはサイト全体の値(全校舎の行で同じ値が重複格納されている)なので、フロント側は
+// 「校舎ビュー」にはimpressions_blog+impressions_school_pageのみを使い、「サイト全体」は
+// 独立したグラフとしてimpressions_totalを使うこと(ここではサーバー側で二重に集計しない。
+// 生データをそのまま返し、帰属原則の適用はダッシュボード側の描画ロジックに委ねる)。
+function toMetricsSnapshotPoint(row) {
+  return {
+    weekStart: row.week_start,
+    weekEnd: row.week_end,
+    impressionsBlog: row.impressions_blog,
+    clicksBlog: row.clicks_blog,
+    impressionsSchoolPage: row.impressions_school_page,
+    clicksSchoolPage: row.clicks_school_page,
+    impressionsOther: row.impressions_other,
+    clicksOther: row.clicks_other,
+    impressionsTotal: row.impressions_total,
+    clicksTotal: row.clicks_total,
+    gapFulfilledCount: row.gap_fulfilled_count,
+    gapTotalCount: row.gap_total_count,
+    gapFulfillmentRate: row.gap_fulfillment_rate,
+    publishedCountCumulative: row.published_count_cumulative,
+    publishedCountWeek: row.published_count_week,
+    isBaseline: !!row.is_baseline,
+  };
+}
+
+app.get('/api/seo/metrics-snapshots', (req, res) => {
+  const branchId = resolveBranchId(req);
+  const rows = seoDb.listSeoMetricsSnapshots(branchId);
+  res.json({ branchId, snapshots: rows.map(toMetricsSnapshotPoint) });
+});
+
+function toMetricsKeywordSnapshotPoint(row) {
+  return {
+    weekStart: row.week_start,
+    weekEnd: row.week_end,
+    normalizedKeyword: row.normalized_keyword,
+    avgPosition: row.avg_position,
+    impressions: row.impressions,
+    clicks: row.clicks,
+    isImplementedAsOfWeek: !!row.is_implemented_as_of_week,
+    isBaseline: !!row.is_baseline,
+    contentCategory: row.content_category,
+  };
+}
+
+app.get('/api/seo/metrics-keyword-snapshots', (req, res) => {
+  const branchId = resolveBranchId(req);
+  let rows = seoDb.listSeoMetricsKeywordSnapshots(branchId);
+  const { keywords } = req.query;
+  if (keywords) {
+    const wanted = new Set(
+      keywords
+        .split(',')
+        .map((k) => k.trim())
+        .filter(Boolean)
+    );
+    rows = rows.filter((r) => wanted.has(r.normalized_keyword));
+  }
+  res.json({ branchId, snapshots: rows.map(toMetricsKeywordSnapshotPoint) });
+});
+
 // --- AI Weekly Director(週次推薦、Sprint 4.0) ---
 // Page Plan同様、features.growth_director.enabledがfalseの間は404を返す
 // (新規の監査対象データのため、既定で無効化されている間は一切露出させない)。
