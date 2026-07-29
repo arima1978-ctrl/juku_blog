@@ -947,3 +947,42 @@ seasonal_topics:
     fallback_topic_id: null
     allowed_cta: ["shogi_trial"]
     season_dependency: medium
+
+  # --- 記事ファースト転換(2026-07-29ユーザー承認): 英会話・習字は棚卸しで判明した
+  # 地域名+一般語の検索需要を通年で狙う。季節性が薄いため通年枠(残り2026年いっぱい)。
+  # priorityは緊急季節テーマ(70以上)より下・既存naraigotoテーマ(45〜55)よりやや上に設定し、
+  # 2〜3週間以内に選ばれる現実的な水準にしている。ただし承認済みTask 57(自立学習、
+  # Keyword Gap Lite候補)を優先させたいため、それを上回らない範囲に留めている
+  # (候補トラックとは別軸のため数値上の直接比較は厳密には出来ないが、緊急枠には入れない)。
+  # eikaiwa-local > shodo-local の順で、自立学習→英会話→習字の順に選ばれることを狙う。
+  - id: naraigoto-eikaiwa-local
+    title: "守山区で子ども英会話教室を探すなら"
+    category: "習い事紹介"
+    target: ["elementary_parent"]
+    keywords:
+      primary: "守山区 英会話"
+      secondary: ["瓢箪山 英会話", "子供 英会話 教室 選び方"]
+    publish_window: { start: "2026-07-29", end: "2026-12-31" }
+    priority: 58
+    locality_required: true
+    school_name_required: false
+    episode_preferred: false
+    fallback_topic_id: null
+    allowed_cta: ["eikaiwa_trial"]
+    season_dependency: low
+
+  - id: naraigoto-shodo-local
+    title: "守山区で習字を習うなら"
+    category: "習い事紹介"
+    target: ["elementary_parent", "junior_high_parent"]
+    keywords:
+      primary: "守山区 習字"
+      secondary: ["瓢箪山 習字教室", "習字 教室 選び方"]
+    publish_window: { start: "2026-07-29", end: "2026-12-31" }
+    priority: 56
+    locality_required: true
+    school_name_required: false
+    episode_preferred: false
+    fallback_topic_id: null
+    allowed_cta: ["shodo_trial"]
+    season_dependency: low
