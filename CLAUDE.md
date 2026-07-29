@@ -6,6 +6,21 @@
 
 公開先: `https://an-english.com`(WordPress、教室からのBLOG欄は投稿者ID=13で絞り込まれる構造)
 
+## WordPressへの書き込みは記事(posts)のみ(最上位ルール、2026-07-29)
+
+**WordPressへの書き込みは記事(`posts`テーブル由来の記事)のみに限定する。** 固定ページ・
+ブランドページ・カスタム投稿・メニュー・ウィジェット等、記事以外への変更は原則禁止。
+どうしても必要な場合は、変更内容の差分を提示してユーザーの明示承認を得てから1件ずつ実行する
+(自動実行・一括実行は不可)。`scripts/seo_brand_page_draft_apply.js`の`--confirm`も、
+この承認が確認できる場合のみ使用してよい(スクリプト自体は既定で差分プレビューのみ・書き込みなし
+という安全設計だが、それとは別にこの承認ルールが上位で適用される)。
+
+AI Growth Directorが生成する`improve_school_page`/`improve_brand_page`タスクは、
+今後も**判断材料として提案(Task/Page Plan/Page Draftの生成)されるのは可**(記事以外の
+改善余地を可視化する価値があるため)。ただし**実際の反映(WordPress書き込み)は常にこの
+例外承認フローを通ること**。Page Plan/Page Draftの生成・DB保存自体はWordPressへの
+書き込みを伴わないため通常の運用で問題ない(承認が必要なのは最終の反映ステップのみ)。
+
 ## 本番環境での破壊的操作は事前承認必須(厳守)
 
 2026-07-17、本番サーバー(`data/posts.sqlite`)上で試行錯誤中に `rm data/posts.sqlite` が直接実行され、
@@ -228,6 +243,22 @@ min-max正規化)が、`seo_tasks`へ`opportunity_score`とは独立した`roi_p
 を事前生成(Claude Code subagentは起動しない)、`seo_weekly_recommendations`テーブル
 (新規1枚のみ、`UNIQUE(batch_date)`)へ選定結果とPromptファイルパスの参照をまとめて保存する。
 詳細は`docs/growth_director.md`参照。
+
+### ブランドページ対応(`improve_brand_page`、2026-07-29〜)
+
+そろばん/英会話/習字/プログラミング/将棋等、校舎に属さないサイト全体共通のブランドページを
+`config/brand_pages.yaml`(`school_pages.yaml`と同じ思想、branch_idを持たない、
+`content_category`固定・`wp_page_id`保持)に登録すると、URL Allocatorが該当キーワードを
+`improve_brand_page`タスクへ割り当てる(Page Task Grouper/Weekly Draft Dispatcher/
+Impact Calculatorも`improve_school_page`と同様に扱う)。`scripts/seo_brand_page_draft_apply.js`
+はPage DraftをWordPress REST API経由で反映できる半自動スクリプトだが、**冒頭の
+「WordPressへの書き込みは記事(posts)のみ」ルールにより、実際の反映(`--confirm`)は
+その承認フローを通った場合のみ使用する**(brand_page_registry.jsによる本文取得の許可リスト
+拡張・Task/Page Plan/Page Draftの生成自体はWordPress書き込みを伴わないため通常運用でよい)。
+2026-07-29時点の方針: ブランドページ本文の直接改善よりも、通常のブログ記事(習い事テーマ、
+`config/seasonal_topics.yaml`の`naraigoto-*`エントリ)で検索需要を受け止め、記事内リンク・
+CTA(`soroban_trial`等)で各ブランドページへ誘導する「記事ファースト」を主軸とする
+(ブランドページ改善タスクは判断材料としての提案生成は継続)。
 
 ## SEO効果測定 週次スナップショット(2026-07-27〜)
 
