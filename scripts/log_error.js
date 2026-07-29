@@ -40,8 +40,39 @@ function logError(step, detail, branchId) {
   console.error(`[log_error] 記録しました: ${step} - ${detail}`);
 }
 
+function readErrors() {
+  if (!fs.existsSync(ERRORS_PATH)) return [];
+  try {
+    return JSON.parse(fs.readFileSync(ERRORS_PATH, 'utf8'));
+  } catch {
+    return [];
+  }
+}
+
+function writeErrors(errors) {
+  fs.mkdirSync(path.dirname(ERRORS_PATH), { recursive: true });
+  fs.writeFileSync(ERRORS_PATH, JSON.stringify(errors, null, 2), 'utf8');
+}
+
+// ダッシュボードのエラーバナーに古い解決済みインシデントが出続けるのを防ぐための
+// 「解決済みにする」操作(2026-07-29)。手動JSON編集に代わる正式な経路。
+// resolved=falseの既存エラーのうち、matchで真になったものだけをresolved=trueにする
+// (matchはbeforeIso指定時のみ渡ってくる。ハンドラ自体は呼び出し側が組み立てる)。
+// 戻り値: 実際に解決済みへ変更した件数。
+function resolveErrors(matchFn, { resolvedAt, note } = {}) {
+  const errors = readErrors();
+  let count = 0;
+  const updated = errors.map((e) => {
+    if (e.resolved || !matchFn(e)) return e;
+    count += 1;
+    return { ...e, resolved: true, resolved_at: resolvedAt || new Date().toISOString(), resolved_note: note || null };
+  });
+  if (count > 0) writeErrors(updated);
+  return count;
+}
+
 if (require.main === module) {
   logError(process.argv[2] || 'unknown_step', process.argv[3] || '');
 }
 
-module.exports = { logError };
+module.exports = { logError, readErrors, writeErrors, resolveErrors, ERRORS_PATH };

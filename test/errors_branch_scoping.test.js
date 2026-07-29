@@ -105,3 +105,43 @@ test('GET /api/summary: 校舎Bを指定すると校舎Bのエラーと全体エ
   assert.ok(body.errors.some((e) => e.detail.includes('全体的な')), '校舎に紐づかない全体エラーは表示される');
   assert.ok(!body.errors.some((e) => e.detail.includes('morikobe')), '校舎Aのエラーは混ざらない');
 });
+
+test('GET /api/summary: resolved=trueのエラーは表示されない(2026-07-29)', async () => {
+  fs.writeFileSync(
+    TMP_ERRORS,
+    JSON.stringify(
+      [
+        { at: new Date().toISOString(), step: 'x', detail: '未解決エラー', branch_id: null, resolved: false },
+        { at: new Date().toISOString(), step: 'x', detail: '解決済みエラー', branch_id: null, resolved: true },
+      ],
+      null,
+      2
+    ),
+    'utf8'
+  );
+  const res = await fetch(`http://localhost:${PORT}/api/summary?branch_id=${branchA.id}`);
+  const body = await res.json();
+  assert.ok(body.errors.some((e) => e.detail.includes('未解決エラー')));
+  assert.ok(!body.errors.some((e) => e.detail.includes('解決済みエラー')));
+});
+
+test('GET /api/summary: 14日より古い未解決エラーは自動的に表示されなくなる(resolvedマーク忘れの安全網、2026-07-29)', async () => {
+  const oldDate = new Date(Date.now() - 20 * 24 * 60 * 60 * 1000).toISOString(); // 20日前
+  const recentDate = new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(); // 1日前
+  fs.writeFileSync(
+    TMP_ERRORS,
+    JSON.stringify(
+      [
+        { at: recentDate, step: 'x', detail: '最近の未解決エラー', branch_id: null, resolved: false },
+        { at: oldDate, step: 'x', detail: '古い未解決エラー', branch_id: null, resolved: false },
+      ],
+      null,
+      2
+    ),
+    'utf8'
+  );
+  const res = await fetch(`http://localhost:${PORT}/api/summary?branch_id=${branchA.id}`);
+  const body = await res.json();
+  assert.ok(body.errors.some((e) => e.detail.includes('最近の未解決エラー')));
+  assert.ok(!body.errors.some((e) => e.detail.includes('古い未解決エラー')));
+});

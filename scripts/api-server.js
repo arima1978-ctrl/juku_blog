@@ -51,6 +51,10 @@ const DASHBOARD_URL = process.env.DASHBOARD_URL || `http://localhost:${PORT}`;
 // テスト時のみ、JUKU_BLOG_ERRORS_PATH で本番のlogs/errors.jsonと別のファイルを使う
 // (log_error.jsと同じ方式・同じ環境変数)。
 const ERRORS_PATH = process.env.JUKU_BLOG_ERRORS_PATH || path.join(ROOT, 'logs', 'errors.json');
+// 解決済みマーク忘れの安全網(2026-07-29)。手動でresolved=trueにし忘れても、
+// これより古いエラーはバナーへ出さない(「古いエラーが出続けると本物を見逃す」対策)。
+// resolved自体は変更しない(データは保持し、表示だけ抑制する)。
+const ERROR_AUTO_EXPIRE_DAYS = 14;
 
 // ダッシュボードの確認が不定期でも、承認をまとめて行った際に同日に複数本
 // 公開されないよう、直近の予約済み/公開済み日の翌日を次の枠として予約投稿する。
@@ -283,11 +287,14 @@ app.get('/api/summary', (req, res) => {
   let errors = [];
   if (fs.existsSync(ERRORS_PATH)) {
     try {
+      const expireCutoff = Date.now() - ERROR_AUTO_EXPIRE_DAYS * 24 * 60 * 60 * 1000;
       // branch_idが記録されているエラーは表示中の校舎のものだけに絞り込む(他校舎の
       // クロール失敗等が混ざって表示されないように)。branch_idがnull/未記録の
       // エラー(校舎に紐づかない全体的な問題)は従来通りどの校舎からでも見える。
+      // resolved=trueは常に非表示。ERROR_AUTO_EXPIRE_DAYSより古いものは、resolved
+      // マーク忘れでもバナーへ出さない(データ自体はlogs/errors.jsonに残る)。
       errors = JSON.parse(fs.readFileSync(ERRORS_PATH, 'utf8'))
-        .filter((e) => !e.resolved && (e.branch_id == null || e.branch_id === branchId))
+        .filter((e) => !e.resolved && (e.branch_id == null || e.branch_id === branchId) && new Date(e.at).getTime() >= expireCutoff)
         .slice(0, 10);
     } catch {
       errors = [];
