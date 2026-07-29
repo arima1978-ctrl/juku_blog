@@ -30,6 +30,18 @@ const HIGH_INTENT_TERMS = [
 // 優先度スコアを下げる語句(求人・対象外サービス等)。
 const LOW_INTENT_TERMS = ['求人', 'アルバイト', '講師募集', '採用', '教材販売'];
 
+// content_category分類(scripts/lib/seo/content_category.js)の「習い事」判定語句。
+// 2026-07-29ユーザー指示: 塾部門のヘッジ・既存ドメイン資産(そろばん/英会話/習字/
+// プログラミング/将棋の各ブランドページ)活用のため、測定・コンテンツ対象を拡張。
+const NARAIGOTO_KEYWORDS = [
+  'そろばん', '珠算',
+  '英会話', '英語教室',
+  '習字', '書道',
+  'プログラミング', 'マイクラ', 'ロボット教室',
+  '将棋',
+  'カルチャー',
+];
+
 // URL Allocator(scripts/lib/seo/url_allocator.js)がFAQ追加を判定するための語句。
 // 料金・手続き等の業務案内的な検索は、ブログ記事より既存ページのFAQ追加で対応する方が適切なため。
 const FAQ_TERMS = ['料金', '月謝', '入塾金', 'アクセス', '送迎', '振替'];
@@ -65,5 +77,6 @@ module.exports = {
   LOW_INTENT_TERMS,
   FAQ_TERMS,
   GENERIC_EXCLUSION_TERMS,
+  NARAIGOTO_KEYWORDS,
   buildAreaDictionary,
 };

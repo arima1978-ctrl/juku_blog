@@ -5,6 +5,7 @@
 // (posts.sqliteに相乗りし、posts/seo_*テーブル間のJOINを可能にするため)。
 const { getDb } = require('./db');
 const { normalizeKeyword } = require('./seo/normalizer');
+const { classifyContentCategory } = require('./seo/content_category');
 const { validatePagePlanShape, ALLOWED_PAGE_PLAN_STATUSES } = require('./seo/page_plan_builder');
 const { validatePagePlanTransition, ALLOWED_REVIEW_SOURCES } = require('./seo/page_plan_review');
 const { validatePageDraftShape } = require('./seo/page_draft_builder');
@@ -705,7 +706,7 @@ function upsertKeywordCandidate(candidate, nowIso) {
           cooccurrence_score = :cooccurrence_score, search_intent = :search_intent,
           content_type = :content_type, data_confidence = :data_confidence,
           existing_post_id = :existing_post_id, cannibalization_warning = :cannibalization_warning,
-          analysis_run_id = :analysis_run_id, updated_at = :updated_at
+          analysis_run_id = :analysis_run_id, updated_at = :updated_at, content_category = :content_category
         WHERE id = :id`
       )
       .run({
@@ -730,6 +731,7 @@ function upsertKeywordCandidate(candidate, nowIso) {
         cannibalization_warning: toJson(candidate.cannibalization_warning),
         analysis_run_id: candidate.analysis_run_id || null,
         updated_at: nowIso,
+        content_category: classifyContentCategory(candidate.normalized_keyword),
       });
     return { id: existing.id, isNew: false, previousStatus: existing.status };
   }
@@ -741,14 +743,14 @@ function upsertKeywordCandidate(candidate, nowIso) {
         recommended_action, suggested_title, suggested_outline,
         keyword_components, template_type, cooccurrence_score, search_intent, content_type,
         data_confidence, existing_post_id, cannibalization_warning,
-        status, analysis_run_id, created_at, updated_at
+        status, analysis_run_id, created_at, updated_at, content_category
       ) VALUES (
         :normalized_keyword, :raw_keyword, :target_area, :target_school, :target_grade, :target_subject, :branch_id,
         :gap_type, :priority_score, :score_breakdown, :search_demand, :own_avg_position, :competitor_count,
         :recommended_action, :suggested_title, :suggested_outline,
         :keyword_components, :template_type, :cooccurrence_score, :search_intent, :content_type,
         :data_confidence, :existing_post_id, :cannibalization_warning,
-        :status, :analysis_run_id, :created_at, :updated_at
+        :status, :analysis_run_id, :created_at, :updated_at, :content_category
       )`
     )
     .run({
@@ -780,6 +782,7 @@ function upsertKeywordCandidate(candidate, nowIso) {
       analysis_run_id: candidate.analysis_run_id || null,
       created_at: nowIso,
       updated_at: nowIso,
+      content_category: classifyContentCategory(candidate.normalized_keyword),
     });
   return { id: Number(result.lastInsertRowid), isNew: true, previousStatus: null };
 }
@@ -1044,7 +1047,7 @@ function upsertTask(task, nowIso) {
           difficulty_score = :difficulty_score, difficulty_breakdown = :difficulty_breakdown,
           expected_impact_clicks = :expected_impact_clicks, expected_impact_cv = :expected_impact_cv,
           roi_priority_score = :roi_priority_score, roi_score_computed_at = :roi_score_computed_at,
-          updated_at = :updated_at
+          updated_at = :updated_at, content_category = :content_category
         WHERE id = :id`
       )
       .run({
@@ -1067,6 +1070,7 @@ function upsertTask(task, nowIso) {
         roi_priority_score: task.roi_priority_score ?? null,
         roi_score_computed_at: task.roi_score_computed_at ?? null,
         updated_at: nowIso,
+        content_category: classifyContentCategory(task.target_keyword),
       });
     return { id: existing.id, isNew: false, previousStatus: existing.status };
   }
@@ -1079,7 +1083,7 @@ function upsertTask(task, nowIso) {
         recommended_action, reason, status,
         difficulty_score, difficulty_breakdown, expected_impact_clicks, expected_impact_cv,
         roi_priority_score, roi_score_computed_at,
-        created_at, updated_at
+        created_at, updated_at, content_category
       ) VALUES (
         :task_type, :target_url, :target_post_id, :target_page_type, :target_page_id, :target_page_name,
         :target_keyword, :source_candidate_id, :branch_id,
@@ -1087,7 +1091,7 @@ function upsertTask(task, nowIso) {
         :recommended_action, :reason, :status,
         :difficulty_score, :difficulty_breakdown, :expected_impact_clicks, :expected_impact_cv,
         :roi_priority_score, :roi_score_computed_at,
-        :created_at, :updated_at
+        :created_at, :updated_at, :content_category
       )`
     )
     .run({
@@ -1115,6 +1119,7 @@ function upsertTask(task, nowIso) {
       roi_score_computed_at: task.roi_score_computed_at ?? null,
       created_at: nowIso,
       updated_at: nowIso,
+      content_category: classifyContentCategory(key.target_keyword),
     });
   return { id: Number(result.lastInsertRowid), isNew: true, previousStatus: null };
 }
@@ -1413,16 +1418,16 @@ function upsertSeoMetricsKeywordSnapshot(row, nowIso) {
     .prepare(
       `INSERT INTO seo_metrics_keyword_snapshots (
         branch_id, week_start, week_end, candidate_id, normalized_keyword, source_task_id,
-        avg_position, impressions, clicks, is_implemented_as_of_week, is_baseline, computed_at
+        avg_position, impressions, clicks, is_implemented_as_of_week, is_baseline, computed_at, content_category
       ) VALUES (
         :branch_id, :week_start, :week_end, :candidate_id, :normalized_keyword, :source_task_id,
-        :avg_position, :impressions, :clicks, :is_implemented_as_of_week, :is_baseline, :computed_at
+        :avg_position, :impressions, :clicks, :is_implemented_as_of_week, :is_baseline, :computed_at, :content_category
       )
       ON CONFLICT (branch_id, week_start, normalized_keyword) DO UPDATE SET
         week_end = excluded.week_end, candidate_id = excluded.candidate_id, source_task_id = excluded.source_task_id,
         avg_position = excluded.avg_position, impressions = excluded.impressions, clicks = excluded.clicks,
         is_implemented_as_of_week = excluded.is_implemented_as_of_week, is_baseline = excluded.is_baseline,
-        computed_at = excluded.computed_at`
+        computed_at = excluded.computed_at, content_category = excluded.content_category`
     )
     .run({
       branch_id: row.branchId,
@@ -1437,6 +1442,7 @@ function upsertSeoMetricsKeywordSnapshot(row, nowIso) {
       is_implemented_as_of_week: row.isImplementedAsOfWeek ? 1 : 0,
       is_baseline: row.isBaseline ? 1 : 0,
       computed_at: nowIso,
+      content_category: classifyContentCategory(row.normalizedKeyword),
     });
 }
 
@@ -1453,6 +1459,53 @@ function listSeoMetricsKeywordSnapshots(branchId, normalizedKeyword) {
       .all(branchId, normalizedKeyword);
   }
   return conn.prepare('SELECT * FROM seo_metrics_keyword_snapshots WHERE branch_id = ? ORDER BY week_start').all(branchId);
+}
+
+// 日付範囲の生GSCクエリ(全ページ・全校舎横断、サイト全体)を、キーワード辞書
+// (scripts/lib/seo/content_category.js)でカテゴリ分類して合算する(2026-07-29)。
+// 対象はseo_keyword_candidates/seo_tasksに登録された候補・タスクではなく、
+// GSCの生クエリ文字列そのもの——「ヘッジとして意味があるのは候補の順位ではなく
+// 資産全体の推移」というユーザー指示のため。戻り値: { [category]: {impressions, clicks} }
+// (nullに分類された行は集計に含めない)。
+function getGscCategoryTotalsInRange({ startDate, endDate }) {
+  const { classifyContentCategory } = require('./seo/content_category');
+  const conn = getDb();
+  const rows = conn.prepare('SELECT query, impressions, clicks FROM seo_gsc_queries WHERE date >= ? AND date <= ?').all(startDate, endDate);
+
+  const totals = {};
+  for (const row of rows) {
+    const category = classifyContentCategory(row.query);
+    if (!category) continue;
+    if (!totals[category]) totals[category] = { impressions: 0, clicks: 0 };
+    totals[category].impressions += row.impressions || 0;
+    totals[category].clicks += row.clicks || 0;
+  }
+  return totals;
+}
+
+function upsertSeoMetricsCategorySnapshot(row, nowIso) {
+  const conn = getDb();
+  conn
+    .prepare(
+      `INSERT INTO seo_metrics_category_snapshots (week_start, week_end, category, impressions, clicks, computed_at)
+       VALUES (:week_start, :week_end, :category, :impressions, :clicks, :computed_at)
+       ON CONFLICT (week_start, category) DO UPDATE SET
+         week_end = excluded.week_end, impressions = excluded.impressions, clicks = excluded.clicks,
+         computed_at = excluded.computed_at`
+    )
+    .run({
+      week_start: row.weekStart,
+      week_end: row.weekEnd,
+      category: row.category,
+      impressions: row.impressions || 0,
+      clicks: row.clicks || 0,
+      computed_at: nowIso,
+    });
+}
+
+function listSeoMetricsCategorySnapshots(category) {
+  const conn = getDb();
+  return conn.prepare('SELECT * FROM seo_metrics_category_snapshots WHERE category = ? ORDER BY week_start').all(category);
 }
 
 // ---- seo_page_plans (Sprint 3.4) -----------------------------------------
@@ -2304,6 +2357,9 @@ module.exports = {
   upsertSeoMetricsKeywordSnapshot,
   listSeoMetricsSnapshots,
   listSeoMetricsKeywordSnapshots,
+  getGscCategoryTotalsInRange,
+  upsertSeoMetricsCategorySnapshot,
+  listSeoMetricsCategorySnapshots,
   getSeoPagePlanById,
   getSeoPagePlanByPage,
   listSeoPagePlans,

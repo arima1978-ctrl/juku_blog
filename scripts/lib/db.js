@@ -224,6 +224,7 @@ function getDb() {
   ensureColumn(db, 'seo_keyword_candidates', 'existing_post_id', 'INTEGER'); // 最有力の既存記事(FK posts.id)
   ensureColumn(db, 'seo_keyword_candidates', 'approved_action', 'TEXT'); // 人間が承認時に確定した最終アクション
   ensureColumn(db, 'seo_keyword_candidates', 'cannibalization_warning', 'TEXT'); // JSON、該当時のみ
+  ensureColumn(db, 'seo_keyword_candidates', 'content_category', 'TEXT'); // juku/naraigoto/null(2026-07-29)
   // AI Growth Director Sprint 2: 自社校舎ページ(config/school_pages.yaml)との対応で追加。
   // 校舎ページTask以外(通常記事等)はいずれもNULLのまま。
   ensureColumn(db, 'seo_tasks', 'target_page_type', 'TEXT'); // 現状"school_page"のみ使用
@@ -245,11 +246,13 @@ function getDb() {
   // improve_school_page等はダッシュボード/CLIでの手動確定のみ(自動検知不可)。
   ensureColumn(db, 'seo_tasks', 'implemented_at', 'TEXT');
   ensureColumn(db, 'seo_tasks', 'implementation_note', 'TEXT');
+  ensureColumn(db, 'seo_tasks', 'content_category', 'TEXT'); // juku/naraigoto/null(2026-07-29、元候補から継承)
 
   // GSC実績の4区分分解(2026-07-29)で追加。既存行はNULLのまま残るため、
   // 呼び出し側(seo_metrics_snapshot_generate.js)の再実行で上書きする想定。
   ensureColumn(db, 'seo_metrics_snapshots', 'impressions_other', 'INTEGER NOT NULL DEFAULT 0');
   ensureColumn(db, 'seo_metrics_snapshots', 'clicks_other', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn(db, 'seo_metrics_keyword_snapshots', 'content_category', 'TEXT'); // juku/naraigoto/null(2026-07-29)
 
   // 記事生成パイプラインの複数校舎対応 Phase 1: 校舎別ディレクトリ・ログ名に使うslug
   // (ASCII、ダッシュボードの校舎編集フォームで変更可能)。日本語の校舎名から機械的に
@@ -343,6 +346,7 @@ function getDb() {
       existing_post_id     INTEGER,
       approved_action      TEXT,
       cannibalization_warning TEXT,
+      content_category     TEXT,
       FOREIGN KEY (analysis_run_id) REFERENCES seo_analysis_runs(id),
       UNIQUE (normalized_keyword, target_area, target_school, target_grade, target_subject, branch_id)
     )`,
@@ -380,6 +384,7 @@ function getDb() {
       roi_score_computed_at     TEXT,
       implemented_at            TEXT,
       implementation_note       TEXT,
+      content_category          TEXT,
       FOREIGN KEY (source_candidate_id) REFERENCES seo_keyword_candidates(id),
       FOREIGN KEY (target_post_id) REFERENCES posts(id),
       UNIQUE (target_keyword, task_type, source_candidate_id, branch_id)

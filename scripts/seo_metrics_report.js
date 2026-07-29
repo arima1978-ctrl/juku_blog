@@ -114,6 +114,26 @@ function buildBranchReport(branch) {
   };
 }
 
+// 習い事カテゴリの週次サマリー(2026-07-29)。校舎に紐づく候補・タスクの実績ではなく、
+// サイト全体の生GSCクエリを辞書分類した実績(seo_metrics_category_snapshots)そのもの。
+function buildCategoryReport(category) {
+  const snapshots = seoDb.listSeoMetricsCategorySnapshots(category); // week_start昇順
+  if (snapshots.length === 0) {
+    return { category, hasData: false };
+  }
+  const latest = snapshots[snapshots.length - 1];
+  const previous = snapshots.length >= 2 ? snapshots[snapshots.length - 2] : null;
+  return {
+    category,
+    hasData: true,
+    latestWeek: { weekStart: latest.week_start, weekEnd: latest.week_end },
+    impressions: latest.impressions,
+    clicks: latest.clicks,
+    impressionsChangePct: previous ? pctChange(latest.impressions, previous.impressions) : null,
+    clicksChangePct: previous ? pctChange(latest.clicks, previous.clicks) : null,
+  };
+}
+
 function changeStr(pct) {
   if (pct == null) return '';
   const sign = pct >= 0 ? '+' : '';
@@ -161,10 +181,17 @@ function main() {
   const allBranches = listBranches();
   const targetBranches = branchId ? allBranches.filter((b) => b.id === branchId) : allBranches;
   const reports = targetBranches.map(buildBranchReport);
+  const naraigotoReport = buildCategoryReport('naraigoto');
 
   if (format === 'json') {
-    console.log(JSON.stringify({ ok: true, reports }, null, 2));
+    console.log(JSON.stringify({ ok: true, reports, naraigotoReport }, null, 2));
   } else {
+    if (naraigotoReport.hasData) {
+      console.log(
+        `\n=== 🎨 習い事(サイト全体、${naraigotoReport.latestWeek.weekStart}〜${naraigotoReport.latestWeek.weekEnd}週) ===`
+      );
+      console.log(formatBucketLine('表示回数/クリック', naraigotoReport));
+    }
     console.log(formatText(reports));
   }
 }
@@ -173,4 +200,4 @@ if (require.main === module) {
   main();
 }
 
-module.exports = { parseArgs, pctChange, buildBranchReport, formatText, main };
+module.exports = { parseArgs, pctChange, buildBranchReport, buildCategoryReport, formatText, main };

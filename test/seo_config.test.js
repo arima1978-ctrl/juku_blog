@@ -4,11 +4,12 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { loadJukuConfig, loadSeoCompetitorsConfig } = require('../scripts/lib/config');
 
-test('loadJukuConfig: competitor_keyword_analysisは分析・実クロールが有効化済みだが、GSC連携は既定でfalse', () => {
+test('loadJukuConfig: competitor_keyword_analysisは分析・実クロール・テーマ選定連携が有効化済み(2026-07-29)', () => {
   const config = loadJukuConfig();
   const feature = config.features.competitor_keyword_analysis;
   assert.equal(feature.enabled, true);
-  assert.equal(feature.use_for_topic_selection, false);
+  // 2026-07-29ユーザー承認: Keyword Gap分析をテーマ選定に繋げる本来の設計意図のため恒久trueに変更
+  assert.equal(feature.use_for_topic_selection, true);
   assert.equal(feature.crawl_enabled, true);
   assert.equal(feature.search_console_enabled, false);
 });

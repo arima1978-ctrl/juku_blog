@@ -21,6 +21,24 @@ juku:
     course_consultation:
       label: "進路・学習相談のご予約はこちら"
       url: null
+    # 習い事(そろばん/英会話/習字/プログラミング/将棋)記事専用CTA(2026-07-29ユーザー承認)。
+    # 塾の体験授業CTAはミスマッチなため、各ブランドページへ直接誘導する。
+    # urlを明示しているためcta_url(小幡教室ページ)は使わない。
+    soroban_trial:
+      label: "そろばん教室の詳細・体験はこちら"
+      url: "https://an-english.com/brand/ansorobanclub/"
+    eikaiwa_trial:
+      label: "英会話教室の詳細・体験はこちら"
+      url: "https://an-english.com/brand/aeclub/"
+    shodo_trial:
+      label: "習字教室の詳細・体験はこちら"
+      url: "https://an-english.com/brand/anbimoji/"
+    programming_trial:
+      label: "プログラミング教室の詳細・体験はこちら"
+      url: "https://an-english.com/brand/anprogramming/"
+    shogi_trial:
+      label: "将棋教室の詳細・体験はこちら"
+      url: "https://an-english.com/brand/anshogiclub/"
 area:
   prefecture: "愛知県"
   city: "名古屋市守山区"
@@ -78,7 +96,10 @@ features:
     enabled: true
     # true でも、候補は表示されるだけで智谷(planner-blog-btoc)の企画には自動採用されない。
     # 人間がダッシュボードで承認(approved)した候補のみ企画候補として使われる。
-    use_for_topic_selection: false
+    # 2026-07-29ユーザー承認: Keyword Gap分析をテーマ選定に繋げる本来の設計意図のため、
+    # 恒久的にtrueで運用する(1本のみの一時措置ではない)。有効化後1週間は季節テーマとの
+    # 配分バランスを観察すること。
+    use_for_topic_selection: true
     # 競合サイトの実クロールを行うか(false のままなら手動登録データ・CSV取込のみで運用可能)
     crawl_enabled: true
     # Google Search Console API連携を行うか

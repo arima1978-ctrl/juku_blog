@@ -863,3 +863,87 @@ seasonal_topics:
     fallback_topic_id: null
     allowed_cta: ["learning_consultation"]
     season_dependency: medium
+
+  # --- 習い事テーマ(2026-07-29ユーザー承認: 塾部門のヘッジ・既存ドメイン資産活用。
+  # 月2本程度から開始し、9月に実績を見て配分を増減する。既存の塾テーマと優先度で競合する
+  # 設計を維持するため生成本数(1日1本)自体は変えず、priorityは通常の塾テーマより
+  # やや低め(45〜55)に設定している) ---
+  - id: naraigoto-soroban-effect
+    title: "そろばんで育つ計算力・集中力"
+    category: "習い事紹介"
+    target: ["elementary_parent"]
+    keywords:
+      primary: "そろばん 効果"
+      secondary: ["そろばん 子供 メリット", "そろばん 何歳から"]
+    publish_window: { start: "2026-04-01", end: "2026-04-20" }
+    priority: 50
+    locality_required: false
+    school_name_required: false
+    episode_preferred: false
+    fallback_topic_id: null
+    allowed_cta: ["soroban_trial"]
+    season_dependency: medium
+
+  - id: naraigoto-eikaiwa-start-timing
+    title: "子どもの英会話、始めどきはいつ?"
+    category: "習い事紹介"
+    target: ["elementary_parent"]
+    keywords:
+      primary: "英会話 子供 始めどき"
+      secondary: ["子供 英会話 早期教育", "英会話 何歳から"]
+    publish_window: { start: "2026-03-15", end: "2026-04-15" }
+    priority: 50
+    locality_required: false
+    school_name_required: false
+    episode_preferred: false
+    fallback_topic_id: null
+    allowed_cta: ["eikaiwa_trial"]
+    season_dependency: medium
+
+  - id: naraigoto-shodo-kakizome
+    title: "書き初め・美文字と習字教室"
+    category: "習い事紹介"
+    target: ["elementary_parent", "junior_high_parent"]
+    keywords:
+      primary: "習字 書き初め"
+      secondary: ["美文字 練習 子供", "習字 効果"]
+    publish_window: { start: "2026-12-15", end: "2027-01-15" }
+    priority: 50
+    locality_required: false
+    school_name_required: false
+    episode_preferred: false
+    fallback_topic_id: null
+    allowed_cta: ["shodo_trial"]
+    season_dependency: high
+
+  - id: naraigoto-programming-summer-experience
+    title: "夏休みのプログラミング体験会"
+    category: "習い事紹介"
+    target: ["elementary_parent", "junior_high_parent"]
+    keywords:
+      primary: "プログラミング教室 夏休み 体験"
+      secondary: ["プログラミング 必修化", "子供 プログラミング マイクラ"]
+    publish_window: { start: "2026-07-20", end: "2026-08-31" }
+    priority: 55
+    locality_required: false
+    school_name_required: false
+    episode_preferred: false
+    fallback_topic_id: null
+    allowed_cta: ["programming_trial"]
+    season_dependency: high
+
+  - id: naraigoto-shogi-focus
+    title: "将棋で育つ集中力・思考力"
+    category: "習い事紹介"
+    target: ["elementary_parent", "junior_high_parent"]
+    keywords:
+      primary: "将棋 子供 効果"
+      secondary: ["将棋 習い事 メリット", "将棋教室 選び方"]
+    publish_window: { start: "2026-09-01", end: "2026-10-31" }
+    priority: 45
+    locality_required: false
+    school_name_required: false
+    episode_preferred: false
+    fallback_topic_id: null
+    allowed_cta: ["shogi_trial"]
+    season_dependency: medium

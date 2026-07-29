@@ -22,7 +22,7 @@ try {
 }
 
 const { listBranches } = require('./lib/branches_db');
-const { buildBranchReport } = require('./seo_metrics_report');
+const { buildBranchReport, buildCategoryReport } = require('./seo_metrics_report');
 const { sendTelegram } = require('./lib/telegram');
 
 function parseArgs(argv) {
@@ -59,18 +59,27 @@ function formatDigestBlock(r) {
   );
 }
 
+// naraigotoReport: buildCategoryReport('naraigoto')の結果。hasData=falseまたは未指定ならnull
+// を返し、行自体を出さない(習い事スナップショットがまだ無い間は静かにスキップする)。
+function formatCategoryLine(naraigotoReport) {
+  if (!naraigotoReport || !naraigotoReport.hasData) return null;
+  return `🎨 習い事: ${naraigotoReport.impressions.toLocaleString()}回/${naraigotoReport.clicks}クリック${changeStr(naraigotoReport.impressionsChangePct)}`;
+}
+
 // reports: buildBranchReport()の結果配列。1件もhasDataが無ければnullを返す
 // (無意味な「データなし」通知を送らないため)。サイト共通の「その他」を含む
 // サイト全体の数字は校舎ごとに繰り返さず、独立した1行として1回だけ表示する
-// (2026-07-29ユーザー指示)。
-function formatDigest(reports) {
+// (2026-07-29ユーザー指示)。習い事カテゴリの行も同じ原則で独立した1行のみ。
+function formatDigest(reports, naraigotoReport) {
   const blocks = reports.map(formatDigestBlock).filter(Boolean);
   if (blocks.length === 0) return null;
   const withData = reports.find((r) => r.hasData);
   const weekLabel = withData.latestWeek;
   const t = withData.buckets.total;
   const siteLine = `🌐 サイト全体: ${t.impressions.toLocaleString()}回/${t.clicks}クリック${changeStr(t.impressionsChangePct)}`;
-  return [`📊 週次SEOダイジェスト(${weekLabel.weekStart}〜${weekLabel.weekEnd}週)`, siteLine, ...blocks, '', '詳細: node scripts/seo_metrics_report.js'].join('\n');
+  const categoryLine = formatCategoryLine(naraigotoReport);
+  const headLines = categoryLine ? [siteLine, categoryLine] : [siteLine];
+  return [`📊 週次SEOダイジェスト(${weekLabel.weekStart}〜${weekLabel.weekEnd}週)`, ...headLines, ...blocks, '', '詳細: node scripts/seo_metrics_report.js'].join('\n');
 }
 
 async function main() {
@@ -78,8 +87,9 @@ async function main() {
   const allBranches = listBranches();
   const targetBranches = branchId ? allBranches.filter((b) => b.id === branchId) : allBranches;
   const reports = targetBranches.map(buildBranchReport);
+  const naraigotoReport = buildCategoryReport('naraigoto');
 
-  const text = formatDigest(reports);
+  const text = formatDigest(reports, naraigotoReport);
   if (!text) {
     console.log('[seo_metrics_digest] スナップショットがまだ無いため、通知をスキップしました');
     return;
@@ -97,4 +107,4 @@ if (require.main === module) {
   main();
 }
 
-module.exports = { parseArgs, changeStr, formatDigestBlock, formatDigest, main };
+module.exports = { parseArgs, changeStr, formatDigestBlock, formatCategoryLine, formatDigest, main };

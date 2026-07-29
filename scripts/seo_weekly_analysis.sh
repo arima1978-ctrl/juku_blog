@@ -51,6 +51,7 @@ run_step "seo_gap_calculate" node scripts/seo_gap_calculate.js || FAILED_STEPS="
 # を対象にする(常に7日分のGSC実績が反映遅延込みで揃っている状態で記録するため)。
 WEEK_START=$(node -e "console.log(require('./scripts/lib/seo/week_math').getLastCompleteWeekStart())" 2>/dev/null || date +%Y-%m-%d)
 run_step "seo_metrics_snapshot_generate" node scripts/seo_metrics_snapshot_generate.js --week="${WEEK_START}" --save || FAILED_STEPS="${FAILED_STEPS}seo_metrics_snapshot_generate "
+run_step "seo_metrics_category_snapshot_generate" node scripts/seo_metrics_category_snapshot_generate.js --week="${WEEK_START}" --save || FAILED_STEPS="${FAILED_STEPS}seo_metrics_category_snapshot_generate "
 
 log "=== 完了 ==="
 

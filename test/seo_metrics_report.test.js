@@ -14,7 +14,7 @@ const { ROOT } = require('../scripts/lib/config');
 const { closeDb } = require('../scripts/lib/db');
 const seoDb = require('../scripts/lib/seo_db');
 const branchesDb = require('../scripts/lib/branches_db');
-const { pctChange, buildBranchReport, formatText } = require('../scripts/seo_metrics_report');
+const { pctChange, buildBranchReport, buildCategoryReport, formatText } = require('../scripts/seo_metrics_report');
 
 after(() => {
   closeDb();
@@ -208,6 +208,24 @@ test('formatText: 4区分・充足率・キーワードを含むテキストを�
   assert.match(text, /ブログ.*100回.*前週比\+100%/);
   assert.match(text, /2\/7/);
   assert.match(text, /kw-a: 順位5\.2/);
+});
+
+test('buildCategoryReport: スナップショットが無いカテゴリはhasData=false', () => {
+  const report = buildCategoryReport('__no_such_category__');
+  assert.equal(report.hasData, false);
+});
+
+test('buildCategoryReport: 直近2週のカテゴリスナップショットから前週比を組み立てる', () => {
+  seoDb.upsertSeoMetricsCategorySnapshot({ weekStart: '2026-07-06', weekEnd: '2026-07-12', category: 'naraigoto', impressions: 1000, clicks: 100 }, nowIso);
+  seoDb.upsertSeoMetricsCategorySnapshot({ weekStart: '2026-07-13', weekEnd: '2026-07-19', category: 'naraigoto', impressions: 1200, clicks: 90 }, nowIso);
+
+  const report = buildCategoryReport('naraigoto');
+  assert.equal(report.hasData, true);
+  assert.equal(report.latestWeek.weekStart, '2026-07-13');
+  assert.equal(report.impressions, 1200);
+  assert.equal(report.clicks, 90);
+  assert.equal(report.impressionsChangePct, 20);
+  assert.ok(Math.abs(report.clicksChangePct - -10) < 1e-9);
 });
 
 test('CLI: --format=jsonでレポートを出力できる', () => {

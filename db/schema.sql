@@ -652,12 +652,32 @@ CREATE TABLE IF NOT EXISTS seo_metrics_keyword_snapshots (
   is_implemented_as_of_week   INTEGER NOT NULL, -- 0/1。その週末時点でsource_task_id.implemented_atが週末以前か
   is_baseline                 INTEGER NOT NULL DEFAULT 0,
   computed_at                 TEXT NOT NULL,
+  content_category            TEXT, -- juku/naraigoto/null(2026-07-29、scripts/lib/seo/content_category.js)
 
   FOREIGN KEY (candidate_id) REFERENCES seo_keyword_candidates(id),
   FOREIGN KEY (source_task_id) REFERENCES seo_tasks(id),
   UNIQUE (branch_id, week_start, normalized_keyword)
 );
 CREATE INDEX IF NOT EXISTS idx_seo_metrics_keyword_snapshots_kw ON seo_metrics_keyword_snapshots(branch_id, normalized_keyword, week_start);
+
+-- 習い事カテゴリの週次スナップショット(2026-07-29、塾部門のヘッジ・既存ドメイン資産
+-- 活用の効果測定)。上記2テーブルとは異なり「校舎に紐づく候補・タスクの実績」ではなく、
+-- サイト全体の生GSCクエリ(seo_gsc_queries)をキーワード辞書(scripts/lib/seo/dictionaries.js
+-- のNARAIGOTO_KEYWORDS)で分類した実績そのもの(ヘッジとして意味があるのは候補の順位
+-- ではなく資産全体の推移のため、ユーザー指示)。branch_idを持たない(全校舎・全ブランド
+-- 横断のサイト全体集計)。辞書は将来更新されうるため、各週の値は計算時点の辞書で
+-- 確定させ、過去の週を辞書変更時に遡って再計算しない(値を凍結する)。
+CREATE TABLE IF NOT EXISTS seo_metrics_category_snapshots (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  week_start        TEXT NOT NULL,
+  week_end          TEXT NOT NULL,
+  category          TEXT NOT NULL, -- 'naraigoto'(将来 'juku' 等を追加する場合も同テーブルで扱える)
+  impressions       INTEGER NOT NULL,
+  clicks            INTEGER NOT NULL,
+  computed_at       TEXT NOT NULL,
+  UNIQUE (week_start, category)
+);
+CREATE INDEX IF NOT EXISTS idx_seo_metrics_category_snapshots_week ON seo_metrics_category_snapshots(category, week_start);
 
 -- 複数校舎管理(プランA: データベース化)。校舎ごとにWordPress投稿の著者アカウントが
 -- 異なるため、config/juku.yamlの静的なwordpress.author_id/author_display_nameに代わり、

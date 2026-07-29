@@ -15,7 +15,7 @@ const { ROOT } = require('../scripts/lib/config');
 const { closeDb } = require('../scripts/lib/db');
 const seoDb = require('../scripts/lib/seo_db');
 const branchesDb = require('../scripts/lib/branches_db');
-const { formatDigestBlock, formatDigest } = require('../scripts/seo_metrics_digest');
+const { formatDigestBlock, formatCategoryLine, formatDigest } = require('../scripts/seo_metrics_digest');
 
 after(() => {
   closeDb();
@@ -98,6 +98,57 @@ test('formatDigest: 見出し・サイト全体行(1回だけ)・複数校舎ブ
   assert.equal((text.match(/サイト全体/g) || []).length, 1);
   assert.match(text, /Y校/);
   assert.match(text, /node scripts\/seo_metrics_report\.js/);
+});
+
+test('formatCategoryLine: hasData=falseまたは未指定はnull(行を出さない)', () => {
+  assert.equal(formatCategoryLine(null), null);
+  assert.equal(formatCategoryLine(undefined), null);
+  assert.equal(formatCategoryLine({ hasData: false }), null);
+});
+
+test('formatCategoryLine: 習い事の表示回数/クリック/前週比を1行で表す', () => {
+  const line = formatCategoryLine({ hasData: true, impressions: 1500, clicks: 80, impressionsChangePct: 12 });
+  assert.match(line, /🎨 習い事: 1,500回\/80クリック\(前週比\+12%\)/);
+});
+
+test('formatDigest: 習い事スナップショットがあれば🎨行を1回だけ追加する', () => {
+  const r = {
+    hasData: true,
+    branchName: 'Y校',
+    latestWeek: { weekStart: '2026-07-13', weekEnd: '2026-07-19' },
+    buckets: {
+      blog: { impressions: 1, clicks: 0 },
+      schoolPage: { impressions: 2, clicks: 0 },
+      other: { impressions: 3, clicks: 0 },
+      total: { impressions: 6, clicks: 0, impressionsChangePct: -10, clicksChangePct: null },
+      attributed: { impressions: 3, clicks: 0, impressionsChangePct: null, clicksChangePct: null },
+    },
+    gapFulfillment: { rate: 0, fulfilled: 0, total: 1 },
+    taskCounts: { implementedWeekIncrement: 0 },
+  };
+  const naraigotoReport = { hasData: true, impressions: 200, clicks: 15, impressionsChangePct: 5 };
+  const text = formatDigest([r], naraigotoReport);
+  assert.match(text, /🎨 習い事: 200回\/15クリック\(前週比\+5%\)/);
+  assert.equal((text.match(/🎨/g) || []).length, 1);
+});
+
+test('formatDigest: 習い事スナップショットが無ければ🎨行を出さない(第2引数省略時も同様)', () => {
+  const r = {
+    hasData: true,
+    branchName: 'Y校',
+    latestWeek: { weekStart: '2026-07-13', weekEnd: '2026-07-19' },
+    buckets: {
+      blog: { impressions: 1, clicks: 0 },
+      schoolPage: { impressions: 2, clicks: 0 },
+      other: { impressions: 3, clicks: 0 },
+      total: { impressions: 6, clicks: 0, impressionsChangePct: -10, clicksChangePct: null },
+      attributed: { impressions: 3, clicks: 0, impressionsChangePct: null, clicksChangePct: null },
+    },
+    gapFulfillment: { rate: 0, fulfilled: 0, total: 1 },
+    taskCounts: { implementedWeekIncrement: 0 },
+  };
+  assert.doesNotMatch(formatDigest([r]), /🎨/);
+  assert.doesNotMatch(formatDigest([r], { hasData: false }), /🎨/);
 });
 
 test('CLI: --dry-runでは送信せず文面のみ表示する(実データで疎通確認)', () => {
