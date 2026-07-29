@@ -202,8 +202,23 @@ function resolveGrowthDirectorConfigForBranch(branchId, cache) {
 // コア処理(テスト容易性・API層からの呼び出しのため、process.exitを含まない形で分離)。
 // branchIdを指定すると、その校舎のキーワード候補のみを対象にTaskを生成する
 // (未指定時は全校舎対象。CLI/cronの既存挙動を変えないためのデフォルト)。
+// seo_keyword_candidates.statusのうち、Task生成の対象から除外する終端否定ステータス。
+// 2026-07-29: 同型の「絞り込み過小」バグ(許可リスト列挙が新しいstatus値の追加・遷移追加時に
+// 追随できず、対象を静かに取りこぼす)が本プロジェクトで複数回発生したため、許可リスト方式
+// (対象status値を列挙)ではなく、ブロックリスト方式(除外すべき終端状態だけを明示)を採用する。
+// - rejected: 却下確定(実際に付与される。除外して当然)
+// - archived: 退役・非アクティブ確定(schema.sqlのコメント上の想定値。現時点のコードでは
+//   candidatesのstatusとして実際に付与する経路は無いが、将来追加された際に黙って
+//   タスク生成対象へ混入しないよう、意図的にここで先回りして除外しておく)
+// - monitoring は意図的に除外リストに含めない: 「却下」ではなく「経過観察」であり、
+//   Task生成の対象から外すべき根拠が無い(将来Task生成すべきでないと判断されれば、
+//   ここに追記しコメントも更新すること)。
+const TERMINAL_NEGATIVE_CANDIDATE_STATUSES = new Set(['rejected', 'archived']);
+
 async function resolveTaskGenerate({ dryRun = false, branchId, seoDbImpl = seoDb } = {}) {
-  const candidates = seoDbImpl.listKeywordCandidates({ branchId });
+  const candidates = seoDbImpl
+    .listKeywordCandidates({ branchId })
+    .filter((c) => !TERMINAL_NEGATIVE_CANDIDATE_STATUSES.has(c.status));
   if (candidates.length === 0) {
     // 候補自体が無い場合は、featureが無効なのか単に候補が無いだけなのかを区別するため、
     // 従来通りの既定(branchId無し)configでfeature.enabledを確認する(候補が無ければ

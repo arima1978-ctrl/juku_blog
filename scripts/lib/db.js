@@ -794,9 +794,12 @@ function monthlySummary(yearMonthPrefix, branchId) {
   const total = conn
     .prepare(`SELECT COUNT(*) AS c FROM posts WHERE created_at LIKE :prefix${branchFilter}`)
     .get(params).c;
+  // wp_draft_syncedはあま本部校(branches.sync_mode='draft_review')で承認ゲートを通過済みの
+  // 状態(WordPress下書きとして同期済み)であり、承認済み相当としてカウントに含める
+  // (2026-07-29、含めないと実態より低く表示されるとの指摘を受けて修正)。
   const approved = conn
     .prepare(
-      `SELECT COUNT(*) AS c FROM posts WHERE created_at LIKE :prefix AND status IN ('approved','scheduled','published')${branchFilter}`
+      `SELECT COUNT(*) AS c FROM posts WHERE created_at LIKE :prefix AND status IN ('approved','scheduled','published','wp_draft_synced')${branchFilter}`
     )
     .get(params).c;
   const byCategory = conn

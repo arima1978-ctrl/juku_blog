@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS posts (
   body_md            TEXT NOT NULL,                 -- 本文(Markdown)
   body_html          TEXT NOT NULL,                 -- 本文(HTML変換済み、WordPress投稿用)
   fact_check_report  TEXT,                          -- 石橋のチェック結果(JSON文字列)
-  status             TEXT NOT NULL DEFAULT 'review_pending', -- review_pending/approved/rejected/scheduled/published
+  status             TEXT NOT NULL DEFAULT 'review_pending', -- review_pending/approved/rejected/scheduled/published/wp_draft_synced
   reviewer_note      TEXT,                          -- 差し戻し時のメモ
   published_at       TEXT,                          -- 公開(予定)日時。scheduledの間は未来の予約日時、実際に公開されても値は更新しない
   wp_post_id         TEXT,                          -- WordPress投稿ID(フェーズ2用)
@@ -474,7 +474,7 @@ CREATE TABLE IF NOT EXISTS seo_page_plans (
   source_content_hash       TEXT,            -- pageContext.contentHash(本文全文は保存しない。未取得ならNULL)
   prompt_version            TEXT,            -- 将来Draft生成時に使うPromptVersionの参考記録(今回は未使用のためNULL)
 
-  status                    TEXT NOT NULL DEFAULT 'proposed', -- proposed/reviewing/approved/rejected(Task statusとは完全に別軸)
+  status                    TEXT NOT NULL DEFAULT 'proposed', -- proposed/reviewing/approved/rejected/stale(Task statusとは完全に別軸)
 
   created_at                TEXT NOT NULL,
   updated_at                TEXT NOT NULL,
