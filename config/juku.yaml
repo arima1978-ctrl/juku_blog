@@ -6,6 +6,15 @@ juku:
   # 記事内容に応じてCTAの文言を切り替える(URLは専用ページが未確認のため現状すべてcta_urlと同じ。
   # 専用ページが用意でき次第、各typeのurlに個別のURLを設定する)
   cta_types:
+    # 塾系(juku)記事の既定CTA(2026-07-29ユーザー承認)。以前は記事テーマに応じて
+    # trial_lesson等5種を智谷が選んでいたが、「CTAは1つに絞る方が反応が出やすい」という
+    # 判断から、塾系記事は常にこれ1本を使う設計へ変更(planner-blog-btoc.md参照)。
+    # #offerアンカーで無料学習相談セクションへ直接着地させ、utm_campaignで校舎別の
+    # ブログ経由流入を計測できるようにする(小幡はfree_consultation_obata、
+    # あま本部はbranches/ama-honbu/config/juku.yamlでfree_consultation_amaへ上書き)。
+    free_consultation:
+      label: "お子さまに合う学び方、無料相談で一緒に考えませんか?(0561-54-4449)"
+      url: "https://an-english.com/brand/anshingakujim/?utm_source=blog&utm_medium=cta&utm_campaign=free_consultation_obata#offer"
     trial_lesson:
       label: "体験授業のお申込みはこちら"
       url: null   # nullの場合はcta_urlを使う

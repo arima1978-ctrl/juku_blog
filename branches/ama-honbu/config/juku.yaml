@@ -7,6 +7,11 @@ juku:
   # 今回は採用しない(小幡校版と同じ保守的な扱い)。
   line_url: ""                  # LINE登録URL(未確認)
   cta_types:
+    # 塾系(juku)記事の既定CTA(2026-07-29ユーザー承認)。小幡校版と同一の文言・遷移先だが、
+    # utm_campaignのみ校舎別(free_consultation_ama)にして流入元を区別する。
+    free_consultation:
+      label: "お子さまに合う学び方、無料相談で一緒に考えませんか?(0561-54-4449)"
+      url: "https://an-english.com/brand/anshingakujim/?utm_source=blog&utm_medium=cta&utm_campaign=free_consultation_ama#offer"
     trial_lesson:
       label: "体験授業のお申込みはこちら"
       url: null
