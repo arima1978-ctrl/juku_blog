@@ -83,10 +83,27 @@ function renderSafetyRulesSection() {
   return `# 安全ルール(必ず守ること)\n${SAFETY_RULES.map((rule, i) => `${i + 1}. ${rule}`).join('\n')}`;
 }
 
+// editMode: 既定undefined(校舎ページ等、新規挿入文を想定した従来通りの挙動)。
+// 'refine_existing'を指定すると、<page_content>の本文抜粋が「完成度の高い既存の紹介文全体」
+// であることを前提に、全文書き換えではなく検索意図との整合を高める追記・微調整を求める
+// (2026-07-29ユーザー指示: ブランドページの既存マーケティング文面を壊さないため)。
+function renderEditModeSection(editMode, preserveOpeningHint) {
+  if (editMode !== 'refine_existing') return null;
+  const rules = [
+    '<page_content>の本文抜粋は、既に公開されている完成度の高い紹介文全体です(新規に挿入する空きスペースではありません)。',
+    '全文を書き換えるのではなく、既存の文章をベースに、検索意図との整合を高めるための追記・微調整に留めてください。',
+    '既存文の伝えている内容(教室の特徴・強み)を削除・弱化しないでください。',
+    preserveOpeningHint ? `書き出しの一文(特に「${preserveOpeningHint}」)は、可能な限りそのまま保持してください。` : null,
+    'generated_textには、既存本文をベースに追記・調整を加えた「完成形の全文」を書いてください(既存文からの差分箇所の断片ではありません)。',
+  ].filter(Boolean);
+  return `# 既存文面の扱い(重要)\n${rules.map((r, i) => `${i + 1}. ${r}`).join('\n')}`;
+}
+
 // pagePlan/primaryTask/supportingTasks/excludedTasks: DB由来の値をそのまま渡す
 // (呼び出し側で解決済み。このモジュール自体はDBへ一切アクセスしない)。
 // pageContext: page_context_provider.fetchPageContext()等が返す{status,title,headings,bodyExcerpt,...}。
-function buildPageDraftPrompt({ pagePlan, primaryTask, supportingTasks, excludedTasks, pageContext }) {
+// editMode/preserveOpeningHint: 上記renderEditModeSection参照。
+function buildPageDraftPrompt({ pagePlan, primaryTask, supportingTasks, excludedTasks, pageContext, editMode, preserveOpeningHint }) {
   const purpose = [
     '# 目的',
     '複数のキーワード改善案(Task)を並べるのではなく、ページの主要検索意図を中心に、1つの自然な改善文章を生成してください。',
@@ -132,10 +149,13 @@ function buildPageDraftPrompt({ pagePlan, primaryTask, supportingTasks, excluded
     renderPagePlanDataSection({ pagePlan, primaryTask, supportingTasks }),
     renderExcludedTasksSection(excludedTasks),
     renderPageContentSection(pageContext),
+    renderEditModeSection(editMode, preserveOpeningHint),
     improvementRules,
     renderSafetyRulesSection(),
     outputFormat,
-  ].join('\n\n');
+  ]
+    .filter(Boolean)
+    .join('\n\n');
 
   const inputSummary = {
     pagePlanId: pagePlan.id,

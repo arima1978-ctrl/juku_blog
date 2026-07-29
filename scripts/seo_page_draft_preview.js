@@ -25,6 +25,8 @@ function parseArgs(argv) {
     planId: get('--plan-id=') !== undefined ? Number(get('--plan-id=')) : undefined,
     format: get('--format=') || 'text',
     output: get('--output='),
+    editMode: get('--edit-mode='),
+    preserveOpeningHint: get('--preserve-opening-hint='),
   };
 }
 
@@ -44,7 +46,7 @@ function supportingTasksForPrompt(plan) {
 // Feature Flagチェックを含まない中核処理(テスト容易性のため分離)。DB書き込みなし。
 // approved確認 → pageContext取得 → stale判定、の順に決定的へ判定する。
 // pageContextDepsを注入可能にし、テストでは実ネットワーク接続を避ける。
-async function resolveDraftPreview({ planId, pageContextDeps } = {}) {
+async function resolveDraftPreview({ planId, editMode, preserveOpeningHint, pageContextDeps } = {}) {
   const plan = seoDb.getSeoPagePlanById(planId);
   if (!plan) {
     return { ok: false, errorCode: 'not_found', message: `page plan id=${planId} が見つかりません` };
@@ -102,6 +104,8 @@ async function resolveDraftPreview({ planId, pageContextDeps } = {}) {
     supportingTasks: supportingTasksForPrompt(plan),
     excludedTasks: plan.excluded_tasks || [],
     pageContext,
+    editMode,
+    preserveOpeningHint,
   });
 
   return {
@@ -138,11 +142,14 @@ async function main() {
     process.exit(0);
   }
   if (!args.planId || Number.isNaN(args.planId)) {
-    console.error('使い方: node scripts/seo_page_draft_preview.js --plan-id=<id> [--format=json|text] [--output=<path>]');
+    console.error(
+      '使い方: node scripts/seo_page_draft_preview.js --plan-id=<id> [--format=json|text] [--output=<path>] ' +
+        '[--edit-mode=refine_existing] [--preserve-opening-hint=<text>]'
+    );
     process.exit(1);
   }
 
-  const result = await resolveDraftPreview({ planId: args.planId });
+  const result = await resolveDraftPreview({ planId: args.planId, editMode: args.editMode, preserveOpeningHint: args.preserveOpeningHint });
   const output = args.format === 'json' ? JSON.stringify(result, null, 2) : formatText(result);
 
   if (args.output) {

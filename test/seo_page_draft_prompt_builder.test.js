@@ -102,3 +102,21 @@ test('SAFETY_RULESは8項目以上あり、既存Task単位Draftのルールと�
   assert.ok(SAFETY_RULES.some((r) => r.includes('地理的な近さ')));
   assert.ok(SAFETY_RULES.some((r) => r.includes('無料体験の実施')));
 });
+
+test('buildPageDraftPrompt: editMode未指定(既定)は従来通り既存文面の扱いセクションを含まない', () => {
+  const { prompt } = buildPageDraftPrompt(fakeInput());
+  assert.doesNotMatch(prompt, /既存文面の扱い/);
+});
+
+test('buildPageDraftPrompt: editMode=refine_existingは全文書き換え禁止・追記調整のみの指示を含む(2026-07-29、ブランドページの既存マーケティング文面保護)', () => {
+  const { prompt } = buildPageDraftPrompt(fakeInput({ editMode: 'refine_existing' }));
+  assert.match(prompt, /既存文面の扱い/);
+  assert.match(prompt, /全文を書き換えるのではなく/);
+  assert.match(prompt, /完成形の全文/);
+});
+
+test('buildPageDraftPrompt: preserveOpeningHintを指定すると書き出し保持の指示に埋め込まれる', () => {
+  const { prompt } = buildPageDraftPrompt(fakeInput({ editMode: 'refine_existing', preserveOpeningHint: '愛知・岐阜で展開する子ども英会話教室' }));
+  assert.match(prompt, /愛知・岐阜で展開する子ども英会話教室/);
+  assert.match(prompt, /書き出しの一文/);
+});
