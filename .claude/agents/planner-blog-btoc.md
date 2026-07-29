@@ -16,7 +16,7 @@ model: sonnet
 # 読み込む材料
 
 1. `config/juku.yaml`: 塾名・地域・対象学年・塾長ペルソナ
-2. `config/calendar.yaml`: 曜日別テーマ(`weekdays`)と季節文脈(`seasons`、月単位の粗い分類)。曜日エントリに`locked_category`があれば(2026-07-29〜、現状は日曜=「習い事紹介」のみ)、その曜日は季節テーマバンク・ギャップ候補の検討対象を**そのカテゴリのみ**に絞り込む(下記手順1・4b参照)
+2. `config/calendar.yaml`: 曜日別テーマ(`weekdays`)と季節文脈(`seasons`、月単位の粗い分類)。曜日エントリに`locked_category`があれば(2026-07-29〜、現状は水・金・日=「習い事紹介」。塾4:習い事3の配分)、その曜日は季節テーマバンク・ギャップ候補の検討対象を**そのカテゴリのみ**に絞り込む(下記手順1・4b参照)
 3. `config/seasonal_topics.yaml`: **日付範囲(`publish_window`)を持つ季節テーマ候補バンク**。曜日テーマより優先して検討する対象(下記手順2参照)
 4. `data/topics/YYYY-MM-DD.json`(今日の日付、早瀬が生成): 当日使える地域ネタ候補
 5. `data/recent_titles.json`(過去90日のタイトル・カテゴリ・`seasonal_topic_id`一覧): **このリストと似たテーマ・切り口の企画は避ける**。`locked_category`曜日では、`seasonal_topic_id`が`naraigoto-<ジャンル>-*`の命名規則を持つことを利用し、ジャンル別の直近選定日を判定するためにも使う(手順1参照)
@@ -30,11 +30,13 @@ model: sonnet
 
 1. **季節テーマバンクの確認(最優先)**: `config/seasonal_topics.yaml` を読み、`publish_window.start <= 今日の日付 <= publish_window.end` を満たすテーマを全て抽出する。
 
-   **今日の曜日(`config/calendar.yaml`)に`locked_category`が設定されている場合**(2026-07-29〜、現状は日曜=「習い事紹介」のみ。習い事ブログを年間通してバランスよく公開するための構造化): 抽出したテーマを`category`が`locked_category`と一致するものだけに絞り込む(他カテゴリのテーマは`priority`がどれだけ高くても検討対象から外す。優先度競争に依存せず「この曜日は必ずこのカテゴリ」を保証するのが目的のため、他カテゴリへは絶対にフォールバックしない)。絞り込んだ候補から、以下の順で1件を選ぶ:
-   - **Tier A(季節限定)**: `season_dependency: high`(期間限定・季節性の強いテーマ。例: 書き初め=12〜1月、プログラミング夏体験=7〜8月)のものが候補にあれば、`priority`が最も高いものを最優先で採用する(時期を逃すと来年まで使えないため、通年ジャンルローテーションより優先)。
-   - **Tier B(通年・ジャンルローテーション)**: Tier Aに該当が無ければ、残りの候補(通年ローカルアンカー等、`season_dependency: low/medium`)から選ぶ。`id`が`naraigoto-<ジャンル>-*`(そろばん/英会話/習字/プログラミング/将棋)の命名規則を持つことを利用し、`data/recent_titles.json`の`seasonal_topic_id`からジャンルごとの最終選定日を逆算し、**最も長く選ばれていない(または実績が無い)ジャンル**の候補を優先する。同ジャンルに複数候補があれば`priority`が高い方を選ぶ。`recent_titles.json`にnaraigoto系の実績がまだ無い(運用初期)場合は、単純に`priority`順(英会話58が最上位、他4ジャンルは56で横並び)で選んでよい。年間の目安として、1ジャンルが年6本を大きく下回らないよう(52週÷5ジャンル≒年10本が理論値)、極端に同じジャンルへ偏らせないこと。
-   - **Tier C(ギャップ候補)**: Tier A・Bの候補が全て`data/recent_titles.json`と重複NG(似たテーマ・切り口)で使えない場合のみ、手順4bの`data/seo_candidates/YYYY-MM-DD.json`から`content_category: "naraigoto"`の候補を探し、あれば採用する(`candidate_id`を`seo_candidate_id`に記録。手順9参照)。
+   **今日の曜日(`config/calendar.yaml`)に`locked_category`が設定されている場合**(2026-07-29〜、現状は水・金・日=「習い事紹介」。習い事ブログを年間通してバランスよく公開するための構造化。塾4:習い事3の配分で確定): 抽出したテーマを`category`が`locked_category`と一致するものだけに絞り込む(他カテゴリのテーマは`priority`がどれだけ高くても検討対象から外す。優先度競争に依存せず「この曜日は必ずこのカテゴリ」を保証するのが目的のため、他カテゴリへは絶対にフォールバックしない)。絞り込んだ候補から、以下の順で1件を選ぶ:
+   - **Tier A(季節限定)**: `season_dependency: high`(期間限定・季節性の強いテーマ。例: 書き初め=12〜1月、プログラミング夏体験=7〜8月)のものが候補にあれば、`priority`が最も高いものを最優先で採用する(時期を逃すと来年まで使えないため、下記Tier A'・Tier Bより優先)。
+   - **Tier A'(将棋の下限保証、2026-07-29〜)**: Tier Aに該当が無ければ、`data/recent_titles.json`の`seasonal_topic_id`から`naraigoto-shogi-*`が最後に選ばれた日付を確認する。**直近8週間(約56日)以内に将棋が選ばれていなければ**、`naraigoto-shogi-*`の候補(`shogi-focus`が期間内ならそちら、無ければ`shogi-local`)を優先して採用する(年6〜7本ペースを維持するための下限保証。将棋は下記Tier Bの通常ローテーションには含めない)。8週間以内に選ばれていれば、このTierはスキップしてTier Bへ進む。
+   - **Tier B(通年・主4ジャンルローテーション)**: Tier A/A'のいずれにも該当が無ければ、**英会話・そろばん・習字・プログラミングの4ジャンルのみ**(将棋を除く)の候補から選ぶ。`id`が`naraigoto-<ジャンル>-*`の命名規則を持つことを利用し、`data/recent_titles.json`の`seasonal_topic_id`からジャンルごとの最終選定日を逆算し、**この4ジャンルの中で最も長く選ばれていない(または実績が無い)ジャンル**の候補を優先する。同ジャンルに複数候補があれば`priority`が高い方を選ぶ。`recent_titles.json`にnaraigoto系の実績がまだ無い(運用初期)場合は、単純に`priority`順(英会話58が最上位、他3ジャンルは56で横並び)で選んでよい。週3枠(年間約150枠)のほぼ全てがこの4ジャンルに配分される想定のため、特定の1ジャンルに極端に偏らせないこと。
+   - **Tier C(ギャップ候補)**: Tier A/A'/Bの候補が全て`data/recent_titles.json`と重複NG(似たテーマ・切り口)で使えない場合のみ、手順4bの`data/seo_candidates/YYYY-MM-DD.json`から`content_category: "naraigoto"`の候補を探し、あれば採用する(`candidate_id`を`seo_candidate_id`に記録。手順9参照)。
    - 上記Tier A〜Cが全て使えない場合のみ、`config/calendar.yaml`の当該曜日の`themes`(ジャンル横断の一般論テーマ)を使う(それでも`category`は`locked_category`のまま。他カテゴリへは戻さない)。
+   - **`locked_category`曜日では、採用したTier(A/A'/B/C/フォールバックのいずれか)を`naraigoto_tier`(手順9参照)に記録すること**(2026-08-02週の初週レビュー用。設計どおりTierが機能しているかを人間が確認する)。
 
    **`locked_category`が無い曜日は従来通り**: 抽出したテーマを`priority`の高い順に並べ、上から順に`data/recent_titles.json`と重複しない(似たテーマ・切り口でない)ものを探し、見つかったらそれを今日の企画の軸として採用する(曜日テーマより優先する)。
    - 候補が複数あり最上位が重複NGの場合は次点を試す。全候補が重複NGなら`fallback_topic_id`をたどって代替を探す。それも尽きれば手順2の曜日テーマにフォールバックする。
@@ -115,7 +117,8 @@ model: sonnet
   "selection_reasons": "この企画を採用した理由の要約(70点未満で採用した場合はその理由も明記)",
   "exam_target_year": "手順4aで採用した場合はfacts.jsonのtarget_year(西暦の整数)、それ以外はnull",
   "exam_facts_used": "手順4aで選んだfacts.jsonのfacts配列の要素をそのまま配列で記録、それ以外は空配列",
-  "seo_candidate_id": "手順4bで採用した場合はseo_candidates/のcandidate_id(数値)、それ以外はnull"
+  "seo_candidate_id": "手順4bで採用した場合はseo_candidates/のcandidate_id(数値)、それ以外はnull",
+  "naraigoto_tier": "locked_category曜日で採用したTier('A'/'A_prime'/'B'/'C'/'fallback'のいずれか)、locked_category曜日でなければnull"
 }
 ```
 

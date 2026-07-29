@@ -153,3 +153,16 @@ test('projectThemeCalendar: 実際のconfig(calendar.yaml/seasonal_topics.yaml)�
     );
   }
 });
+
+test('projectThemeCalendar: 実際のconfigで水・金・日は必ず習い事紹介になる(週3拡張、塾4:習い事3、2026-07-29)', () => {
+  const { days: calendar } = projectThemeCalendar('2026-07-29', 14); // 2026-07-29(水)から2週間
+  const weekdayNameMap = ['日', '月', '火', '水', '木', '金', '土'];
+  calendar.forEach((d) => {
+    const wd = weekdayNameMap[new Date(`${d.date}T00:00:00Z`).getUTCDay()];
+    if (['水', '金', '日'].includes(wd)) {
+      assert.equal(d.category, '習い事紹介', `${d.date}(${wd})はlocked_category対象のはずが category=${d.category}`);
+    } else {
+      assert.notEqual(d.category, '習い事紹介', `${d.date}(${wd})はlocked_category対象外のはずがcategory=習い事紹介になっている`);
+    }
+  });
+});

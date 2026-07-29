@@ -10,6 +10,12 @@
 # 絞り込む(智谷の手順1参照)。優先度の競争に依存せず「この曜日は必ずこの
 # カテゴリ」を構造的に保証するための仕組み。通常の曜日(このフィールドが無い)
 # は従来通り全カテゴリを対象にする。
+# 2026-07-29: 週1(日)→週3(水・金・日)へ拡張(塾4:習い事3で確定)。水・金・日は
+# 7日間で2/2/3日間隔となり、3枠を配置する上で最も均等な分散になる。
+# ジャンル別の重み付け(将棋を年6本下限で切り離し、主4ジャンルへ増枠分を配分)は
+# .claude/agents/planner-blog-btoc.md の Tier A' 参照。
+# あま本部校(branches/ama-honbu/config/calendar.yaml)には適用しない(当面は塾のみに
+# 集中というユーザー決定、test/branch_aware_config.test.jsで固定済み)。
 
 weekdays:
   monday:
@@ -27,12 +33,13 @@ weekdays:
       - "部活との両立"
     category: "勉強のコツ"
   wednesday:
-    label: "小学生の学習習慣・保護者の悩み"
+    label: "習い事紹介(ジャンル横断ローテーション枠、2026-07-29〜)"
+    locked_category: "習い事紹介"
     themes:
-      - "家庭学習の習慣づけ"
-      - "ゲームとの付き合い方"
-      - "学年別のつまずきポイント"
-    category: "勉強のコツ"
+      - "習い事選びの基礎知識(ジャンル横断)"
+      - "習い事と塾の両立"
+    category: "習い事紹介"
+    fallback_note: "config/seasonal_topics.yamlのcategory:習い事紹介から選ぶことを優先する。全て重複等で使えない場合のみこのthemesを使う(他カテゴリへは戻さない)"
   thursday:
     label: "地域の受験情報"
     themes:
@@ -41,10 +48,13 @@ weekdays:
       - "地域の進路事情"
     category: "入試情報"
   friday:
-    label: "教科別ワンポイント解説"
+    label: "習い事紹介(ジャンル横断ローテーション枠、2026-07-29〜)"
+    locked_category: "習い事紹介"
     themes:
-      - "{junior_high_schools}の進度に合わせた単元解説"
-    category: "勉強のコツ"
+      - "習い事選びの基礎知識(ジャンル横断)"
+      - "習い事と塾の両立"
+    category: "習い事紹介"
+    fallback_note: "config/seasonal_topics.yamlのcategory:習い事紹介から選ぶことを優先する。全て重複等で使えない場合のみこのthemesを使う(他カテゴリへは戻さない)"
   saturday:
     label: "保護者向けコラム"
     themes:
