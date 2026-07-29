@@ -87,6 +87,48 @@ test('projectThemeCalendar: 同じ期間内で既出の季節テーマは繰り�
   assert.equal(day3.source, 'weekday'); // 候補を使い切ったので曜日テーマにフォールバック
 });
 
+test('projectThemeForDate: locked_categoryがある曜日は、他カテゴリの高priorityテーマより低priorityでも同カテゴリを優先する(習い事の年間バランス構造化、2026-07-29)', () => {
+  const seasonalTopics = [
+    { id: 'juku-emergency', title: '塾の緊急テーマ', category: '勉強のコツ', priority: 90, publish_window: { start: '2026-08-02', end: '2026-08-10' } },
+    { id: 'naraigoto-eikaiwa-local', title: '習い事テーマ', category: '習い事紹介', priority: 58, publish_window: { start: '2026-07-29', end: '2026-12-31' } },
+  ];
+  const calendarConfig = {
+    weekdays: { sunday: { label: '習い事紹介枠', locked_category: '習い事紹介', category: '習い事紹介', themes: ['一般論'] } },
+    seasons: [],
+  };
+  // 2026-08-02は日曜日
+  const result = projectThemeForDate('2026-08-02', { calendarConfig, seasonalTopics });
+  assert.equal(result.source, 'seasonal_topic');
+  assert.equal(result.seasonalTopicId, 'naraigoto-eikaiwa-local', 'priorityが低くても、locked_categoryと一致する方が優先されるべき');
+});
+
+test('projectThemeForDate: locked_category曜日で該当カテゴリの候補が無ければ曜日テーマ(themes)にフォールバックする(他カテゴリへは戻さない)', () => {
+  const seasonalTopics = [
+    { id: 'juku-emergency', title: '塾の緊急テーマ', category: '勉強のコツ', priority: 90, publish_window: { start: '2026-08-02', end: '2026-08-10' } },
+  ];
+  const calendarConfig = {
+    weekdays: { sunday: { label: '習い事紹介枠', locked_category: '習い事紹介', category: '習い事紹介', themes: ['習い事選びの基礎知識'] } },
+    seasons: [],
+  };
+  const result = projectThemeForDate('2026-08-02', { calendarConfig, seasonalTopics });
+  assert.equal(result.source, 'weekday');
+  assert.equal(result.category, '習い事紹介', '候補が無くてもlocked_categoryのまま。他カテゴリの塾の緊急テーマへは戻らない');
+});
+
+test('projectThemeForDate: locked_categoryが無い曜日は従来通り全カテゴリ横断でpriority最上位を選ぶ(既存挙動の回帰確認)', () => {
+  const seasonalTopics = [
+    { id: 'juku-emergency', title: '塾の緊急テーマ', category: '勉強のコツ', priority: 90, publish_window: { start: '2026-08-03', end: '2026-08-10' } },
+    { id: 'naraigoto-eikaiwa-local', title: '習い事テーマ', category: '習い事紹介', priority: 58, publish_window: { start: '2026-07-29', end: '2026-12-31' } },
+  ];
+  const calendarConfig = {
+    weekdays: { monday: { label: '週間地域情報', category: '地域情報', themes: ['x'] } },
+    seasons: [],
+  };
+  // 2026-08-03は月曜日(locked_categoryなし)
+  const result = projectThemeForDate('2026-08-03', { calendarConfig, seasonalTopics });
+  assert.equal(result.seasonalTopicId, 'juku-emergency', 'locked_categoryが無い曜日はカテゴリ横断でpriority最上位が選ばれるべき');
+});
+
 test('projectThemeCalendar: 実際のconfig(calendar.yaml/seasonal_topics.yaml)で365日分を生成できる', () => {
   const { days: calendar, isSharedFallback } = projectThemeCalendar('2026-07-11', 365);
   assert.equal(isSharedFallback, false, 'branchId未指定(legacy)ではフォールバック扱いにならない');

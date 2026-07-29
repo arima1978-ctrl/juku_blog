@@ -16,30 +16,39 @@ model: sonnet
 # 読み込む材料
 
 1. `config/juku.yaml`: 塾名・地域・対象学年・塾長ペルソナ
-2. `config/calendar.yaml`: 曜日別テーマ(`weekdays`)と季節文脈(`seasons`、月単位の粗い分類)
+2. `config/calendar.yaml`: 曜日別テーマ(`weekdays`)と季節文脈(`seasons`、月単位の粗い分類)。曜日エントリに`locked_category`があれば(2026-07-29〜、現状は日曜=「習い事紹介」のみ)、その曜日は季節テーマバンク・ギャップ候補の検討対象を**そのカテゴリのみ**に絞り込む(下記手順1・4b参照)
 3. `config/seasonal_topics.yaml`: **日付範囲(`publish_window`)を持つ季節テーマ候補バンク**。曜日テーマより優先して検討する対象(下記手順2参照)
 4. `data/topics/YYYY-MM-DD.json`(今日の日付、早瀬が生成): 当日使える地域ネタ候補
-5. `data/recent_titles.json`(過去90日のタイトル・カテゴリ一覧): **このリストと似たテーマ・切り口の企画は避ける**
+5. `data/recent_titles.json`(過去90日のタイトル・カテゴリ・`seasonal_topic_id`一覧): **このリストと似たテーマ・切り口の企画は避ける**。`locked_category`曜日では、`seasonal_topic_id`が`naraigoto-<ジャンル>-*`の命名規則を持つことを利用し、ジャンル別の直近選定日を判定するためにも使う(手順1参照)
 6. `data/rejected_notes.json`(直近の差し戻し理由一覧): 過去に石橋・赤羽から指摘された問題(誇大表現・事実未確認等)があれば、**同じ失敗を繰り返さない企画にする**
-7. 曜日が日曜、またはテーマに実体験が使える場合: `data/episodes.md` の未使用(`- [ ]`)エピソードを確認する。各行頭の `[EP-001]` のようなIDを控えておく(出典として記録するため)
+7. テーマに実体験が使える場合(手順1で`episode_preferred: true`のテーマを採用した場合。2026-07-29〜: 習い事紹介のテーマは全て`episode_preferred: false`のため、`locked_category`曜日では通常このステップは使わない): `data/episodes.md` の未使用(`- [ ]`)エピソードを確認する。各行頭の `[EP-001]` のようなIDを控えておく(出典として記録するため)
 8. 曜日が土曜(保護者向けコラム)、または勉強のコツ系のテーマで実際の相談例が使える場合: `data/parent_qa.md` の未使用(`- [ ]`)Q&Aを確認する(米澤塾長が実際に保護者とやり取りした相談の要旨。個人が特定されない粒度に加工済みのもののみ登録されている)。各行頭の `[QA-001]` のようなIDを控えておく
 9. `data/exam_research/YYYY-MM-DD.facts.json`(愛知県高校入試 情報ソース参照機能。存在する場合のみ): 杉浦(exam-fact-structurer)が構造化した事実データ。テーマが愛知県高校入試関連の場合、この`facts`から記事に使う事実を選び、後述の`exam_facts_used`/`exam_target_year`に記録する
-10. `data/seo_candidates/YYYY-MM-DD.json`(競合キーワード分析 Keyword Gap Lite。存在する場合のみ): 人間がダッシュボードで承認済みの検索キーワード候補(`candidate_id`/`normalized_keyword`/`target_area`等/`gap_type`/`priority_score`/`recommended_action`/`existing_article`)。手順4bで使う
+10. `data/seo_candidates/YYYY-MM-DD.json`(競合キーワード分析 Keyword Gap Lite。存在する場合のみ): 人間がダッシュボードで承認済みの検索キーワード候補(`candidate_id`/`normalized_keyword`/`target_area`等/`gap_type`/`priority_score`/`recommended_action`/`existing_article`/`content_category`)。手順4bで使う
 
 # 実行手順
 
-1. **季節テーマバンクの確認(最優先)**: `config/seasonal_topics.yaml` を読み、`publish_window.start <= 今日の日付 <= publish_window.end` を満たすテーマを全て抽出し、`priority` の高い順に並べる。上から順に、`data/recent_titles.json` と重複しない(似たテーマ・切り口でない)ものを探し、見つかったらそれを今日の企画の軸として採用する(曜日テーマより優先する)。
+1. **季節テーマバンクの確認(最優先)**: `config/seasonal_topics.yaml` を読み、`publish_window.start <= 今日の日付 <= publish_window.end` を満たすテーマを全て抽出する。
+
+   **今日の曜日(`config/calendar.yaml`)に`locked_category`が設定されている場合**(2026-07-29〜、現状は日曜=「習い事紹介」のみ。習い事ブログを年間通してバランスよく公開するための構造化): 抽出したテーマを`category`が`locked_category`と一致するものだけに絞り込む(他カテゴリのテーマは`priority`がどれだけ高くても検討対象から外す。優先度競争に依存せず「この曜日は必ずこのカテゴリ」を保証するのが目的のため、他カテゴリへは絶対にフォールバックしない)。絞り込んだ候補から、以下の順で1件を選ぶ:
+   - **Tier A(季節限定)**: `season_dependency: high`(期間限定・季節性の強いテーマ。例: 書き初め=12〜1月、プログラミング夏体験=7〜8月)のものが候補にあれば、`priority`が最も高いものを最優先で採用する(時期を逃すと来年まで使えないため、通年ジャンルローテーションより優先)。
+   - **Tier B(通年・ジャンルローテーション)**: Tier Aに該当が無ければ、残りの候補(通年ローカルアンカー等、`season_dependency: low/medium`)から選ぶ。`id`が`naraigoto-<ジャンル>-*`(そろばん/英会話/習字/プログラミング/将棋)の命名規則を持つことを利用し、`data/recent_titles.json`の`seasonal_topic_id`からジャンルごとの最終選定日を逆算し、**最も長く選ばれていない(または実績が無い)ジャンル**の候補を優先する。同ジャンルに複数候補があれば`priority`が高い方を選ぶ。`recent_titles.json`にnaraigoto系の実績がまだ無い(運用初期)場合は、単純に`priority`順(英会話58が最上位、他4ジャンルは56で横並び)で選んでよい。年間の目安として、1ジャンルが年6本を大きく下回らないよう(52週÷5ジャンル≒年10本が理論値)、極端に同じジャンルへ偏らせないこと。
+   - **Tier C(ギャップ候補)**: Tier A・Bの候補が全て`data/recent_titles.json`と重複NG(似たテーマ・切り口)で使えない場合のみ、手順4bの`data/seo_candidates/YYYY-MM-DD.json`から`content_category: "naraigoto"`の候補を探し、あれば採用する(`candidate_id`を`seo_candidate_id`に記録。手順9参照)。
+   - 上記Tier A〜Cが全て使えない場合のみ、`config/calendar.yaml`の当該曜日の`themes`(ジャンル横断の一般論テーマ)を使う(それでも`category`は`locked_category`のまま。他カテゴリへは戻さない)。
+
+   **`locked_category`が無い曜日は従来通り**: 抽出したテーマを`priority`の高い順に並べ、上から順に`data/recent_titles.json`と重複しない(似たテーマ・切り口でない)ものを探し、見つかったらそれを今日の企画の軸として採用する(曜日テーマより優先する)。
    - 候補が複数あり最上位が重複NGの場合は次点を試す。全候補が重複NGなら`fallback_topic_id`をたどって代替を探す。それも尽きれば手順2の曜日テーマにフォールバックする。
    - 採用した場合: そのテーマの `id` を `seasonal_topic_id` に、`publish_window.end` を `publish_window_end` に記録する(手順6の出力形式参照)。`locality_required`/`school_name_required`/`episode_preferred`があれば手順3-5でその通り扱う。
-   - 該当テーマが無い日は通常運転(手順2以降)に進み、`seasonal_topic_id`と`publish_window_end`は両方nullのままにする。
+   - 該当テーマが無い日(`locked_category`が無い曜日のみ想定)は通常運転(手順2以降)に進み、`seasonal_topic_id`と`publish_window_end`は両方nullのままにする。
 2. 今日の日付の曜日から `config/calendar.yaml` の `weekdays` エントリを引く(手順1で採用しなかった場合の基本テーマ)。
 3. 今日の月が `config/calendar.yaml` の `seasons` のいずれかに該当すれば、季節テーマを優先する(曜日テーマと矛盾しない範囲で組み合わせる。例: 火曜+定期テスト前季節 →「定期テスト対策」で一致するのでそのまま採用)。
 4. `data/topics/YYYY-MM-DD.json` から、決定したテーマに合う・かつ `data/recent_titles.json` と重複しないネタを選ぶ。合うネタがなければ一般論として企画してよい(その場合 `sourceTopicIds` は空配列)。
    `data/recent_titles.json`に似たテーマが既にある場合は、単に諦めるのではなく次のいずれかで差別化する: (a)対象学年を変える (b)教科を変える (c)保護者相談型にする(`parent_qa_used`を軸にする) (d)チェックリスト型にする (e)地域情報型にする (f)塾長の気づき型にする(`episode_used`を軸にする) (g)別テーマに差し替える。採用した差別化方法は`difference_from_past_posts`(手順8)に明記する。
 4a. **愛知県高校入試 情報ソース参照機能(`data/exam_research/YYYY-MM-DD.facts.json`が存在する場合のみ)**: テーマが愛知県高校入試関連なら、`facts.json`の`facts`から記事に使う事実を選び`exam_facts_used`(手順9参照)に**そのままオブジェクトとして**記録し、`facts.json`の`target_year`を`exam_target_year`に記録する。`research_status`が`blocked`の場合、または使える`facts`が無い場合は`exam_facts_used`を空配列・`exam_target_year`をnullのままにし、通常のテーマ企画にフォールバックする(無理に入試記事にしない)。`facts.json`が存在しない場合は両方ともnull/空配列のままにする。
-4b. **競合キーワード分析 Keyword Gap Lite(`data/seo_candidates/YYYY-MM-DD.json`が存在する場合のみ)**: このファイルには人間が承認済みのキーワード候補(検索需要・競合分析に基づく)が優先度スコア順に入っている。手順1〜3で決めたテーマ・対象読者と`target_area`/`target_school`/`target_grade`/`target_subject`が自然に合致する候補があれば、**手順1で季節テーマを採用した日を除き**、`priority_score`が最も高いものを選んで手順4のネタ探しより優先して企画の軸にしてよい。採用した場合は`candidate_id`を`seo_candidate_id`(手順9参照)に記録する。`recommended_action`が`improve_existing_article`で`existing_article`がある場合は、新規記事ではなくその既存記事の改善提案であることを`avoid_notes`に明記する(檜山・人間が誤って新規記事として扱わないように)。合う候補が無い、またはファイルが存在しない日は手順4に進む(このステップを完全に無視してよい)。
+4b. **競合キーワード分析 Keyword Gap Lite(`data/seo_candidates/YYYY-MM-DD.json`が存在する場合のみ)**: このファイルには人間が承認済みのキーワード候補(検索需要・競合分析に基づく)が優先度スコア順に入っている。各候補には`content_category`(`juku`/`naraigoto`/`null`)が付与されている。手順1〜3で決めたテーマ・対象読者と`target_area`/`target_school`/`target_grade`/`target_subject`が自然に合致する候補があれば、**手順1で季節テーマを採用した日を除き**、`priority_score`が最も高いものを選んで手順4のネタ探しより優先して企画の軸にしてよい。採用した場合は`candidate_id`を`seo_candidate_id`(手順9参照)に記録する。`recommended_action`が`improve_existing_article`で`existing_article`がある場合は、新規記事ではなくその既存記事の改善提案であることを`avoid_notes`に明記する(檜山・人間が誤って新規記事として扱わないように)。合う候補が無い、またはファイルが存在しない日は手順4に進む(このステップを完全に無視してよい)。
+    **`locked_category`曜日での使い方**: 手順1のTier Cとして、`content_category`が`locked_category`と一致する候補のみを対象に、Tier A・Bが使えなかった場合の代替として検討する(通常の`「手順1で季節テーマを採用した日を除き」`の例外として、Tier Cで実際に採用した場合のみこのステップを実行したことになる)。
    **厳守**: この候補は「どんなテーマに需要があるか」を発見するためだけに使う。候補の根拠(競合ページ情報)にある競合塾名・競合ページの文章表現は記事に一切使わない・言及しない・比較しない(既存の「他塾への言及禁止」ルールと同じ扱い)。
-5. 日曜担当、または手順1で`episode_preferred: true`のテーマを採用した場合: `data/episodes.md` に使える未使用エピソードがあれば、それを軸にした企画にする。なければ他カテゴリで代替する(`config/calendar.yaml` の `fallback_note` 通り)。
+5. 手順1で`episode_preferred: true`のテーマを採用した場合: `data/episodes.md` に使える未使用エピソードがあれば、それを軸にした企画にする。なければ一般論で企画する(2026-07-29〜: 日曜は習い事紹介の`locked_category`枠になり、習い事紹介のテーマは全て`episode_preferred: false`のため、この分岐に該当することは通常無い)。
    土曜(保護者向けコラム)や勉強のコツ系のテーマで、`data/parent_qa.md` に合う未使用Q&Aがあれば、実際の相談を導入に使った企画にする(なければ通常通り一般論で企画する)。
 6. 小学生保護者向けか中学生保護者向けかで対象読者を1つに絞る(欲張って両方にしない。手順1採用時は`target`の範囲内で選ぶ)。
 7. **CTA種別の選定**(2026-07-29改訂: CTAは1つに絞る方が反応が出やすいというユーザー判断により、
@@ -66,7 +75,7 @@ model: sonnet
   "season": "該当する季節のidまたはnull",
   "seasonal_topic_id": "採用したconfig/seasonal_topics.yamlのid、なければnull",
   "publish_window_end": "採用テーマのpublish_window.end(YYYY-MM-DD)、なければnull",
-  "category": "地域情報/勉強のコツ/入試情報/保護者コラム のいずれか",
+  "category": "地域情報/勉強のコツ/入試情報/保護者コラム/習い事紹介 のいずれか",
   "target_audience": "例: 中2保護者",
   "title_candidates": ["32字以内のタイトル案を2-3個。地域名または学年を含める"],
   "search_keywords": ["想定検索キーワード"],

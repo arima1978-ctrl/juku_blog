@@ -948,13 +948,19 @@ seasonal_topics:
     allowed_cta: ["shogi_trial"]
     season_dependency: medium
 
-  # --- 記事ファースト転換(2026-07-29ユーザー承認): 英会話・習字は棚卸しで判明した
+  # --- 記事ファースト転換・通年ローカルアンカー(2026-07-29ユーザー承認、5ジャンル揃い)。
   # 地域名+一般語の検索需要を通年で狙う。季節性が薄いため通年枠(残り2026年いっぱい)。
-  # priorityは緊急季節テーマ(70以上)より下・既存naraigotoテーマ(45〜55)よりやや上に設定し、
-  # 2〜3週間以内に選ばれる現実的な水準にしている。ただし承認済みTask 57(自立学習、
-  # Keyword Gap Lite候補)を優先させたいため、それを上回らない範囲に留めている
-  # (候補トラックとは別軸のため数値上の直接比較は厳密には出来ないが、緊急枠には入れない)。
-  # eikaiwa-local > shodo-local の順で、自立学習→英会話→習字の順に選ばれることを狙う。
+  #
+  # 2026-07-29〜: 曜日ローテーションの日曜(config/calendar.yamlのlocked_category)が
+  # 「習い事紹介」専用枠になったため、これらの通年アンカーは優先度競争に依存せず毎週
+  # 必ず検討対象に入る。実際の選定は智谷の手順1に追加したジャンルローテーション
+  # (直近で最も長く選ばれていないジャンルを優先するタイブレーク)に委ねる。
+  # priorityの差は「需要データの有無」を反映するのみで、選定順序を直接固定するものではない:
+  # 英会話(58)のみKeyword Gap Lite上で実測需要(月間検索720)があるため他4ジャンルより
+  # 高く設定し、そろばん/習字/プログラミング/将棋(56)は横並び(いずれも実測データ無し)。
+  # 週1本×52週のローテーションにより年6本/ジャンルの下限は構造的に達成される見込み
+  # (52週÷5ジャンル≒10.4本/ジャンル/年)。9〜10月頃、習い事ジャンルのKeyword Gap Lite/GSC
+  # 実績が貯まった段階でpriority・下限を実測データに基づき再調整する。
   - id: naraigoto-eikaiwa-local
     title: "守山区で子ども英会話教室を探すなら"
     category: "習い事紹介"
@@ -985,4 +991,52 @@ seasonal_topics:
     episode_preferred: false
     fallback_topic_id: null
     allowed_cta: ["shodo_trial"]
+    season_dependency: low
+
+  - id: naraigoto-soroban-local
+    title: "守山区で子どものそろばん教室を探すなら"
+    category: "習い事紹介"
+    target: ["elementary_parent"]
+    keywords:
+      primary: "守山区 そろばん"
+      secondary: ["瓢箪山 そろばん教室", "そろばん教室 選び方"]
+    publish_window: { start: "2026-07-29", end: "2026-12-31" }
+    priority: 56
+    locality_required: true
+    school_name_required: false
+    episode_preferred: false
+    fallback_topic_id: null
+    allowed_cta: ["soroban_trial"]
+    season_dependency: low
+
+  - id: naraigoto-programming-local
+    title: "守山区で子どもプログラミングを習うなら"
+    category: "習い事紹介"
+    target: ["elementary_parent", "junior_high_parent"]
+    keywords:
+      primary: "守山区 プログラミング教室"
+      secondary: ["瓢箪山 プログラミング教室", "子供 プログラミング 教室 選び方"]
+    publish_window: { start: "2026-07-29", end: "2026-12-31" }
+    priority: 56
+    locality_required: true
+    school_name_required: false
+    episode_preferred: false
+    fallback_topic_id: null
+    allowed_cta: ["programming_trial"]
+    season_dependency: low
+
+  - id: naraigoto-shogi-local
+    title: "守山区で子どもの将棋教室を探すなら"
+    category: "習い事紹介"
+    target: ["elementary_parent", "junior_high_parent"]
+    keywords:
+      primary: "守山区 将棋教室"
+      secondary: ["瓢箪山 将棋教室", "将棋 教室 選び方"]
+    publish_window: { start: "2026-07-29", end: "2026-12-31" }
+    priority: 56
+    locality_required: true
+    school_name_required: false
+    episode_preferred: false
+    fallback_topic_id: null
+    allowed_cta: ["shogi_trial"]
     season_dependency: low

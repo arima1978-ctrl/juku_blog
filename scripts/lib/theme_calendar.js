@@ -32,7 +32,16 @@ function getMonthNumber(dateStr) {
 // 簡易的に再現するため候補から除外する(同じ期間内で同じテーマが何日も
 // 続けて表示されるのを防ぐ)。
 function projectThemeForDate(dateStr, { calendarConfig, seasonalTopics, usedTopicIds = new Set() }) {
-  const activeSeasonalTopics = getActiveTopics(dateStr, seasonalTopics).filter((t) => !usedTopicIds.has(t.id));
+  const weekdayKey = getWeekdayKey(dateStr);
+  const weekday = (calendarConfig.weekdays && calendarConfig.weekdays[weekdayKey]) || null;
+  // locked_category(2026-07-29〜、習い事の年間バランス構造化): その曜日は季節テーマバンクの
+  // 検討対象もlocked_categoryに絞り込む。智谷(planner-blog-btoc)の手順1と同じ絞り込みを
+  // ここでも再現しないと、プレビューだけ他カテゴリの高priorityテーマを表示してしまい、
+  // 実際の生成結果と食い違う(曜日ロックの意味が無くなる)。
+  let activeSeasonalTopics = getActiveTopics(dateStr, seasonalTopics).filter((t) => !usedTopicIds.has(t.id));
+  if (weekday && weekday.locked_category) {
+    activeSeasonalTopics = activeSeasonalTopics.filter((t) => t.category === weekday.locked_category);
+  }
   if (activeSeasonalTopics.length > 0) {
     const top = activeSeasonalTopics[0];
     return {
@@ -46,8 +55,6 @@ function projectThemeForDate(dateStr, { calendarConfig, seasonalTopics, usedTopi
     };
   }
 
-  const weekdayKey = getWeekdayKey(dateStr);
-  const weekday = (calendarConfig.weekdays && calendarConfig.weekdays[weekdayKey]) || null;
   const month = getMonthNumber(dateStr);
   const season = (calendarConfig.seasons || []).find((s) => (s.months || []).includes(month)) || null;
 

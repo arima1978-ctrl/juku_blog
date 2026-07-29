@@ -585,14 +585,18 @@ function listPosts({ status, category, branchId } = {}) {
   return stmt.all(params);
 }
 
+// seasonal_topic_idを含める(2026-07-29、習い事の年間バランス構造化): idの命名規則
+// (naraigoto-<ジャンル>-*)から、智谷がジャンル別の直近選定日を判定できるようにするため。
 function listTitlesSince(sinceIso, branchId) {
   const conn = getDb();
   if (branchId !== undefined && branchId !== null) {
     return conn
-      .prepare('SELECT title, category, created_at FROM posts WHERE created_at >= ? AND branch_id = ? ORDER BY created_at DESC')
+      .prepare(
+        'SELECT title, category, seasonal_topic_id, created_at FROM posts WHERE created_at >= ? AND branch_id = ? ORDER BY created_at DESC'
+      )
       .all(sinceIso, branchId);
   }
-  const stmt = conn.prepare('SELECT title, category, created_at FROM posts WHERE created_at >= ? ORDER BY created_at DESC');
+  const stmt = conn.prepare('SELECT title, category, seasonal_topic_id, created_at FROM posts WHERE created_at >= ? ORDER BY created_at DESC');
   return stmt.all(sinceIso);
 }
 

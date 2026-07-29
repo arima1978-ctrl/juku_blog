@@ -60,4 +60,24 @@ test('CLI: status=queuedの候補もstatus=approvedと合算してexportされ�
   assert.ok(keywords.includes('春期講習'));
   // priority_score降順(自立学習90 > 春期講習30)
   assert.equal(payload[0].normalized_keyword, '自立学習');
+  // 習い事の年間バランス構造化(2026-07-29): 智谷がlocked_category曜日でnaraigoto候補のみを
+  // 検討対象に絞り込めるよう、content_categoryを付与している
+  assert.equal(payload[0].content_category, 'juku');
+});
+
+test('CLI: naraigoto辞書に一致する候補にはcontent_category:naraigotoが付与される', () => {
+  const result = seoDb.upsertKeywordCandidate(
+    { normalized_keyword: '守山区 英会話', gap_type: 'untapped', priority_score: 50, recommended_action: 'create_article' },
+    nowIso
+  );
+  seoDb.updateCandidateStatus(result.id, { toStatus: 'reviewing', actor: 'test' }, nowIso);
+  seoDb.updateCandidateStatus(result.id, { toStatus: 'approved', approvedAction: 'create_article', actor: 'test' }, nowIso);
+
+  if (fs.existsSync(OUT_PATH)) fs.unlinkSync(OUT_PATH);
+  execFileSync('node', [path.join(ROOT, 'scripts', 'seo_topic_candidates_export.js'), OUT_DATE], { env: process.env });
+
+  const payload = JSON.parse(fs.readFileSync(OUT_PATH, 'utf8'));
+  const row = payload.find((c) => c.normalized_keyword === '守山区 英会話');
+  assert.ok(row, 'naraigoto候補が出力に含まれていません');
+  assert.equal(row.content_category, 'naraigoto');
 });

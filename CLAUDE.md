@@ -267,6 +267,30 @@ Impact Calculatorも`improve_school_page`と同様に扱う)。`scripts/seo_bran
 CTA(`soroban_trial`等)で各ブランドページへ誘導する「記事ファースト」を主軸とする
 (ブランドページ改善タスクは判断材料としての提案生成は継続)。
 
+### 習い事ブログの年間バランス構造化(2026-07-29〜)
+
+優先度方式のみでは、緊急季節テーマ(priority 70〜90)が常にウインドウ内に存在し続けるため、
+習い事テーマ(priority 45〜58)が実際にはほぼ選ばれない実データ(7/20〜7/29の10日間、一度も
+選定されず)が確認された。これを踏まえ、曜日ローテーション(`config/calendar.yaml`)に
+`locked_category`を導入し、**日曜を「習い事紹介」専用枠**にした(優先度競争に依存しない
+構造的保証)。塾記事は週6本のまま(小幡校のSEO測定指標定義には影響しない)。
+
+- 智谷(`planner-blog-btoc.md`手順1)は、その日の`locked_category`と一致するテーマのみを
+  検討対象に絞り込み、他カテゴリへは絶対にフォールバックしない。絞り込んだ候補内で
+  Tier A(季節限定、`season_dependency: high`。例: 書き初め12〜1月・プログラミング夏体験7〜8月)
+  → Tier B(通年ローカルアンカー、ジャンルローテーション)→ Tier C(`data/seo_candidates/`の
+  `content_category: naraigoto`候補)の順で1件を選ぶ。
+- 5ジャンル(そろばん/英会話/習字/プログラミング/将棋)全てに`naraigoto-<ジャンル>-local`という
+  通年ローカルアンカー(`守山区 そろばん`等、地域名+一般語)が揃っている。英会話のみKeyword Gap
+  Lite上で実測需要(月間検索720)があるためpriorityをやや高く(58)、他4ジャンルは横並び(56)。
+- Tier Bのジャンルローテーションは、`data/recent_titles.json`(`listTitlesSince()`が
+  `seasonal_topic_id`も返すよう拡張済み)から`naraigoto-<ジャンル>-*`のid命名規則でジャンル別の
+  最終選定日を逆算し、最も長く選ばれていないジャンルを優先する(52週÷5ジャンル≒年10本が理論値、
+  年6本を大きく下回らないことを目安にする)。9〜10月頃、Keyword Gap Lite/GSC実績が習い事
+  ジャンルにも貯まった段階でpriority・下限を実測データに基づき再調整する。
+- `scripts/lib/theme_calendar.js`(ダッシュボード「テーマカレンダー」タブのプレビュー)も同じ
+  `locked_category`絞り込みを再現しており、実際の生成結果とプレビューが食い違わない。
+
 ## SEO効果測定 週次スナップショット(2026-07-27〜)
 
 小幡校の10/25プレゼン用エビデンス構築を目的に、`scripts/seo_metrics_snapshot_generate.js`が

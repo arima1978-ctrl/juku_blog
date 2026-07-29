@@ -22,6 +22,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { loadJukuConfig, ROOT } = require('./lib/config');
 const seoDb = require('./lib/seo_db');
+const { classifyContentCategory } = require('./lib/seo/content_category');
 
 const MAX_CANDIDATES = 5;
 const OUT_DIR = path.join(ROOT, 'data', 'seo_candidates');
@@ -60,6 +61,11 @@ function main(dateArg) {
       gap_type: c.gap_type,
       priority_score: c.priority_score,
       recommended_action: c.recommended_action,
+      // 習い事の年間バランス構造化(2026-07-29): calendar.yamlのlocked_category曜日で
+      // 智谷がnaraigoto候補のみに絞り込めるよう、辞書分類結果(juku/naraigoto/null)を
+      // 併記する(既存のcontent_category.jsを再利用。テーブル自体には保存カラムが無いため
+      // ここで都度計算する)。
+      content_category: classifyContentCategory(c.normalized_keyword),
       existing_article:
         existingArticles.length > 0 ? { post_id: existingArticles[0].post_id, title: existingArticles[0].post_title } : null,
     };

@@ -57,7 +57,7 @@ test('findTopicById: 実際のconfig/seasonal_topics.yamlのfallback_topic_idが
   assert.deepEqual(missing, [], `存在しないfallback_topic_id参照: ${missing.join(', ')}`);
 });
 
-test('実際のconfig/seasonal_topics.yamlが読み込め、12期間・全59テーマが揃っている', () => {
+test('実際のconfig/seasonal_topics.yamlが読み込め、12期間・全62テーマが揃っている', () => {
   const topics = loadSeasonalTopics();
   // 2026-07-20: 承認済み記事が公開可能期限超過で投稿保留になったインシデントを受け、
   // junior-high-summer-study-hours/starting-juku-in-summer/summer-study-planの3件を
@@ -67,7 +67,10 @@ test('実際のconfig/seasonal_topics.yamlが読み込め、12期間・全59テ�
   // 2026-07-29(追加): 記事ファースト転換に伴い、英会話・習字の通年ローカル記事2件
   // (naraigoto-eikaiwa-local/naraigoto-shodo-local、同一window)を追加し、
   // 57→59テーマ・11→12期間になった。
-  assert.equal(topics.length, 59);
+  // 2026-07-29(習い事の年間バランス構造化): 残り3ジャンル(そろばん/プログラミング/将棋)の
+  // 通年ローカル記事3件を、既存2件と同一windowで追加し、59→62テーマ(期間数は同一windowの
+  // ため12のまま)になった。
+  assert.equal(topics.length, 62);
   const windows = new Set(topics.map((t) => `${t.publish_window.start}~${t.publish_window.end}`));
   assert.equal(windows.size, 12);
 });
