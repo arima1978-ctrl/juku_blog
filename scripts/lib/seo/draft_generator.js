@@ -8,6 +8,7 @@ const { loadJukuConfig } = require('../config');
 const { buildPrompt } = require('./draft_prompt_template');
 const { fetchPageContext } = require('./page_context_provider');
 const { listEnabledSchoolPages, getSchoolPageByUrl } = require('./school_page_registry');
+const { listEnabledBrandPages, getBrandPageByUrl } = require('./brand_page_registry');
 
 function notFetchedContext(task) {
   return {
@@ -21,8 +22,9 @@ function notFetchedContext(task) {
   };
 }
 
-// task.target_urlが登録済み校舎ページ(config/school_pages.yaml)と一致する場合のみ実際に
-// 取得する。一致しなければ外部通信せず従来通りnot_fetchedを返す。
+// task.target_urlが登録済み校舎ページ(config/school_pages.yaml)またはブランドページ
+// (config/brand_pages.yaml、2026-07-29追加)と一致する場合のみ実際に取得する。
+// どちらにも一致しなければ外部通信せず従来通りnot_fetchedを返す(SSRF対策の許可リスト)。
 // 依存はすべて注入可能(テスト時に実ネットワーク接続を避けるため)。
 async function buildPageContext(
   task,
@@ -30,19 +32,24 @@ async function buildPageContext(
     fetchPage = fetchPageContext,
     getSchoolPage = getSchoolPageByUrl,
     listSchoolPages = listEnabledSchoolPages,
+    getBrandPage = getBrandPageByUrl,
+    listBrandPages = listEnabledBrandPages,
     loadConfig = loadJukuConfig,
   } = {}
 ) {
   if (!task.target_url) return notFetchedContext(task);
 
   // 2026-07-17判明の一連の「branchId無しでconfig読込」バグと同種のため、ここでも
-  // task.branch_id(seo_tasksが持つ由来校舎)を明示的に渡す。
+  // task.branch_id(seo_tasksが持つ由来校舎)を明示的に渡す(ブランドページはbranch_idを
+  // 持たないレジストリのため、getBrandPage/listBrandPagesはbranch_idを受け取らない)。
   const schoolPage = getSchoolPage(task.target_url, task.branch_id);
-  if (!schoolPage) return notFetchedContext(task);
+  const brandPage = schoolPage ? null : getBrandPage(task.target_url);
+  if (!schoolPage && !brandPage) return notFetchedContext(task);
 
   const seoConfig = loadConfig(task.branch_id).seo.competitor_analysis;
-  // 許可リストはconfig/school_pages.yaml由来のみで作る(競合サイトの許可リストとは分離)。
-  const allowedBaseUrls = listSchoolPages(task.branch_id).map((p) => p.url);
+  // 許可リストはconfig/school_pages.yaml + config/brand_pages.yaml由来のみで作る
+  // (競合サイトの許可リストとは分離)。
+  const allowedBaseUrls = [...listSchoolPages(task.branch_id).map((p) => p.url), ...listBrandPages().map((p) => p.url)];
 
   return fetchPage(task.target_url, {
     allowedBaseUrls,

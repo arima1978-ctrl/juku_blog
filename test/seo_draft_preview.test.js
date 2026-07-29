@@ -135,6 +135,7 @@ test('buildPageContext: 登録済み校舎ページURLと一致する場合の�
     {
       getSchoolPage: (url) => (url === fakeSchoolPage.url ? fakeSchoolPage : null),
       listSchoolPages: () => [fakeSchoolPage],
+      listBrandPages: () => [], // このテストではブランドページ登録なしをシミュレート
       loadConfig: () => ({ seo: { competitor_analysis: { user_agent: 'ua', request_timeout_ms: 1000, request_interval_ms: 0, max_retries: 0 } } }),
       fetchPage: async (url, options) => {
         calledWith = { url, options };
@@ -145,6 +146,31 @@ test('buildPageContext: 登録済み校舎ページURLと一致する場合の�
   assert.ok(calledWith); // fetchFnが呼ばれている
   assert.equal(calledWith.url, fakeSchoolPage.url);
   assert.deepEqual(calledWith.options.allowedBaseUrls, [fakeSchoolPage.url]); // school_pages.yaml由来の許可リストのみ
+  assert.equal(pageContext.status, 'fetched');
+});
+
+test('buildPageContext: 登録済みブランドページURLと一致する場合もfetchFnを呼ぶ(2026-07-29)', async () => {
+  let calledWith = null;
+  const fakeBrandPage = { id: 'eikaiwa', name: '英会話クラブ(AEClub)', url: 'https://an-english.com/brand/aeclub/' };
+  const fakeFetched = { status: 'fetched', url: fakeBrandPage.url, finalUrl: fakeBrandPage.url, title: 't', headings: [], bodyExcerpt: 'b', fetchedAt: '2026-07-29T00:00:00.000Z', contentHash: 'h' };
+
+  const pageContext = await buildPageContext(
+    { target_url: fakeBrandPage.url },
+    {
+      getSchoolPage: () => null,
+      listSchoolPages: () => [],
+      getBrandPage: (url) => (url === fakeBrandPage.url ? fakeBrandPage : null),
+      listBrandPages: () => [fakeBrandPage],
+      loadConfig: () => ({ seo: { competitor_analysis: { user_agent: 'ua', request_timeout_ms: 1000, request_interval_ms: 0, max_retries: 0 } } }),
+      fetchPage: async (url, options) => {
+        calledWith = { url, options };
+        return fakeFetched;
+      },
+    }
+  );
+  assert.ok(calledWith);
+  assert.equal(calledWith.url, fakeBrandPage.url);
+  assert.deepEqual(calledWith.options.allowedBaseUrls, [fakeBrandPage.url]);
   assert.equal(pageContext.status, 'fetched');
 });
 
