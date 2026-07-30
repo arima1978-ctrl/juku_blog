@@ -81,3 +81,66 @@ test('CLI: naraigoto辞書に一致する候補にはcontent_category:naraigoto�
   assert.ok(row, 'naraigoto候補が出力に含まれていません');
   assert.equal(row.content_category, 'naraigoto');
 });
+
+// queuedの優先消化(2026-07-30〜)の回帰テスト群。
+function queueCandidate(keyword, priorityScore, queuedAtIso) {
+  const result = seoDb.upsertKeywordCandidate(
+    { normalized_keyword: keyword, gap_type: 'untapped', priority_score: priorityScore, recommended_action: 'create_article' },
+    queuedAtIso
+  );
+  seoDb.updateCandidateStatus(result.id, { toStatus: 'reviewing', actor: 'test' }, queuedAtIso);
+  seoDb.updateCandidateStatus(result.id, { toStatus: 'approved', approvedAction: 'create_article', actor: 'test' }, queuedAtIso);
+  seoDb.updateCandidateStatus(result.id, { toStatus: 'queued', actor: 'test' }, queuedAtIso);
+  return result.id;
+}
+
+test('CLI: queuedはpriority_scoreに関わらずapprovedより先に来る(priority_score最低のqueuedでも先頭)', () => {
+  const highPriorityApproved = seoDb.upsertKeywordCandidate(
+    { normalized_keyword: '高priorityのapproved', gap_type: 'untapped', priority_score: 99, recommended_action: 'create_article' },
+    nowIso
+  );
+  seoDb.updateCandidateStatus(highPriorityApproved.id, { toStatus: 'reviewing', actor: 'test' }, nowIso);
+  seoDb.updateCandidateStatus(highPriorityApproved.id, { toStatus: 'approved', approvedAction: 'create_article', actor: 'test' }, nowIso);
+
+  queueCandidate('低priorityのqueued', 1, '2026-07-30T00:00:00.000Z');
+
+  if (fs.existsSync(OUT_PATH)) fs.unlinkSync(OUT_PATH);
+  execFileSync('node', [path.join(ROOT, 'scripts', 'seo_topic_candidates_export.js'), OUT_DATE], { env: process.env });
+
+  const payload = JSON.parse(fs.readFileSync(OUT_PATH, 'utf8'));
+  const idxQueued = payload.findIndex((c) => c.normalized_keyword === '低priorityのqueued');
+  const idxApproved = payload.findIndex((c) => c.normalized_keyword === '高priorityのapproved');
+  assert.ok(idxQueued >= 0 && idxApproved >= 0);
+  assert.ok(idxQueued < idxApproved, 'priority_scoreが最低でもqueuedはapprovedより先に来るべき');
+  assert.equal(payload[idxQueued].status, 'queued');
+});
+
+test('CLI: 複数queuedはキュー投入順(FIFO、先に投入された方が先頭)に並ぶ', () => {
+  queueCandidate('先に投入', 10, '2026-07-30T01:00:00.000Z');
+  queueCandidate('後で投入', 90, '2026-07-30T02:00:00.000Z');
+
+  if (fs.existsSync(OUT_PATH)) fs.unlinkSync(OUT_PATH);
+  execFileSync('node', [path.join(ROOT, 'scripts', 'seo_topic_candidates_export.js'), OUT_DATE], { env: process.env });
+
+  const payload = JSON.parse(fs.readFileSync(OUT_PATH, 'utf8'));
+  const queuedOnly = payload.filter((c) => c.status === 'queued').map((c) => c.normalized_keyword);
+  const idxFirst = queuedOnly.indexOf('先に投入');
+  const idxSecond = queuedOnly.indexOf('後で投入');
+  assert.ok(idxFirst >= 0 && idxSecond >= 0);
+  assert.ok(idxFirst < idxSecond, 'priority_scoreが低くても先に投入された方が先頭に来るべき(FIFO)');
+});
+
+test('CLI: queuedはMAX_CANDIDATES(5件)の上限を受けず全件出力される', () => {
+  for (let i = 0; i < 7; i++) {
+    queueCandidate(`queued候補${i}`, 10, `2026-07-30T0${i}:00:00.000Z`);
+  }
+
+  if (fs.existsSync(OUT_PATH)) fs.unlinkSync(OUT_PATH);
+  execFileSync('node', [path.join(ROOT, 'scripts', 'seo_topic_candidates_export.js'), OUT_DATE], { env: process.env });
+
+  const payload = JSON.parse(fs.readFileSync(OUT_PATH, 'utf8'));
+  const keywords = payload.map((c) => c.normalized_keyword);
+  for (let i = 0; i < 7; i++) {
+    assert.ok(keywords.includes(`queued候補${i}`), `queued候補${i}が上限で欠落しています(queuedは全件出力されるべき)`);
+  }
+});

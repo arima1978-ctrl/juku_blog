@@ -190,6 +190,16 @@ shared/strong/content_gap)+優先度スコア(0〜100点)を算出し、ダッ�
 `use_for_topic_selection: true`の場合のみ、`seo_topic_candidates_export.js`経由で
 智谷(planner-blog-btoc)の企画候補の1つとして提示される(季節テーマの優先度は変えない)。
 
+**queuedの優先消化(2026-07-30〜、塾曜日<月火木土>限定)**: `status: "approved"`止まりの候補は
+従来通り手順4b(季節テーマが決まらなかった日のみの受動的検討)のままだが、ダッシュボードで
+「キューへ送る」操作を受けた`status: "queued"`の候補は、人間の明示的な指名として季節テーマ
+バンクより優先される(智谷の手順0)。`seo_topic_candidates_export.js`がqueuedを上限無しで
+キュー投入順(FIFO、`updated_at`昇順で代用。専用カラムが無いための代替実装であり、queued中に
+別更新が入ると順序がズレる既知の限界がある。同スクリプトのコード内コメント参照)に並べて出力し、
+approvedは従来通りpriority_score順で残り枠を埋める。習い事枠(水・金・日、Tier A/A'/B/C)には
+一切影響しない。消化後のstatus遷移(`queued`→`article_created`)はsync_draft_to_db.jsの既存の
+遷移処理がそのまま扱える(遷移元statusの制約が無いため、コード変更不要だった)。
+
 ## AI Growth Director(`features.growth_director`、Sprint 1: 基盤 / Sprint 2: GSC連携・校舎ページ認識 / Sprint 3: Page Plan / Sprint 3.5: 人間レビュー / Sprint 3.6: Page Draft / Sprint 3.7: Stale再生成 / Sprint 3.8: ROI Priority Score / Sprint 3.9: AI Weekly Director)
 
 「ブログを書くシステム」から「学習塾専門 AI Growth Director」への進化に向けた上位機能。

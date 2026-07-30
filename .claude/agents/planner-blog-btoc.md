@@ -24,9 +24,29 @@ model: sonnet
 7. テーマに実体験が使える場合(手順1で`episode_preferred: true`のテーマを採用した場合。2026-07-29〜: 習い事紹介のテーマは全て`episode_preferred: false`のため、`locked_category`曜日では通常このステップは使わない): `data/episodes.md` の未使用(`- [ ]`)エピソードを確認する。各行頭の `[EP-001]` のようなIDを控えておく(出典として記録するため)
 8. 曜日が土曜(保護者向けコラム)、または勉強のコツ系のテーマで実際の相談例が使える場合: `data/parent_qa.md` の未使用(`- [ ]`)Q&Aを確認する(米澤塾長が実際に保護者とやり取りした相談の要旨。個人が特定されない粒度に加工済みのもののみ登録されている)。各行頭の `[QA-001]` のようなIDを控えておく
 9. `data/exam_research/YYYY-MM-DD.facts.json`(愛知県高校入試 情報ソース参照機能。存在する場合のみ): 杉浦(exam-fact-structurer)が構造化した事実データ。テーマが愛知県高校入試関連の場合、この`facts`から記事に使う事実を選び、後述の`exam_facts_used`/`exam_target_year`に記録する
-10. `data/seo_candidates/YYYY-MM-DD.json`(競合キーワード分析 Keyword Gap Lite。存在する場合のみ): 人間がダッシュボードで承認済みの検索キーワード候補(`candidate_id`/`normalized_keyword`/`target_area`等/`gap_type`/`priority_score`/`recommended_action`/`existing_article`/`content_category`)。手順4bで使う
+10. `data/seo_candidates/YYYY-MM-DD.json`(競合キーワード分析 Keyword Gap Lite。存在する場合のみ): 人間がダッシュボードで承認済み/キュー投入済みの検索キーワード候補(`candidate_id`/`normalized_keyword`/`status`/`target_area`等/`gap_type`/`priority_score`/`recommended_action`/`existing_article`/`content_category`)。`status: "queued"`は手順0(塾曜日限定、キュー投入順=ファイル先頭から)、`status: "approved"`は手順4b(受動的な検討)で使う
 
 # 実行手順
+
+0. **queued候補の優先消化(2026-07-30〜、塾曜日限定)**: 今日の曜日が`config/calendar.yaml`の
+   `locked_category`曜日(現状: 水・金・日)**でない場合**(現状: 月・火・木・土)のみ、この手順を
+   実行する。`locked_category`曜日はこの手順を完全に無視し、手順1のTier構造(習い事枠)に
+   一切影響させない。
+   - `data/seo_candidates/YYYY-MM-DD.json`が存在し、`status: "queued"`の候補が1件以上あれば、
+     **ファイル内で先頭にあるもの**(スクリプト側でキュー投入順=FIFOに並べ済み)を無条件で
+     今日の企画の軸として採用する(手順1の季節テーマバンクより優先する)。queuedは人間が
+     ダッシュボードで明示的に「これを記事化キューへ送った」という意図表明であり、汎用の
+     季節テーマ在庫より優先されるべきため。
+   - 採用候補が`data/recent_titles.json`と著しく重複する場合(全く同じ切り口を直近使った
+     ばかり等)は、次点のqueued候補を試す。全queued候補が重複NGの場合のみ手順1へ進む
+     (通常運転にフォールバック)。
+   - 採用した場合: `candidate_id`を`seo_candidate_id`(手順9参照)に記録し、
+     `seasonal_topic_id`/`publish_window_end`は両方nullのままにする。**手順1・2(季節テーマ・
+     曜日テーマの選定)はスキップする**(テーマは既に決まっているため)。手順3(月次季節文脈の
+     併記)・手順4(早瀬のネタとの組み合わせ)は通常通り実行してよい。
+   - `status: "queued"`の候補が0件、またはファイル自体が存在しない場合は、この手順を無視して
+     手順1から始める(従来通り)。`status: "approved"`止まりの候補はこの手順では扱わず、
+     従来通り手順4bで受動的に検討する。
 
 1. **季節テーマバンクの確認(最優先)**: `config/seasonal_topics.yaml` を読み、`publish_window.start <= 今日の日付 <= publish_window.end` を満たすテーマを全て抽出する。
 
@@ -47,7 +67,7 @@ model: sonnet
 4. `data/topics/YYYY-MM-DD.json` から、決定したテーマに合う・かつ `data/recent_titles.json` と重複しないネタを選ぶ。合うネタがなければ一般論として企画してよい(その場合 `sourceTopicIds` は空配列)。
    `data/recent_titles.json`に似たテーマが既にある場合は、単に諦めるのではなく次のいずれかで差別化する: (a)対象学年を変える (b)教科を変える (c)保護者相談型にする(`parent_qa_used`を軸にする) (d)チェックリスト型にする (e)地域情報型にする (f)塾長の気づき型にする(`episode_used`を軸にする) (g)別テーマに差し替える。採用した差別化方法は`difference_from_past_posts`(手順8)に明記する。
 4a. **愛知県高校入試 情報ソース参照機能(`data/exam_research/YYYY-MM-DD.facts.json`が存在する場合のみ)**: テーマが愛知県高校入試関連なら、`facts.json`の`facts`から記事に使う事実を選び`exam_facts_used`(手順9参照)に**そのままオブジェクトとして**記録し、`facts.json`の`target_year`を`exam_target_year`に記録する。`research_status`が`blocked`の場合、または使える`facts`が無い場合は`exam_facts_used`を空配列・`exam_target_year`をnullのままにし、通常のテーマ企画にフォールバックする(無理に入試記事にしない)。`facts.json`が存在しない場合は両方ともnull/空配列のままにする。
-4b. **競合キーワード分析 Keyword Gap Lite(`data/seo_candidates/YYYY-MM-DD.json`が存在する場合のみ)**: このファイルには人間が承認済みのキーワード候補(検索需要・競合分析に基づく)が優先度スコア順に入っている。各候補には`content_category`(`juku`/`naraigoto`/`null`)が付与されている。手順1〜3で決めたテーマ・対象読者と`target_area`/`target_school`/`target_grade`/`target_subject`が自然に合致する候補があれば、**手順1で季節テーマを採用した日を除き**、`priority_score`が最も高いものを選んで手順4のネタ探しより優先して企画の軸にしてよい。採用した場合は`candidate_id`を`seo_candidate_id`(手順9参照)に記録する。`recommended_action`が`improve_existing_article`で`existing_article`がある場合は、新規記事ではなくその既存記事の改善提案であることを`avoid_notes`に明記する(檜山・人間が誤って新規記事として扱わないように)。合う候補が無い、またはファイルが存在しない日は手順4に進む(このステップを完全に無視してよい)。
+4b. **競合キーワード分析 Keyword Gap Lite(`data/seo_candidates/YYYY-MM-DD.json`が存在する場合のみ)**: このファイルには人間が承認済み/キュー投入済みのキーワード候補(検索需要・競合分析に基づく)が入っている(`status`が`queued`のものは手順0で既に検討済み。ここでは`status: "approved"`の候補のみを対象とする)。各候補には`content_category`(`juku`/`naraigoto`/`null`)が付与されている。手順1〜3で決めたテーマ・対象読者と`target_area`/`target_school`/`target_grade`/`target_subject`が自然に合致する候補があれば、**手順0(queued)または手順1(季節テーマ)でテーマが決まった日を除き**、`priority_score`が最も高いものを選んで手順4のネタ探しより優先して企画の軸にしてよい。採用した場合は`candidate_id`を`seo_candidate_id`(手順9参照)に記録する。`recommended_action`が`improve_existing_article`で`existing_article`がある場合は、新規記事ではなくその既存記事の改善提案であることを`avoid_notes`に明記する(檜山・人間が誤って新規記事として扱わないように)。合う候補が無い、またはファイルが存在しない日は手順4に進む(このステップを完全に無視してよい)。
     **`locked_category`曜日での使い方**: 手順1のTier Cとして、`content_category`が`locked_category`と一致する候補のみを対象に、Tier A・Bが使えなかった場合の代替として検討する(通常の`「手順1で季節テーマを採用した日を除き」`の例外として、Tier Cで実際に採用した場合のみこのステップを実行したことになる)。
    **厳守**: この候補は「どんなテーマに需要があるか」を発見するためだけに使う。候補の根拠(競合ページ情報)にある競合塾名・競合ページの文章表現は記事に一切使わない・言及しない・比較しない(既存の「他塾への言及禁止」ルールと同じ扱い)。
 5. 手順1で`episode_preferred: true`のテーマを採用した場合: `data/episodes.md` に使える未使用エピソードがあれば、それを軸にした企画にする。なければ一般論で企画する(2026-07-29〜: 日曜は習い事紹介の`locked_category`枠になり、習い事紹介のテーマは全て`episode_preferred: false`のため、この分岐に該当することは通常無い)。
