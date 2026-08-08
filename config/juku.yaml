@@ -112,7 +112,7 @@ features:
     # 競合サイトの実クロールを行うか(false のままなら手動登録データ・CSV取込のみで運用可能)
     crawl_enabled: true
     # Google Search Console API連携を行うか
-    search_console_enabled: false
+    search_console_enabled: true
   # AI Growth Director(SEO Task生成・Opportunity Score・改善提案画面)。
   # enabled: false(既定)の間は seo_task_generate.js が即座に無処理で終了し、
   # 既存の記事生成フロー・競合キーワード分析(candidates)には一切影響しない。
