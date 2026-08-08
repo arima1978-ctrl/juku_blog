@@ -480,6 +480,14 @@ node scripts/check_batch_heartbeats.js --morning-summary  # 朝のまとめ通�
 
 ## 既知の未実装・制約
 
+- **バッチ監視の既知原因照合窓が実行時間の長い工程では外れうる(2026-08-08発見、未実装)**:
+  `check_batch_heartbeats.js`の`collectDiagnosticText()`は、`logs/heartbeats/<name>.json`の
+  `completedAt`(=daily_blog_all.shの最終リトライが確定した時刻)の前後1時間で
+  `logs/errors.json`を検索して既知原因パターン照合する設計。校舎数が増えて実行時間が延び、
+  「初回試行の失敗」から「完了(=リトライも失敗して確定)」までが1時間を超えると、
+  初回試行時に記録されたエラーのdetailが照合窓から外れ、既知原因の対処法が載らなくなる恐れが
+  ある。対処案: heartbeatに`startedAt`(実行開始時刻)も記録し、`startedAt`〜`completedAt`の
+  区間をそのまま照合窓にする(無ければ現行の固定窓にフォールバック)。実装は次回。
 - 複数校舎対応はPhase 1(中核メカニズム)のみ完了。WordPress投稿の校舎別解決(Phase 2)・
   小幡校の実データ移行とあま本部の実設定投入(Phase 3)・複数校舎の日次自動オーケストレーション
   `daily_blog_all.sh`(Phase 4)は未着手。現状`branches/<slug>/config/`を持つ校舎は存在せず、
