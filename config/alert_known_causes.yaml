@@ -1,0 +1,10 @@
+# バッチ監視アラート(scripts/check_batch_heartbeats.js)の既知原因パターン(2026-08-08〜)。
+# logs/errors.json の直近エラーdetail文字列がpattern(正規表現、大小区別あり)にマッチしたら、
+# remedyの対処法をTelegramアラート文面へ直書きする。コード変更なしでここに追記できる。
+#
+# 例: 8/7・8/8にclaude CLIのOAuthセッションが失効し、researcher-local以降が
+#     全滅した実インシデント(VPS上のclaude再ログインが必要だった)。
+known_causes:
+  - id: claude_oauth_expired
+    pattern: "OAuth session expired|Please run /login"
+    remedy: "VPSで claude の再ログインが必要です(ssh sakura-keiyaku → claude → /login)"

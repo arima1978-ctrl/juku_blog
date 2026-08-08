@@ -21,6 +21,11 @@ function recordHeartbeat(name, { ok, detail, completedAt } = {}) {
   fs.mkdirSync(HEARTBEATS_DIR, { recursive: true });
   const payload = { name, ok: ok !== false, detail: detail || null, completedAt: completedAt || new Date().toISOString() };
   fs.writeFileSync(heartbeatPath(name), JSON.stringify(payload, null, 2), 'utf8');
+  // 成功時はインシデントを即座にクリアする(2026-08-08)。以前はcheck_batch_heartbeats.jsの
+  // 次回4時間おきチェックまでクリアが遅れ得たが、daily_blog_all.shが失敗時に自らその場で
+  // recordFailureDetection()を呼ぶよう変更した(scripts/notify_batch_failure.js)のに合わせ、
+  // 成功時も同じ即時性で対称に扱う。
+  if (payload.ok) clearIncident(name);
   return payload;
 }
 
@@ -69,4 +74,61 @@ function recordFirstSeenIfAbsent(names, nowIso) {
   return map;
 }
 
-module.exports = { recordHeartbeat, readHeartbeat, readFirstSeenMap, recordFirstSeenIfAbsent, HEARTBEATS_DIR };
+// 反復アラートの通算検知回数・連続検知日数(2026-08-08)。8/7・8/8のOAuth失効インシデントで、
+// 同一文面のアラートが4時間おきに繰り返されるだけで「これは何日目・何回目の継続障害か」が
+// 一目でわからず、深夜の連続配信に紛れて気づかれなかった反省から追加。checkBatches()が
+// 問題ありと判定するたびにrecordFailureDetection()を呼んで積み上げ、正常に戻ったら
+// clearIncident()で消す(このモジュール自身は障害の解消を検知しないため、呼び出し元
+// <check_batch_heartbeats.js>がheartbeat.ok===trueを見て呼ぶ)。
+function incidentPath(name) {
+  return path.join(HEARTBEATS_DIR, `${name}.incident.json`);
+}
+
+function readIncident(name) {
+  const p = incidentPath(name);
+  if (!fs.existsSync(p)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(p, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function clearIncident(name) {
+  try {
+    fs.rmSync(incidentPath(name), { force: true });
+  } catch {
+    // 既に無ければ無視
+  }
+}
+
+// JSTの日付(YYYY-MM-DD)。サーバのタイムゾーン設定(TZ環境変数等)に挙動を左右されないよう、
+// UTC時刻に9時間を足してからUTC基準のgetterで取り出す(サーバ自体はAsia/Tokyoだが、
+// テスト実行環境のTZに依存させたくないため計算で固定する)。
+function toJstDateKey(isoOrMs) {
+  const ms = typeof isoOrMs === 'number' ? isoOrMs : new Date(isoOrMs).getTime();
+  return new Date(ms + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+// 戻り値のconsecutiveDaysは「検知した日(JST)の異なり数」。detectionCountは検知そのものの
+// 通算回数(1日に複数回検知されればその分加算される)。
+function recordFailureDetection(name, nowIso = new Date().toISOString()) {
+  const existing = readIncident(name) || { firstDetectedAt: nowIso, detectionCount: 0, detectedDates: [] };
+  const dateKey = toJstDateKey(nowIso);
+  const detectedDates = existing.detectedDates.includes(dateKey) ? existing.detectedDates : [...existing.detectedDates, dateKey];
+  const incident = { firstDetectedAt: existing.firstDetectedAt, detectionCount: existing.detectionCount + 1, detectedDates };
+  fs.mkdirSync(HEARTBEATS_DIR, { recursive: true });
+  fs.writeFileSync(incidentPath(name), JSON.stringify(incident, null, 2), 'utf8');
+  return { firstDetectedAt: incident.firstDetectedAt, detectionCount: incident.detectionCount, consecutiveDays: incident.detectedDates.length };
+}
+
+module.exports = {
+  recordHeartbeat,
+  readHeartbeat,
+  readFirstSeenMap,
+  recordFirstSeenIfAbsent,
+  readIncident,
+  clearIncident,
+  recordFailureDetection,
+  HEARTBEATS_DIR,
+};

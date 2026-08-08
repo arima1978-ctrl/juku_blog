@@ -137,6 +137,7 @@ WordPressが実体の正。`scripts/sync_wordpress_status.js`が`scheduled`→`p
 | `config/aichi_exam_sources.yaml` | 愛知県高校入試 情報ソース参照機能(`features.aichi_exam_research`)のソースバンク(tier/tags/ttl_hours/enabled等)。コード変更なしで追加・削除・無効化・TTL変更ができる |
 | `config/seo_competitors.yaml` | 競合キーワード分析(`features.competitor_keyword_analysis`)の競合塾レジストリ(domain/sitemap_url/crawl_enabled等)。未登録ドメインは一切取得しない許可リスト方式 |
 | `config/school_pages.yaml` | AI Growth Director用の自社校舎ページレジストリ(id/url/target_areas/enabled等)。`config/seo_competitors.yaml`とは完全に分離。本文取得・解析は行わない |
+| `config/alert_known_causes.yaml` | バッチ監視アラートの既知原因パターン(pattern正規表現→remedy対処法)。`scripts/lib/known_causes.js`が`logs/errors.json`の関連エラーと照合し、一致すればアラート文面に対処法を直書きする |
 | `docs/an-shingaku-jim.md` | 提供コース「アン進学ジム」の実データ |
 | `.env`(gitignore対象) | `WP_URL`/`WP_USERNAME`/`WP_APP_PASSWORD`/`TELEGRAM_TOKEN`/`TELEGRAM_CHAT_ID`/`DASHBOARD_URL`/`PORT` |
 
@@ -365,8 +366,46 @@ Task status別生カウント、ギャップ充足率、公開記事数)と`seo_
 `scripts/check_batch_heartbeats.js`は上記3バッチのheartbeatの新しさを監視するデッドマン
 スイッチ本体で、cron自体が起動しない・処理が無応答になったまま終わらない、といった
 「失敗イベント自体が発火しないケース」を検知する。監視対象バッチの実行cronとは別枠
-(例: 4時間おき)で、この監視スクリプト自体を定期実行すること。異常時のみ1通にまとめて
-Telegram通知し、正常時は無音(通知しない)。
+(4時間おき、`0 */4 * * *`)で、この監視スクリプト自体を定期実行すること。異常時のみ1通に
+まとめてTelegram通知し、正常時は無音(通知しない)。
+
+### 反復アラートの深夜帯抑制・朝のまとめ通知・既知原因の自動提示(2026-08-08〜)
+
+8/7・8/8にclaude CLIのOAuthセッションが失効し`daily_blog_all.sh`が2日連続で失敗した際、
+アラート自体は正しく送信されていたが、同一文面が4時間おきに(深夜帯も含めて)繰り返し配信
+され、反復に気づけないまま2日間記事が生成されなかった実インシデントを受けて改修した。
+
+- **反復回数・連続日数の可視化**: `scripts/lib/heartbeat.js`の`recordFailureDetection()`が
+  障害検知のたびに通算検知回数・連続検知日数(JST日付の異なり数)を`logs/heartbeats/
+  <name>.incident.json`へ積み上げ、アラート文面に`🚨 2日連続・通算9回目`のように埋め込む
+  (`readIncident()`/`clearIncident()`とセットで管理。正常化したら`check_batch_heartbeats.js`
+  がインシデントを消す)。
+- **既知原因パターンの自動検出**: `config/alert_known_causes.yaml`にpattern(正規表現)→
+  remedy(対処法)を登録すると、`scripts/lib/known_causes.js`の`detectKnownCause()`が
+  `logs/errors.json`の関連エラー(heartbeat完了時刻の前後1時間)を照合し、一致すれば
+  `💡 対処: ...`をアラートへ直書きする。コード変更なしでYAML追記のみでパターンを増やせる。
+  `daily_blog.sh`の`run_agent()`は失敗時、claudeの出力末尾(最大500文字)を
+  `scripts/log_error.js`のdetailへ含めるよう変更済み(パターン照合対象の実文言を
+  `logs/errors.json`に残すため)。
+- **深夜帯(22:00〜06:00 JST)の反復抑制と朝のまとめ通知**: 新規障害の初回検知は時間帯を
+  問わず即座に通知するが、同じ障害の反復検知は深夜帯のみ送信を抑制する
+  (`isQuietHours()`/`shouldSendNow()`)。抑制された分は、`node scripts/check_batch_heartbeats.js
+  --morning-summary`(深夜帯抑制を無視して必ず送信するモード)を**毎朝07:35に新規cronとして
+  追加**すると、「🌅 未解決のままX時間経過」の形で必ず1本まとめて通知される
+  (月曜07:30の週次ダイジェスト`seo_metrics_digest.js`と同時刻にすると片方の通知が埋もれる
+  というレビュー指摘<2026-08-08>を受け、5分ずらしている)。**この07:35 cronエントリ
+  (`35 7 * * * cd /home/ubuntu/juku_blog && ... node scripts/check_batch_heartbeats.js
+  --morning-summary >> logs/heartbeat_check.log 2>&1`)は本番crontabへ未追加**
+  (2026-08-08時点、コード実装・テストのみ完了。デプロイ時に追加すること)。
+- **daily_blog_all.shの即時失敗通知にも同じ反復回数・対処法を共有する**: 06:00頃に届く
+  `daily_blog_all.sh`自身のリトライ失敗通知(「日次記事生成(daily_blog_all.sh)で失敗した
+  校舎があります」)は、check_batch_heartbeats.jsの次回チェックより先にユーザーが最初に
+  目にする通知のため、こちらにも同じ通算検知回数・連続日数・既知原因の対処法を載せる
+  (2026-08-08)。`scripts/notify_batch_failure.js <batch_name> "<本文>"`が
+  `scripts/lib/heartbeat.js`の`recordFailureDetection()`・`scripts/lib/known_causes.js`の
+  `detectKnownCause()`・`scripts/lib/alert_text.js`の`appendIncidentAndCause()`
+  (check_batch_heartbeats.jsとの共有ロジック)を使って文面を組み立てて送信する。
+  `daily_blog_all.sh`は従来の`notify_telegram.js`直接呼び出しからこちらへ置き換え済み。
 
 ## ダッシュボード
 
@@ -419,6 +458,7 @@ node scripts/seo_task_generate.js [--dry-run]  # SEO Task生成(features.growth_
 node scripts/seo_metrics_snapshot_generate.js --week=YYYY-MM-DD [--branch-id=<id>] [--baseline] [--dry-run|--save]  # SEO効果測定の週次スナップショット(seo_weekly_analysis.shの末尾で自動実行。既定dry-run)
 node scripts/seo_task_mark_implemented.js --task-id=<id> [--note=<text>] [--unset]  # improve_school_page等、自動検知できないTaskの実施済みを手動確定
 node scripts/check_batch_heartbeats.js  # バッチ監視(デッドマンスイッチ)を手動実行。異常時のみTelegram通知
+node scripts/check_batch_heartbeats.js --morning-summary  # 朝のまとめ通知モード(深夜帯抑制を無視して未解決分を必ず送信。本番では毎朝07:35に別cronで実行する想定)
 ```
 
 ## 運用パラメータ(`config/juku.yaml` の `generation`)

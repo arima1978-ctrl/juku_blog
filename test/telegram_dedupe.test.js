@@ -10,14 +10,21 @@ const os = require('node:os');
 const path = require('node:path');
 const fs = require('node:fs');
 process.env.JUKU_BLOG_TELEGRAM_DEDUPE_PATH = path.join(os.tmpdir(), `juku_blog_telegram_dedupe_test_${process.pid}.json`);
+process.env.JUKU_BLOG_ERRORS_PATH = path.join(os.tmpdir(), `juku_blog_telegram_dedupe_errors_test_${process.pid}.json`);
 
 const { test, after } = require('node:test');
 const assert = require('node:assert/strict');
-const { isDuplicate, recordSent, DEFAULT_DEDUPE_WINDOW_MINUTES } = require('../scripts/lib/telegram');
+const { isDuplicate, recordSent, evaluateTelegramResponse, DEFAULT_DEDUPE_WINDOW_MINUTES } = require('../scripts/lib/telegram');
+const { readErrors } = require('../scripts/log_error');
 
 after(() => {
   try {
     fs.unlinkSync(process.env.JUKU_BLOG_TELEGRAM_DEDUPE_PATH);
+  } catch {
+    // 既に無ければ無視
+  }
+  try {
+    fs.unlinkSync(process.env.JUKU_BLOG_ERRORS_PATH);
   } catch {
     // 既に無ければ無視
   }

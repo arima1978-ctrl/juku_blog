@@ -86,7 +86,10 @@ log "=== 全校舎の実行完了 ==="
 
 if [ -n "$FAILED_TARGETS" ]; then
   node scripts/record_heartbeat.js daily_blog_all --failed --detail="失敗校舎(自動リトライ後も失敗): ${FAILED_TARGETS}詳細は ${LOG}"
-  node scripts/notify_telegram.js "⚠️ 日次記事生成(daily_blog_all.sh)で失敗した校舎があります(30分後の自動リトライも失敗): ${FAILED_TARGETS}"
+  # 2026-08-08〜: notify_telegram.jsの直接呼び出しから、通算検知回数・連続日数・既知原因の
+  # 対処法を同じ文面へ載せられるnotify_batch_failure.js経由へ変更(このユーザーが最初に
+  # 目にする通知であるため、check_batch_heartbeats.jsの次回チェックを待たずここで載せる)。
+  node scripts/notify_batch_failure.js daily_blog_all "⚠️ 日次記事生成(daily_blog_all.sh)で失敗した校舎があります(30分後の自動リトライも失敗): ${FAILED_TARGETS}"
 else
   node scripts/record_heartbeat.js daily_blog_all
 fi

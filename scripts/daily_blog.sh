@@ -62,7 +62,14 @@ run_agent() {
       --permission-mode acceptEdits \
       "${BRANCH_CONTEXT_LINE}${instruction}" >> "$LOG" 2>&1; then
     log "!!! ${step_name} が失敗しました"
-    node scripts/log_error.js "$step_name" "claude -p --agent ${agent} が非ゼロ終了(タイムアウトまたはエラー)。詳細は ${LOG} を参照"
+    # ログファイル末尾を1行に整形してdetailへ含める(2026-08-08、OAuth失効インシデント再発防止)。
+    # 「claude -p が非ゼロ終了」だけでは原因不明のまま埋もれるため、実際のエラー文言
+    # (例: "Failed to authenticate: OAuth session expired")をlogs/errors.json自体に残し、
+    # check_batch_heartbeats.jsの既知原因パターン検出(scripts/lib/known_causes.js)が
+    # 参照できるようにする。
+    local excerpt
+    excerpt=$(tail -n 10 "$LOG" 2>/dev/null | tr '\n' ' ' | cut -c1-500)
+    node scripts/log_error.js "$step_name" "claude -p --agent ${agent} が非ゼロ終了(タイムアウトまたはエラー)。詳細は ${LOG} を参照。末尾: ${excerpt}"
     return 1
   fi
   return 0

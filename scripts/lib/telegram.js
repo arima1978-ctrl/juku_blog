@@ -16,6 +16,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { ROOT } = require('./config');
+const { logError } = require('../log_error');
 
 // テスト時のみ、JUKU_BLOG_TELEGRAM_DEDUPE_PATH で本番と別ファイルを使う。
 const DEDUPE_PATH = process.env.JUKU_BLOG_TELEGRAM_DEDUPE_PATH || path.join(ROOT, 'logs', 'telegram_recent_sends.json');
@@ -57,6 +58,25 @@ function recordSent(text, nowIso = new Date().toISOString()) {
   writeDedupeCache(cache);
 }
 
+// Telegram APIはHTTPステータスが200でもボディの{ok:false}でエラーを返すことがあり
+// (例: bot がグループから除外された、chat_idが無効等)、旧実装はレスポンスを最後まで
+// 受信できた時点で無条件に成功扱いしていたため、この種の失敗が検知できなかった
+// (2026-08-08、8/7・8/8の通知欠落調査で判明)。ステータスコードとボディのokフィールドの
+// 両方を見て判定する純粋関数として切り出し、実ネットワークを使わずテストできるようにする。
+function evaluateTelegramResponse(statusCode, rawBody) {
+  let parsed = null;
+  try {
+    parsed = JSON.parse(rawBody);
+  } catch {
+    parsed = null;
+  }
+  if (statusCode >= 200 && statusCode < 300 && parsed && parsed.ok === true) {
+    return { ok: true };
+  }
+  const description = (parsed && parsed.description) || (rawBody || '').slice(0, 300) || '(空の応答)';
+  return { ok: false, error: `Telegram API応答異常(HTTP ${statusCode}): ${description}` };
+}
+
 // dedupeWindowMinutes: 0を渡すと重複抑制を無効化できる(既定は90分)。
 async function sendTelegram(text, { dedupeWindowMinutes = DEFAULT_DEDUPE_WINDOW_MINUTES } = {}) {
   const token = process.env.TELEGRAM_TOKEN;
@@ -80,8 +100,15 @@ async function sendTelegram(text, { dedupeWindowMinutes = DEFAULT_DEDUPE_WINDOW_
           headers: { 'Content-Type': 'application/json' },
         },
         (res) => {
-          res.on('data', () => {});
-          res.on('end', resolve);
+          let body = '';
+          res.on('data', (chunk) => {
+            body += chunk;
+          });
+          res.on('end', () => {
+            const result = evaluateTelegramResponse(res.statusCode, body);
+            if (result.ok) resolve();
+            else reject(new Error(result.error));
+          });
         }
       );
       req.on('error', reject);
@@ -91,7 +118,8 @@ async function sendTelegram(text, { dedupeWindowMinutes = DEFAULT_DEDUPE_WINDOW_
     recordSent(text);
   } catch (err) {
     console.warn('[telegram] 通知送信に失敗しました:', err.message);
+    logError('telegram_send', `Telegram通知の送信に失敗しました: ${err.message}`);
   }
 }
 
-module.exports = { sendTelegram, isDuplicate, recordSent, DEFAULT_DEDUPE_WINDOW_MINUTES };
+module.exports = { sendTelegram, isDuplicate, recordSent, evaluateTelegramResponse, DEFAULT_DEDUPE_WINDOW_MINUTES };
