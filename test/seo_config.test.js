@@ -11,7 +11,9 @@ test('loadJukuConfig: competitor_keyword_analysisは分析・実クロール・�
   // 2026-07-29ユーザー承認: Keyword Gap分析をテーマ選定に繋げる本来の設計意図のため恒久trueに変更
   assert.equal(feature.use_for_topic_selection, true);
   assert.equal(feature.crawl_enabled, true);
-  assert.equal(feature.search_console_enabled, false);
+  // 2026-08-08: 本番でのみ先行して有効化されていたsearch_console_enabled: trueを
+  // git管理下のconfig/juku.yamlへ取り込んだため、既定値の想定をtrueに更新。
+  assert.equal(feature.search_console_enabled, true);
 });
 
 test('loadJukuConfig: seo.competitor_analysisのパラメータがハードコードされず設定から読める', () => {

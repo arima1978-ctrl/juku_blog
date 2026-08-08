@@ -66,9 +66,12 @@ run_agent() {
     # 「claude -p が非ゼロ終了」だけでは原因不明のまま埋もれるため、実際のエラー文言
     # (例: "Failed to authenticate: OAuth session expired")をlogs/errors.json自体に残し、
     # check_batch_heartbeats.jsの既知原因パターン検出(scripts/lib/known_causes.js)が
-    # 参照できるようにする。
+    # 参照できるようにする。抜粋の組み立ては scripts/build_failure_excerpt.js に委譲する
+    # (旧: `tail -n 10 | cut -c1-500`は先頭から切っていたため、Node起動時の
+    # ExperimentalWarning等のノイズ行に500文字の枠を埋め尽くされ、本当に必要な末尾の
+    # エラー文言が失われるバグがあった)。
     local excerpt
-    excerpt=$(tail -n 10 "$LOG" 2>/dev/null | tr '\n' ' ' | cut -c1-500)
+    excerpt=$(node scripts/build_failure_excerpt.js "$LOG")
     node scripts/log_error.js "$step_name" "claude -p --agent ${agent} が非ゼロ終了(タイムアウトまたはエラー)。詳細は ${LOG} を参照。末尾: ${excerpt}"
     return 1
   fi

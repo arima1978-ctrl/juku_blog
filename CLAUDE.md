@@ -440,6 +440,15 @@ Phase 4(複数校舎の日次自動オーケストレーション)は未着手(�
 - **ダッシュボードのテーマカレンダー**: `GET /api/theme-calendar`が`isSharedFallback`を返し、
   校舎別テーマ設定がまだ無い校舎を選択した際は「参考表示」の警告バナーを表示する。
 
+## テスト分離の既知課題(改修バックログ、2026-08-08)
+
+`config/juku.yaml`の`search_console_enabled`を本番同期した際、共有configの実際の値に
+依存していたテストが実際にGoogle Search Console APIへ本物のネットワーク接続をしてしまう
+実インシデントが発生した。この反省を受けた`test/`配下全体の監査結果・優先順位付き改修案は
+`docs/test_isolation_audit.md`を参照(優先順位: 1.テスト実行時の外向き通信遮断ガード →
+2.`seo_weekly_analysis.test.js`の実クロール有無の確認 → 3.`seasonal_topics.test.js`の
+件数ピン留めを構造検証へ)。未着手のバックログであり、当面は個別修正のみで対応する。
+
 ## 診断・運用コマンド
 
 ```bash

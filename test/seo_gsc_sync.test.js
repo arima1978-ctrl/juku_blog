@@ -13,10 +13,23 @@ const { defaultDateRange, syncGscData } = require('../scripts/seo_gsc_sync');
 const { closeDb } = require('../scripts/lib/db');
 const seoDb = require('../scripts/lib/seo_db');
 
+// competitor_keyword_analysis.enabled=false(無処理終了)を確定的に検証するための
+// 一時config(2026-08-08)。以前は共有config/juku.yamlの既定値に依存していたため、
+// 本番でsearch_console_enabled: trueが取り込まれた際にこのテストが実際のGoogle Search
+// Console APIへ本物のネットワーク接続を行ってしまう事故があった(該当テストの意図は
+// あくまで「featureが無効なら無処理」の確認であり、実クレデンシャルの有無に依存すべきでない)。
+const DISABLED_CONFIG_PATH = path.join(os.tmpdir(), `juku_blog_seo_gsc_sync_disabled_config_test_${process.pid}.yaml`);
+fs.writeFileSync(DISABLED_CONFIG_PATH, 'features:\n  competitor_keyword_analysis:\n    enabled: false\n    search_console_enabled: false\n', 'utf8');
+
 after(() => {
   closeDb();
   try {
     fs.unlinkSync(process.env.JUKU_BLOG_DB_PATH);
+  } catch {
+    // 既に無ければ無視
+  }
+  try {
+    fs.unlinkSync(DISABLED_CONFIG_PATH);
   } catch {
     // 既に無ければ無視
   }
@@ -31,10 +44,11 @@ test('defaultDateRange: 直近3日分(データ遅延考慮)の期間を返す',
   assert.ok(end < new Date().toISOString().slice(0, 10)); // 今日は含まない(前日まで)
 });
 
-test('seo_gsc_sync.js: competitor_keyword_analysis.enabled=false(既定)なら無処理で終了する', () => {
+test('seo_gsc_sync.js: competitor_keyword_analysis.enabled=falseなら無処理で終了する(実ネットワークに出ない)', () => {
   const output = execFileSync('node', [path.join(ROOT, 'scripts', 'seo_gsc_sync.js'), '--dry-run'], {
     cwd: ROOT,
     encoding: 'utf8',
+    env: { ...process.env, JUKU_BLOG_CONFIG_PATH: DISABLED_CONFIG_PATH },
   });
   assert.match(output, /無処理で終了/);
 });
