@@ -488,6 +488,13 @@ node scripts/check_batch_heartbeats.js --morning-summary  # 朝のまとめ通�
   初回試行時に記録されたエラーのdetailが照合窓から外れ、既知原因の対処法が載らなくなる恐れが
   ある。対処案: heartbeatに`startedAt`(実行開始時刻)も記録し、`startedAt`〜`completedAt`の
   区間をそのまま照合窓にする(無ければ現行の固定窓にフォールバック)。実装は次回。
+- **API従量課金のクレジット切れ・利用上限到達が既知原因パターン未登録(2026-08-08発見、未実装)**:
+  `config/alert_known_causes.yaml`にはclaude CLIのOAuth失効パターンのみ登録済みだが、
+  API従量課金でのクレジット切れ・利用上限到達も「認証自体は通るが実行できない」という
+  同種の失敗モード。現状は対処文言(例: 「Anthropicコンソールでクレジット残高/利用上限を
+  確認してください」)が出ない。実際のエラー文言(利用上限到達時にclaude CLIが出す
+  メッセージ)を確認したうえで、`config/alert_known_causes.yaml`へパターンを追記する。
+  実装は次回。
 - 複数校舎対応はPhase 1(中核メカニズム)のみ完了。WordPress投稿の校舎別解決(Phase 2)・
   小幡校の実データ移行とあま本部の実設定投入(Phase 3)・複数校舎の日次自動オーケストレーション
   `daily_blog_all.sh`(Phase 4)は未着手。現状`branches/<slug>/config/`を持つ校舎は存在せず、
